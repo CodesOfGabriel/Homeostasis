@@ -268,9 +268,12 @@ export function GameDashboard() {
                 </div>
             )}
 
+            {/* Idle Game Header - Always Visible */}
+            <IdleGameHeader />
+
             {/* Main Content - Full Height Layout */}
             <main className={`flex-1 overflow-hidden ${isDead ? 'blur-sm pointer-events-none' : ''}`}>
-                <div className="h-full max-w-[1900px] mx-auto px-6 py-6 flex flex-col gap-3">
+                <div className="h-full max-w-[1900px] mx-auto px-6 py-3 flex flex-col gap-2">
                     {/* Critical Warning Banner */}
                     {!isDead && (
                         <>
@@ -332,9 +335,9 @@ export function GameDashboard() {
                         </>
                     )}
 
-                    {/* Timeline - Minimalista com controle de simulação */}
+                    {/* Timeline - Minimalista e Compacta */}
                     <div className="flex items-center gap-3">
-                        <div className="flex-1">
+                        <div className="flex-1 scale-75 origin-left">
                             <MiniTimeline currentTime={currentDayTime} />
                         </div>
 
@@ -591,12 +594,7 @@ export function GameDashboard() {
                                 {activeTab === 'molecular' && <MolecularTab parameters={parameters} />}
                                 {activeTab === 'charts' && <ChartsTab parameters={parameters} />}
                                 {activeTab === 'labs' && <LabMarkersPanel parameters={parameters} />}
-                                {activeTab === 'idle' && (
-                                    <>
-                                        <IdleGameHeader />
-                                        <IdleGamePanel />
-                                    </>
-                                )}
+                                {activeTab === 'idle' && <IdleGamePanel />}
                             </div>
                         </div>
 
