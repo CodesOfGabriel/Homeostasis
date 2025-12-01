@@ -35,7 +35,8 @@ export function updateHeartRate(
   const drift = (baseline - hr) * 0.01;
   hr += drift;
 
-  return clampParameter('heartRate', hr);
+  // Round to integer to avoid decimal places
+  return Math.round(clampParameter('heartRate', hr));
 }
 
 export function updateStrokeVolume(params: Physiology): number {

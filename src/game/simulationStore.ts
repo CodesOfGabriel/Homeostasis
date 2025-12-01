@@ -21,10 +21,21 @@ import {
   updatePerfusion,
   updateMetabolicParameters,
 } from './equations/perfusion';
+import {
+  evaluateActionForEvent,
+  checkForCombo,
+  EVENT_SOLUTIONS,
+  ActionCombo,
+} from './eventSolutions';
 
 interface ActiveEvent {
   event: GameEvent;
   remainingTime: number;
+}
+
+interface RecentAction {
+  actionId: string;
+  timestamp: number;
 }
 
 interface SimulationState {
@@ -38,9 +49,14 @@ interface SimulationState {
 
   // Actions
   actionCooldowns: ActionCooldown[];
+  recentActions: RecentAction[]; // Track recent actions for combo detection
 
   // Notifications
   notifications: string[];
+
+  // Combo tracking
+  activeCombo: ActionCombo | null;
+  comboScore: number;
 
   // Methods
   tick: () => void;
@@ -60,7 +76,10 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
   activeEvents: [],
   eventQueue: [],
   actionCooldowns: [],
+  recentActions: [],
   notifications: [],
+  activeCombo: null,
+  comboScore: 0,
 
   start: () => set({ isRunning: true }),
   pause: () => set({ isRunning: false }),
@@ -70,7 +89,10 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
       activeEvents: [],
       eventQueue: [],
       actionCooldowns: [],
+      recentActions: [],
       notifications: [],
+      activeCombo: null,
+      comboScore: 0,
       isRunning: true,
     }),
 
@@ -114,11 +136,13 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
         event: randomEvent,
         remainingTime: randomEvent.duration,
       });
+      // Limit notifications to last 20 to prevent memory issues
+      const newNotifications = [
+        ...state.notifications,
+        `${randomEvent.title}: ${randomEvent.description}`,
+      ];
       set({
-        notifications: [
-          ...state.notifications,
-          `${randomEvent.title}: ${randomEvent.description}`,
-        ],
+        notifications: newNotifications.slice(-20), // Keep only last 20
       });
     }
 
@@ -225,6 +249,52 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
       params.nfkb += (20 - params.nfkb) * 0.03;
     }
 
+    // === BODY COMPOSITION & ENERGY BALANCE ===
+
+    // Metabolic rate affected by thyroid and lean mass
+    const baseMetabolicRate = 1800;
+    params.metabolicRate = baseMetabolicRate * (params.thyroid / 60) * (params.leanMass / 56);
+
+    // Energy balance affects body mass
+    const energyDelta = params.energy - 50; // Positive = surplus, negative = deficit
+
+    // mTOR promotes anabolism (muscle growth)
+    if (params.mtor > 60 && params.energy > 60) {
+      params.leanMass += 0.001; // Slow muscle gain
+      params.bodyMass += 0.001;
+    }
+
+    // AMPK promotes catabolism (fat burning)
+    if (params.ampk > 60 && energyDelta < 0) {
+      params.fatMass -= 0.002; // Fat loss when in deficit
+      params.bodyMass -= 0.002;
+    }
+
+    // Chronic energy deficit = muscle catabolism + fat loss
+    if (params.energy < 30) {
+      params.leanMass -= 0.003; // Muscle loss in starvation
+      params.fatMass -= 0.005; // Fat loss
+      params.bodyMass -= 0.008;
+    }
+
+    // Chronic energy surplus = fat accumulation
+    if (params.energy > 80 && params.glucose > 120) {
+      params.fatMass += 0.004; // Fat gain
+      params.bodyMass += 0.004;
+    }
+
+    // Maintain minimum viable mass (starvation limit)
+    params.leanMass = Math.max(40, params.leanMass); // Min lean mass
+    params.fatMass = Math.max(5, params.fatMass); // Min essential fat
+    params.bodyMass = params.leanMass + params.fatMass;
+
+    // Maximum mass (obesity limit)
+    params.bodyMass = Math.min(150, params.bodyMass);
+
+    // Calculate BMI (assuming height = 1.75m)
+    const height = 1.75; // meters
+    params.bmi = params.bodyMass / (height * height);
+
     // Clamp all new parameters
     params.osmolarity = Math.max(270, Math.min(310, params.osmolarity));
     params.vo2Max = Math.max(20, Math.min(80, params.vo2Max));
@@ -255,8 +325,8 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
       set({
         notifications: [
           ...state.notifications,
-          `⏳ ${action.name} is on cooldown`,
-        ],
+          `⏳ ${action.name} está em cooldown`,
+        ].slice(-20),
       });
       return;
     }
@@ -266,8 +336,8 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
       set({
         notifications: [
           ...state.notifications,
-          `⚠️ Not enough energy for ${action.name}`,
-        ],
+          `⚠️ Energia insuficiente para ${action.name}`,
+        ].slice(-20),
       });
       return;
     }
@@ -284,19 +354,95 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
       params.energy -= action.cost;
     }
 
+    // Add to recent actions for combo tracking
+    const newRecentActions: RecentAction[] = [
+      ...state.recentActions,
+      { actionId: action.id, timestamp: params.time },
+    ];
+
+    // Clean up old actions (older than 30 seconds)
+    const cleanedRecentActions = newRecentActions.filter(
+      (a) => params.time - a.timestamp <= 30
+    );
+
+    // Check for combos
+    const detectedCombo = checkForCombo(cleanedRecentActions, params.time);
+    let comboNotification = '';
+    let newComboScore = state.comboScore;
+
+    if (detectedCombo && detectedCombo !== state.activeCombo) {
+      // Apply combo bonus
+      Object.entries(detectedCombo.bonus).forEach(([key, value]) => {
+        if (value && key in params) {
+          (params as any)[key] += value;
+        }
+      });
+      comboNotification = `🌟 COMBO! ${detectedCombo.description}`;
+      newComboScore += 100;
+    }
+
+    // Evaluate action effectiveness for active events
+    let eventFeedback = '';
+    state.activeEvents.forEach((ae) => {
+      const evaluation = evaluateActionForEvent(
+        action.id,
+        ae.event.id,
+        params
+      );
+
+      if (evaluation.isOptimal) {
+        // Apply bonus from optimal solution
+        const solution = EVENT_SOLUTIONS[ae.event.id];
+        if (solution?.bonus) {
+          Object.entries(solution.bonus).forEach(([key, value]) => {
+            if (value && key in params) {
+              (params as any)[key] += value;
+            }
+          });
+        }
+        eventFeedback = evaluation.feedback;
+        newComboScore += 50;
+      } else if (evaluation.effectiveness < 0.5) {
+        // Apply penalty for suboptimal action
+        const solution = EVENT_SOLUTIONS[ae.event.id];
+        if (solution?.penalty) {
+          Object.entries(solution.penalty).forEach(([key, value]) => {
+            if (value && key in params) {
+              (params as any)[key] += value;
+            }
+          });
+        }
+        eventFeedback = evaluation.feedback;
+      }
+    });
+
     // Add cooldown
     const newCooldowns = [
       ...state.actionCooldowns,
       { actionId: action.id, remainingTime: action.cooldown },
     ];
 
+    // Collect all notifications (limit to last 20)
+    const newNotifications = [
+      ...state.notifications,
+      `✅ ${action.name}`,
+    ];
+
+    if (comboNotification) {
+      newNotifications.push(comboNotification);
+    }
+
+    if (eventFeedback) {
+      newNotifications.push(eventFeedback);
+    }
+
     set({
       parameters: params,
       actionCooldowns: newCooldowns,
-      notifications: [
-        ...state.notifications,
-        `✅ ${action.name}: ${action.description}`,
-      ],
+      recentActions: cleanedRecentActions.slice(-10), // Keep only last 10 actions
+      activeCombo: detectedCombo,
+      comboScore: newComboScore,
+      notifications: newNotifications.slice(-20), // Keep only last 20 notifications
     });
   },
 

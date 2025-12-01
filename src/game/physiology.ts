@@ -50,11 +50,63 @@ export interface Physiology {
   potassium: number; // mmol/L
   calcium: number; // mmol/L
 
+  // Respiratory Markers
+  pO2: number; // mmHg - Pressão parcial de O2
+  pCO2: number; // mmHg - Pressão parcial de CO2
+  hco3: number; // mEq/L - Bicarbonato
+  baseExcess: number; // mEq/L - Excesso de base
+
+  // Lipid Profile
+  totalCholesterol: number; // mg/dL
+  ldl: number; // mg/dL - "Colesterol ruim"
+  hdl: number; // mg/dL - "Colesterol bom"
+  triglycerides: number; // mg/dL
+  vldl: number; // mg/dL
+
+  // Hepatic Profile
+  alt: number; // U/L - Alanina aminotransferase
+  ast: number; // U/L - Aspartato aminotransferase
+  alp: number; // U/L - Fosfatase alcalina
+  ggt: number; // U/L - Gama glutamil transferase
+  bilirubin: number; // mg/dL - Bilirrubina total
+  albumin: number; // g/dL
+  totalProtein: number; // g/dL
+
+  // Renal Profile
+  creatinine: number; // mg/dL
+  urea: number; // mg/dL
+  bun: number; // mg/dL - Blood Urea Nitrogen
+  gfr: number; // mL/min/1.73m² - Taxa de filtração glomerular
+  uricAcid: number; // mg/dL
+
+  // Inflammatory Markers
+  crp: number; // mg/L - Proteína C reativa
+  esr: number; // mm/h - Velocidade de hemossedimentação
+
+  // Complete Blood Count (Hemograma)
+  hemoglobin: number; // g/dL
+  hematocrit: number; // %
+  rbc: number; // milhões/μL - Hemácias
+  wbc: number; // mil/μL - Leucócitos
+  platelets: number; // mil/μL - Plaquetas
+
+  // Electrolytes Extended
+  chloride: number; // mEq/L
+  magnesium: number; // mg/dL
+  phosphorus: number; // mg/dL
+
   // Molecular pathways (0-100 activation)
   nrf2: number;
   mtor: number;
   ampk: number;
   nfkb: number;
+
+  // Body Composition / Energy Balance
+  bodyMass: number; // kg - peso corporal
+  fatMass: number; // kg - massa gorda
+  leanMass: number; // kg - massa magra
+  bmi: number; // kg/m² - índice de massa corporal
+  metabolicRate: number; // kcal/day - taxa metabólica
 }
 
 export const DEFAULT_PHYSIOLOGY: Physiology = {
@@ -99,10 +151,62 @@ export const DEFAULT_PHYSIOLOGY: Physiology = {
   potassium: 4.0,
   calcium: 2.4,
 
-  nrf2: 30,
+  // Respiratory Markers
+  pO2: 95, // 80-100 mmHg normal
+  pCO2: 40, // 35-45 mmHg normal
+  hco3: 24, // 22-26 mEq/L normal
+  baseExcess: 0, // -2 a +2 normal
+
+  // Lipid Profile
+  totalCholesterol: 180, // <200 desejável
+  ldl: 100, // <100 ótimo
+  hdl: 55, // >40 homens, >50 mulheres
+  triglycerides: 120, // <150 normal
+  vldl: 25, // <30 normal
+
+  // Hepatic Profile
+  alt: 25, // 7-56 U/L normal
+  ast: 22, // 10-40 U/L normal
+  alp: 70, // 44-147 U/L normal
+  ggt: 30, // 9-48 U/L normal
+  bilirubin: 0.8, // 0.1-1.2 mg/dL normal
+  albumin: 4.2, // 3.5-5.5 g/dL normal
+  totalProtein: 7.0, // 6.0-8.3 g/dL normal
+
+  // Renal Profile
+  creatinine: 1.0, // 0.7-1.3 mg/dL normal
+  urea: 30, // 15-45 mg/dL normal
+  bun: 15, // 7-20 mg/dL normal
+  gfr: 95, // >90 normal
+  uricAcid: 5.5, // 3.5-7.2 mg/dL normal
+
+  // Inflammatory Markers
+  crp: 1.0, // <3.0 mg/L normal
+  esr: 10, // <20 mm/h normal
+
+  // Complete Blood Count
+  hemoglobin: 14.5, // 13.5-17.5 g/dL homens
+  hematocrit: 45, // 38-50% normal
+  rbc: 5.0, // 4.5-5.5 milhões/μL
+  wbc: 7.5, // 4.5-11.0 mil/μL
+  platelets: 250, // 150-400 mil/μL
+
+  // Electrolytes Extended
+  chloride: 102, // 96-106 mEq/L
+  magnesium: 2.0, // 1.7-2.2 mg/dL
+  phosphorus: 3.5, // 2.5-4.5 mg/dL
+
+  nrf2: 50,
   mtor: 50,
-  ampk: 40,
+  ampk: 50,
   nfkb: 20,
+
+  // Body Composition (70kg adult, 1.75m height)
+  bodyMass: 70, // kg
+  fatMass: 14, // kg (20% body fat)
+  leanMass: 56, // kg (80% lean mass)
+  bmi: 22.9, // Normal weight
+  metabolicRate: 1800, // kcal/day
 };
 
 export const LIMITS = {

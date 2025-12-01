@@ -1,49 +1,36 @@
-// GameDashboard: Interface estilo game sci-fi com abas e controles refinados
-
 import { useState } from 'react';
 import { useSimulationStore } from '../game/simulationStore';
 import { useInterval } from '../game/useInterval';
-import { ACTIONS } from '../game/actions';
-import { AnatomicalHeart } from '../components/HUD/AnatomicalHeart';
-import { AnatomicalBody } from '../components/HUD/AnatomicalBody';
-import { Circulation } from '../components/HUD/Circulation';
-import { Lungs } from '../components/HUD/Lungs';
-import { ParameterCard } from '../components/HUD/ParameterCard';
-import { EventPopup } from '../components/HUD/EventPopup';
-import { ActionButton } from '../components/HUD/ActionButton';
-import { LiverTissue } from '../components/HUD/LiverTissue';
-import { KidneyNephrons } from '../components/HUD/KidneyNephrons';
-import { MuscleFibers } from '../components/HUD/MuscleFibers';
-import { NeuronNetwork } from '../components/HUD/NeuronNetwork';
-import { MolecularPathways } from '../components/HUD/MolecularPathways';
-import { RealTimeChart } from '../components/HUD/RealTimeChart';
-import { DetailModal } from '../components/HUD/DetailModal';
-import { EventTimeline, TimelineEvent } from '../components/HUD/EventTimeline';
-import { SubstancePanel } from '../components/HUD/SubstancePanel';
+import { OrgansTab } from './GameDashboard/OrgansTab';
+import { MolecularTab } from './GameDashboard/MolecularTab';
+import { ChartsTab } from './GameDashboard/ChartsTab';
+import { LabMarkersPanel } from './GameDashboard/LabMarkersPanel';
+import { Notifications } from './GameDashboard/Notifications';
+import { OrganModals } from './GameDashboard/OrganModals';
+import { MiniTimeline } from './GameDashboard/MiniTimeline';
+import { ComboDisplay } from './GameDashboard/ComboDisplay';
+import { ActiveEventHelp } from './GameDashboard/ActiveEventHelp';
+import { SettingsModal } from './GameDashboard/SettingsModal';
+import { AnatomicalBody3DImproved } from '../components/HUD/AnatomicalBody3DImproved';
 import { BiomedicCard } from '../components/HUD/BiomedicCard';
-import { MolecularPathway } from '../components/HUD/MolecularPathway';
-import {
-    Heart,
-    Droplet,
-    Wind,
-    Activity,
-    Thermometer,
-    Flame,
-    Zap,
-    Dna,
-    ArrowUp,
-    Moon,
-    Smile,
-    Target
-} from 'lucide-react'; type TabType = 'overview' | 'organs' | 'molecular' | 'charts' | 'substances';
+import { EnergyBalanceScale } from '../components/HUD/EnergyBalanceScale';
+import IdleGamePanel from '../components/HUD/IdleGamePanel';
+import { IdleGameHeader } from '../components/HUD/IdleGameHeader';
+import { ACTIONS } from '../game/actions';
+import { Wind, Thermometer, Droplet, Activity, Settings } from 'lucide-react';
+
+type TabType = 'overview' | 'organs' | 'molecular' | 'charts' | 'labs' | 'idle';
+type ActionTabType = 'actions' | 'substances';
 
 export function GameDashboard() {
     const {
         parameters,
         isRunning,
-        activeEvents,
         notifications,
         actionCooldowns,
+        activeEvents,
+        comboScore,
+        activeCombo,
         tick,
         start,
         pause,
@@ -51,33 +38,36 @@ export function GameDashboard() {
         clearNotification,
     } = useSimulationStore();
 
-    const [selectedOrgan, setSelectedOrgan] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<TabType>('overview');
-    const [currentDayTime, setCurrentDayTime] = useState(480); // 08:00 início do dia
-    const [timelineEvents, setTimelineEvents] = useState<TimelineEvent[]>([
-        { id: '1', name: 'Despertar', description: 'Cortisol naturalmente elevado', time: 420, type: 'completed', severity: 'low', icon: '🌅' },
-        { id: '2', name: 'Café da Manhã', description: 'Pico de insulina e glicose', time: 480, type: 'active', severity: 'medium', icon: '🍳' },
-        { id: '3', name: 'Exercício', description: 'Liberação de adrenalina e endorfinas', time: 600, type: 'scheduled', severity: 'high', icon: '🏃' },
-        { id: '4', name: 'Almoço', description: 'Segunda refeição do dia', time: 780, type: 'scheduled', severity: 'medium', icon: '🍽️' },
-        { id: '5', name: 'Pico Cortisol', description: 'Estresse do trabalho', time: 900, type: 'scheduled', severity: 'high', icon: '💼' },
-        { id: '6', name: 'Lanche', description: 'Pequena elevação de glicose', time: 960, type: 'scheduled', severity: 'low', icon: '☕' },
-        { id: '7', name: 'Jantar', description: 'Última refeição principal', time: 1140, type: 'scheduled', severity: 'medium', icon: '🍲' },
-        { id: '8', name: 'Relaxamento', description: 'Redução de cortisol', time: 1260, type: 'scheduled', severity: 'low', icon: '📺' },
-        { id: '9', name: 'Melatonina', description: 'Preparação para dormir', time: 1320, type: 'scheduled', severity: 'medium', icon: '🌙' },
-        { id: '10', name: 'Sono', description: 'Ciclo de recuperação', time: 1380, type: 'scheduled', severity: 'critical', icon: '😴' },
-    ]);
+    const [actionTab, setActionTab] = useState<ActionTabType>('actions');
+    const [selectedOrgan, setSelectedOrgan] = useState<string | null>(null);
     const [substanceCooldowns, setSubstanceCooldowns] = useState<Record<string, number>>({});
+    const [currentDayTime, setCurrentDayTime] = useState(480);
+    const [myBodyTab, setMyBodyTab] = useState<'body' | 'events' | 'energy'>('body');
 
+    // Settings
+    const [showTips, setShowTips] = useState(true);
+    const [pauseOnEvent, setPauseOnEvent] = useState(true);
+    const [settingsOpen, setSettingsOpen] = useState(false);
+
+    // Death and critical condition system
+    const [isDead, setIsDead] = useState(false);
+    const [deathReason, setDeathReason] = useState('');
+    const [criticalHRTimer, setCriticalHRTimer] = useState(0); // Tracks time in critical HR zone
+
+    // Track previous event count to detect new events
+    const [prevEventCount, setPrevEventCount] = useState(0);
+
+    // Simulation tick
     useInterval(() => {
         if (isRunning) {
             tick();
-            // Avançar tempo do dia (1 minuto real = 1 minuto de jogo, ajustável)
             setCurrentDayTime((prev) => {
-                const next = prev + 0.2; // 200ms = 0.2 minutos
-                return next >= 1440 ? 0 : next; // Reset após 24h
+                const next = prev + 0.2;
+                return next >= 1440 ? 0 : next;
             });
 
-            // Atualizar cooldowns de substâncias
+            // Update substance cooldowns
             setSubstanceCooldowns((prev) => {
                 const updated = { ...prev };
                 Object.keys(updated).forEach((key) => {
@@ -87,816 +77,708 @@ export function GameDashboard() {
                 });
                 return updated;
             });
+
+            // Check for new events and pause if setting is enabled
+            if (pauseOnEvent && activeEvents.length > prevEventCount) {
+                pause();
+            }
+            setPrevEventCount(activeEvents.length);
         }
     }, 200);
+
+    // Check death conditions continuously when running
+    useInterval(() => {
+        if (isRunning && !isDead) {
+            checkDeathConditions();
+        }
+    }, 200);
+
+    const checkDeathConditions = () => {
+        if (isDead) return;
+
+        // pH Alkalosis (pH > 7.52)
+        if (parameters.pH > 7.52) {
+            setIsDead(true);
+            setDeathReason('Alcalose Metabólica');
+            pause();
+            return;
+        }
+
+        // pH Acidosis (pH < 7.18)
+        if (parameters.pH < 7.18) {
+            setIsDead(true);
+            setDeathReason('Acidose Metabólica');
+            pause();
+            return;
+        }
+
+        // Critical Heart Rate (>190 bpm for >5 seconds)
+        if (parameters.heartRate > 190) {
+            const newTimer = criticalHRTimer + 0.2;
+            setCriticalHRTimer(newTimer);
+
+            if (newTimer >= 5) {
+                setIsDead(true);
+                setDeathReason('Taquicardia Extrema');
+                pause();
+                return;
+            }
+        } else if (parameters.heartRate < 35) {
+            setIsDead(true);
+            setDeathReason('Bradicardia Extrema');
+            pause();
+            return;
+        } else {
+            if (criticalHRTimer > 0) {
+                setCriticalHRTimer(0);
+            }
+        }        // Very low oxygen - REDUZIDO PARA 70% (era 60%)
+        if (parameters.bloodOxygen < 70) {
+            setIsDead(true);
+            setDeathReason('Hipoxemia Severa');
+            pause();
+            return;
+        }
+
+        // Extreme temperature - REDUZIDO PARA 40°C (era 42°C)
+        if (parameters.temperature > 40) {
+            setIsDead(true);
+            setDeathReason('Hipertermia Fatal');
+            pause();
+            return;
+        }
+
+        // REDUZIDO PARA 32°C (era 30°C)
+        if (parameters.temperature < 32) {
+            setIsDead(true);
+            setDeathReason('Hipotermia Fatal');
+            pause();
+            return;
+        }
+
+        // Severe Starvation (BMI < 13) - Organ failure
+        if (parameters.bmi < 13) {
+            setIsDead(true);
+            setDeathReason('Inanição Severa (Falência Múltipla de Órgãos)');
+            pause();
+            return;
+        }
+
+        // Morbid Obesity complications (BMI > 45)
+        if (parameters.bmi > 45) {
+            setIsDead(true);
+            setDeathReason('Obesidade Mórbida (Insuficiência Cardíaca)');
+            pause();
+            return;
+        }
+
+        // Check for heart attack event
+        const hasHeartAttack = notifications.some(n => {
+            const message = typeof n === 'string' ? n : (n as any).message || '';
+            return message.toLowerCase().includes('infarto') ||
+                message.toLowerCase().includes('heart attack');
+        });
+        if (hasHeartAttack) {
+            setIsDead(true);
+            setDeathReason('Infarto do Miocárdio');
+            pause();
+            return;
+        }
+    };
+
+    const handleRespawn = () => {
+        setIsDead(false);
+        setDeathReason('');
+        setCriticalHRTimer(0);
+        // Reset simulation to default state
+        window.location.reload();
+    };
+
+    const handleToggleSimulation = () => {
+        isRunning ? pause() : start();
+    };
+
+    const handleUseSubstance = (substanceId: string) => {
+        // Apply substance cooldown (5 minutes)
+        setSubstanceCooldowns((prev) => ({ ...prev, [substanceId]: 300 }));
+    };
 
     const getCooldownTime = (actionId: string): number => {
         const cooldown = actionCooldowns.find((cd: any) => cd.actionId === actionId);
         return cooldown?.remainingTime || 0;
     };
 
-    const handleUseSubstance = (substanceId: string) => {
-        // Lógica para aplicar efeitos de substâncias será implementada
-        console.log('Usando substância:', substanceId);
-        // Por enquanto, apenas definir cooldown
-        const substance = { cooldown: 300 }; // placeholder
-        setSubstanceCooldowns((prev) => ({ ...prev, [substanceId]: substance.cooldown }));
-    };
+    // Check if in critical state
+    const isCriticalState = !isDead && (
+        parameters.pH > 7.48 || parameters.pH < 7.22 ||
+        parameters.heartRate > 170 || parameters.heartRate < 40 ||
+        parameters.bloodOxygen < 85 ||
+        parameters.temperature > 38.5 || parameters.temperature < 35.5 ||
+        parameters.bmi < 16 || parameters.bmi > 35
+    );
 
-    const handleEventClick = (event: TimelineEvent) => {
-        console.log('Evento clicado:', event);
+    return (
+        <div className="h-screen flex flex-col bg-[#0a0e27] overflow-hidden">
+            {/* Death Modal Overlay */}
+            {isDead && (
+                <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-xl">
+                    <div className="bg-gradient-to-br from-gray-900 to-gray-950 rounded-2xl shadow-2xl p-8 max-w-md w-full mx-4 border border-red-500/30">
+                        <div className="text-center">
+                            <div className="text-6xl mb-4">💀</div>
+                            <h2 className="text-3xl font-bold text-red-400 mb-3">Sistema Falhou</h2>
+                            <div className="bg-red-950/30 rounded-xl p-4 mb-6 border border-red-500/30">
+                                <p className="text-lg font-semibold text-gray-300 mb-2">Causa da Morte:</p>
+                                <p className="text-2xl font-bold text-red-400">{deathReason}</p>
+                            </div>
+
+                            {/* Death stats */}
+                            <div className="bg-gray-900/50 rounded-xl p-4 mb-6 space-y-2 text-left border border-gray-800">
+                                <div className="flex justify-between text-sm">
+                                    <span className="text-gray-400">pH Final:</span>
+                                    <span className={`font-bold ${parameters.pH < 7.35 || parameters.pH > 7.45 ? 'text-red-400' : 'text-gray-200'
+                                        }`}>{parameters.pH.toFixed(2)}</span>
+                                </div>
+                                <div className="flex justify-between text-sm">
+                                    <span className="text-gray-400">Frequência Cardíaca:</span>
+                                    <span className={`font-bold ${parameters.heartRate < 40 || parameters.heartRate > 180 ? 'text-red-400' : 'text-gray-200'
+                                        }`}>{Math.round(parameters.heartRate)} bpm</span>
+                                </div>
+                                <div className="flex justify-between text-sm">
+                                    <span className="text-gray-400">Saturação O₂:</span>
+                                    <span className={`font-bold ${parameters.bloodOxygen < 90 ? 'text-red-400' : 'text-gray-200'
+                                        }`}>{parameters.bloodOxygen.toFixed(0)}%</span>
+                                </div>
+                                <div className="flex justify-between text-sm">
+                                    <span className="text-gray-400">Temperatura:</span>
+                                    <span className={`font-bold ${parameters.temperature < 36 || parameters.temperature > 38 ? 'text-red-400' : 'text-gray-200'
+                                        }`}>{parameters.temperature.toFixed(1)}°C</span>
+                                </div>
+                            </div>
+
+                            <p className="text-gray-600 mb-6">Deseja nascer novamente?</p>
+
+                            <button
+                                onClick={handleRespawn}
+                                className="w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-bold py-4 px-6 rounded-xl transition-all shadow-lg hover:shadow-xl transform hover:scale-105"
+                            >
+                                🔄 Reiniciar Simulação
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Main Content - Full Height Layout */}
+            <main className={`flex-1 overflow-hidden ${isDead ? 'blur-sm pointer-events-none' : ''}`}>
+                <div className="h-full max-w-[1900px] mx-auto px-6 py-6 flex flex-col gap-3">
+                    {/* Critical Warning Banner */}
+                    {!isDead && (
+                        <>
+                            {/* pH Critical Warning */}
+                            {(parameters.pH > 7.48 || parameters.pH < 7.22) && (
+                                <div className="bg-gradient-to-r from-red-500 to-orange-500 text-white px-4 py-2 rounded-xl shadow-lg animate-pulse flex items-center gap-3">
+                                    <span className="text-2xl">⚠️</span>
+                                    <div className="flex-1">
+                                        <p className="font-bold">ALERTA CRÍTICO: pH {parameters.pH > 7.48 ? 'ALTO' : 'BAIXO'}</p>
+                                        <p className="text-sm opacity-90">
+                                            pH atual: {parameters.pH.toFixed(2)} - MORTE EM: {parameters.pH > 7.48 ? '>7.52' : '<7.18'}
+                                        </p>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Heart Rate Critical Warning */}
+                            {(parameters.heartRate > 170 || parameters.heartRate < 40) && (
+                                <div className="bg-gradient-to-r from-red-500 to-pink-500 text-white px-4 py-2 rounded-xl shadow-lg animate-pulse flex items-center gap-3">
+                                    <span className="text-2xl">💓</span>
+                                    <div className="flex-1">
+                                        <p className="font-bold">ALERTA CRÍTICO: {parameters.heartRate > 170 ? 'Taquicardia' : 'Bradicardia'} Extrema</p>
+                                        <p className="text-sm opacity-90">
+                                            FC: {Math.round(parameters.heartRate)} bpm
+                                            {parameters.heartRate > 190 && criticalHRTimer > 0 && (
+                                                <span className="ml-2 font-bold bg-black/30 px-2 py-0.5 rounded">
+                                                    ⚠️ ZONA FATAL: {criticalHRTimer.toFixed(1)}s / 5.0s
+                                                </span>
+                                            )}
+                                            {parameters.heartRate < 40 && (
+                                                <span className="ml-2 font-bold">- MORTE EM &lt;35 bpm</span>
+                                            )}
+                                        </p>
+                                    </div>
+                                </div>
+                            )}                            {/* Low Oxygen Warning */}
+                            {parameters.bloodOxygen < 85 && (
+                                <div className="bg-gradient-to-r from-purple-500 to-blue-500 text-white px-4 py-2 rounded-xl shadow-lg animate-pulse flex items-center gap-3">
+                                    <span className="text-2xl">😵</span>
+                                    <div className="flex-1">
+                                        <p className="font-bold">ALERTA CRÍTICO: Hipoxemia</p>
+                                        <p className="text-sm opacity-90">SpO₂: {parameters.bloodOxygen.toFixed(0)}% - MORTE EM &lt;70%</p>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Temperature Warning */}
+                            {(parameters.temperature > 38.5 || parameters.temperature < 35.5) && (
+                                <div className="bg-gradient-to-r from-orange-500 to-yellow-500 text-white px-4 py-2 rounded-xl shadow-lg animate-pulse flex items-center gap-3">
+                                    <span className="text-2xl">{parameters.temperature > 38.5 ? '🔥' : '🥶'}</span>
+                                    <div className="flex-1">
+                                        <p className="font-bold">ALERTA CRÍTICO: {parameters.temperature > 38.5 ? 'Hipertermia' : 'Hipotermia'}</p>
+                                        <p className="text-sm opacity-90">
+                                            Temp: {parameters.temperature.toFixed(1)}°C - MORTE EM {parameters.temperature > 38.5 ? '>40°C' : '<32°C'}
+                                        </p>
+                                    </div>
+                                </div>
+                            )}
+                        </>
+                    )}
+
+                    {/* Timeline - Minimalista com controle de simulação */}
+                    <div className="flex items-center gap-3">
+                        <div className="flex-1">
+                            <MiniTimeline currentTime={currentDayTime} />
+                        </div>
+
+                        {/* Performance Score - Minimized with Glassmorphism */}
+                        <div className="backdrop-blur-md bg-gray-900/40 border border-gray-700/50 rounded-xl px-3 py-1.5 shadow-lg">
+                            <ComboDisplay comboScore={comboScore} activeCombo={activeCombo} compact />
+                        </div>
+
+                        {/* Notifications - Small with Glassmorphism */}
+                        {notifications.length > 0 && (
+                            <div className="backdrop-blur-md bg-gray-900/40 border border-gray-700/50 rounded-xl px-3 py-1.5 shadow-lg max-w-xs">
+                                <Notifications
+                                    notifications={notifications.slice(0, 2)}
+                                    onClearNotification={clearNotification}
+                                    compact
+                                />
+                            </div>
+                        )}
+
+                        {/* Critical Status Indicator */}
+                        {isCriticalState && (
+                            <div className="bg-red-600 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2 animate-pulse border border-red-500/50 shadow-lg shadow-red-500/20">
+                                <span className="text-xl">⚠️</span>
+                                <span>ESTADO CRÍTICO</span>
+                            </div>
+                        )}
+
+                        {/* Settings Button */}
+                        <button
+                            onClick={() => setSettingsOpen(true)}
+                            className="px-3 py-2 rounded-xl font-semibold bg-gray-800 hover:bg-gray-700 text-gray-300 transition-all shadow-md flex items-center gap-2 border border-gray-700"
+                            title="Configurações"
+                        >
+                            <Settings className="w-4 h-4" />
+                        </button>
+
+                        <button
+                            onClick={handleToggleSimulation}
+                            className={`px-6 py-2.5 rounded-xl font-semibold transition-all shadow-md flex-shrink-0 border ${isRunning
+                                ? 'bg-red-600 hover:bg-red-500 text-white border-red-500/30'
+                                : 'bg-cyan-600 hover:bg-cyan-500 text-white border-cyan-500/30'
+                                }`}
+                        >
+                            {isRunning ? '⏸ Pausar' : '▶ Iniciar'}
+                        </button>
+                    </div>
+
+                    {/* Main Grid - 3 Columns */}
+                    <div className="flex-1 grid grid-cols-[380px_1fr_380px] gap-3 overflow-hidden transition-all">
+                        {/* Left Sidebar - Body Condition */}
+                        <div className={`bg-gray-900/50 backdrop-blur-sm rounded-2xl border p-4 overflow-y-auto transition-all ${isCriticalState
+                            ? 'border-red-500/50 border-2 shadow-lg shadow-red-500/20 animate-pulse'
+                            : 'border-gray-800'
+                            }`}>
+                            {/* Tab Navigation - Top Level */}
+                            <div className="flex gap-2 mb-3 border-b border-gray-800 pb-2">
+                                <button
+                                    onClick={() => setMyBodyTab('body')}
+                                    className={`flex-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${myBodyTab === 'body'
+                                        ? 'bg-cyan-600 text-white border border-cyan-500/30'
+                                        : 'text-gray-400 hover:bg-gray-800 border border-transparent'
+                                        }`}
+                                >
+                                    🧑 Meu Corpo
+                                </button>
+                                <button
+                                    onClick={() => setMyBodyTab('events')}
+                                    className={`flex-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${myBodyTab === 'events'
+                                        ? 'bg-cyan-600 text-white border border-cyan-500/30'
+                                        : 'text-gray-400 hover:bg-gray-800 border border-transparent'
+                                        }`}
+                                >
+                                    🎯 Eventos
+                                </button>
+                                <button
+                                    onClick={() => setMyBodyTab('energy')}
+                                    className={`flex-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${myBodyTab === 'energy'
+                                        ? 'bg-cyan-600 text-white border border-cyan-500/30'
+                                        : 'text-gray-400 hover:bg-gray-800 border border-transparent'
+                                        }`}
+                                >
+                                    ⚖️ Balanço
+                                </button>
+                            </div>
+
+                            {/* Tab Content */}
+                            {myBodyTab === 'body' && (
+                                <>
+                                    {/* Body Visualization 3D */}
+                                    <div className="mb-3 h-[400px] relative">
+                                        <AnatomicalBody3DImproved
+                                            heartRate={parameters.heartRate}
+                                            respiratoryRate={parameters.respiratoryRate}
+                                            arterialPerfusion={parameters.musclePerfusion}
+                                            venousPerfusion={parameters.organsPerfusion}
+                                        />
+                                    </div>
+
+                                    {/* Organ Icons Grid - Compact */}
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <button
+                                            onClick={() => setSelectedOrgan('neuron')}
+                                            className="bg-gray-800/50 rounded-lg p-2 border border-gray-700 hover:border-cyan-500/50 transition-all group"
+                                        >
+                                            <div className="text-center">
+                                                <div className="text-2xl mb-1">🧠</div>
+                                                <div className="text-[10px] font-medium text-gray-400 group-hover:text-cyan-400">Cérebro</div>
+                                            </div>
+                                        </button>
+
+                                        <button
+                                            onClick={() => setSelectedOrgan('liver')}
+                                            className="bg-gray-800/50 rounded-lg p-2 border border-gray-700 hover:border-orange-500/50 transition-all group"
+                                        >
+                                            <div className="text-center">
+                                                <div className="text-2xl mb-1">🪼</div>
+                                                <div className="text-[10px] font-medium text-gray-400 group-hover:text-orange-400">Fígado</div>
+                                            </div>
+                                        </button>
+
+                                        <button
+                                            className="bg-gradient-to-br from-cyan-600 to-blue-600 rounded-lg p-2 cursor-pointer group hover:from-cyan-500 hover:to-blue-500 transition-all border border-cyan-500/30"
+                                        >
+                                            <div className="text-center">
+                                                <div className="text-2xl mb-1">❤️</div>
+                                                <div className="text-[10px] font-semibold text-white">Meu Coração</div>
+                                            </div>
+                                        </button>
+
+                                        <button
+                                            onClick={() => setSelectedOrgan('kidney')}
+                                            className="bg-gray-800/50 rounded-lg p-2 border border-gray-700 hover:border-purple-500/50 transition-all group"
+                                        >
+                                            <div className="text-center">
+                                                <div className="text-2xl mb-1">🪧</div>
+                                                <div className="text-[10px] font-medium text-gray-400 group-hover:text-purple-400">Rim</div>
+                                            </div>
+                                        </button>
+                                    </div>
+                                </>
+                            )}
+
+                            {myBodyTab === 'events' && (
+                                <div>
+                                    <ActiveEventHelp activeEvents={activeEvents} showTips={showTips} />
+                                </div>
+                            )}
+
+                            {myBodyTab === 'energy' && (
+                                <div>
+                                    <EnergyBalanceScale
+                                        bmi={parameters.bmi}
+                                        bodyMass={parameters.bodyMass}
+                                        fatMass={parameters.fatMass}
+                                        leanMass={parameters.leanMass}
+                                        energy={parameters.energy}
+                                        glucose={parameters.glucose}
+                                    />
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Center Content - Main Tabs */}
+                        <div className="bg-gray-900/50 backdrop-blur-sm rounded-2xl border border-gray-800 p-6 overflow-y-auto">
+                            {/* Tabs Navigation */}
+                            <div className="flex gap-2 mb-6 border-b border-gray-800 pb-2 flex-wrap">
+                                {[
+                                    { id: 'overview', label: 'Condição Cardíaca', icon: '💙' },
+                                    { id: 'organs', label: 'Órgãos', icon: '🫀' },
+                                    { id: 'molecular', label: 'Molecular', icon: '🧬' },
+                                    { id: 'charts', label: 'Gráficos', icon: '📈' },
+                                    { id: 'labs', label: 'Laboratório', icon: '🧪' },
+                                    { id: 'idle', label: 'Idle Game', icon: '⚡' },
+                                ].map((tab) => (
+                                    <button
+                                        key={tab.id}
+                                        onClick={() => setActiveTab(tab.id as TabType)}
+                                        className={`px-4 py-2 rounded-lg font-medium text-sm transition-all border ${activeTab === tab.id
+                                            ? 'bg-cyan-600 text-white shadow-md border-cyan-500/30'
+                                            : 'text-gray-400 hover:bg-gray-800 border-transparent'
+                                            }`}
+                                    >
+                                        <span className="mr-1">{tab.icon}</span>
+                                        {tab.label}
+                                    </button>
+                                ))}
+                            </div>
+
+                            {/* Tab Content */}
+                            <div className="space-y-6">
+                                {activeTab === 'overview' && (
+                                    <div className="space-y-6">
+                                        {/* Primary Vitals Cards */}
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div className="bg-gradient-to-br from-cyan-950/30 to-gray-900/50 rounded-xl p-4 border border-cyan-900/30">
+                                                <div className="text-xs text-gray-400 mb-1">Blood Status</div>
+                                                <div className="text-2xl font-bold text-gray-200">116/70</div>
+                                            </div>
+                                            <div className="bg-gradient-to-br from-cyan-950/30 to-gray-900/50 rounded-xl p-4 border border-cyan-900/30">
+                                                <div className="text-xs text-gray-400 mb-1">Heart Rate</div>
+                                                <div className="text-2xl font-bold text-gray-200">{Math.round(parameters.heartRate)} bpm</div>
+                                            </div>
+                                            <div className="bg-gradient-to-br from-gray-900/50 to-gray-950/30 rounded-xl p-4 border border-gray-800">
+                                                <div className="text-xs text-gray-400 mb-1">Blood Count</div>
+                                                <div className="text-2xl font-bold text-gray-200">80-90</div>
+                                            </div>
+                                            <div className="bg-gradient-to-br from-gray-50 to-white rounded-xl p-4 border border-gray-200">
+                                                <div className="text-xs text-gray-500 mb-1">Glucose Level</div>
+                                                <div className="text-2xl font-bold text-gray-900">{parameters.glucose.toFixed(0)} mg/dL</div>
+                                            </div>
+                                        </div>
+
+                                        {/* Additional Metrics */}
+                                        <div className="grid grid-cols-4 gap-3">
+                                            <BiomedicCard
+                                                title="O₂ Sat"
+                                                value={parameters.bloodOxygen.toFixed(0)}
+                                                unit="%"
+                                                icon={<Wind className="w-4 h-4" />}
+                                                color="text-blue-500"
+                                                subtitle="SpO₂"
+                                                warning={parameters.bloodOxygen < 90}
+                                            />
+                                            <BiomedicCard
+                                                title="Temp"
+                                                value={parameters.temperature}
+                                                unit="°C"
+                                                icon={<Thermometer className="w-4 h-4" />}
+                                                color="text-orange-500"
+                                                subtitle="Core"
+                                                warning={parameters.temperature > 38}
+                                            />
+                                            <BiomedicCard
+                                                title="pH"
+                                                value={parameters.pH.toFixed(2)}
+                                                unit=""
+                                                icon={<Droplet className="w-4 h-4" />}
+                                                color="text-cyan-500"
+                                                subtitle="Blood"
+                                                warning={parameters.pH < 7.35 || parameters.pH > 7.45}
+                                            />
+                                            <BiomedicCard
+                                                title="Lactate"
+                                                value={parameters.lactate.toFixed(1)}
+                                                unit="mmol/L"
+                                                icon={<Activity className="w-4 h-4" />}
+                                                color="text-red-500"
+                                                subtitle="Level"
+                                            />
+                                        </div>
+                                    </div>
+                                )}
+                                {activeTab === 'organs' && <OrgansTab parameters={parameters} onOrganClick={setSelectedOrgan} />}
+                                {activeTab === 'molecular' && <MolecularTab parameters={parameters} />}
+                                {activeTab === 'charts' && <ChartsTab parameters={parameters} />}
+                                {activeTab === 'labs' && <LabMarkersPanel parameters={parameters} />}
+                                {activeTab === 'idle' && (
+                                    <>
+                                        <IdleGameHeader />
+                                        <IdleGamePanel />
+                                    </>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Right Sidebar - Actions & Substances */}
+                        <div className="bg-white rounded-2xl border border-gray-200 p-4 overflow-y-auto">
+                            {/* Action Tabs */}
+                            <div className="flex gap-2 mb-4 border-b border-gray-200 pb-2">
+                                {[
+                                    { id: 'actions', label: 'Ações', icon: '⚡' },
+                                    { id: 'substances', label: 'Substâncias', icon: '💊' },
+                                ].map((tab) => (
+                                    <button
+                                        key={tab.id}
+                                        onClick={() => setActionTab(tab.id as ActionTabType)}
+                                        className={`flex-1 px-3 py-2 rounded-lg font-medium text-sm transition-all ${actionTab === tab.id
+                                            ? 'bg-blue-500 text-white shadow-md'
+                                            : 'text-gray-600 hover:bg-gray-100'
+                                            }`}
+                                    >
+                                        <span className="mr-1">{tab.icon}</span>
+                                        {tab.label}
+                                    </button>
+                                ))}
+                            </div>
+
+                            {/* Actions Content */}
+                            {actionTab === 'actions' && (
+                                <div className="space-y-3">
+                                    <h3 className="text-base font-bold text-gray-900 mb-3">⚡ Ações</h3>
+                                    <div className="grid grid-cols-1 gap-2">
+                                        {Object.values(ACTIONS).map((action) => (
+                                            <button
+                                                key={action.id}
+                                                onClick={() => applyAction(action)}
+                                                disabled={getCooldownTime(action.id) > 0}
+                                                className={`w-full text-left p-2.5 rounded-lg border transition-all ${getCooldownTime(action.id) > 0
+                                                    ? 'bg-gray-100 border-gray-200 opacity-50 cursor-not-allowed'
+                                                    : 'bg-gradient-to-r from-blue-50 to-white border-blue-200 hover:border-blue-400 hover:shadow-md'
+                                                    }`}
+                                            >
+                                                <div className="text-xs font-semibold text-gray-900">{action.name}</div>
+                                                <div className="text-[10px] text-gray-500 mt-0.5">{action.description}</div>
+                                                {getCooldownTime(action.id) > 0 && (
+                                                    <div className="text-[10px] text-red-500 mt-1">
+                                                        ⏱ {getCooldownTime(action.id).toFixed(0)}s
+                                                    </div>
+                                                )}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Substances Content */}
+                            {actionTab === 'substances' && (
+                                <div className="space-y-3">
+                                    <h3 className="text-base font-bold text-gray-900 mb-3">💊 Substâncias</h3>
+
+                                    {/* Stimulants & Energy */}
+                                    <div className="mb-3">
+                                        <h4 className="text-xs font-semibold text-gray-700 mb-2">⚡ Estimulantes & Energia</h4>
+                                        <div className="grid grid-cols-1 gap-2">
+                                            <SubstanceButton id="caffeine" name="☕ Cafeína" description="↑ Energia, ↑ FC, ↓ Sono" cooldown={substanceCooldowns['caffeine']} onClick={handleUseSubstance} color="amber" />
+                                            <SubstanceButton id="glucose" name="🍬 Glicose" description="↑ Glicemia, ↑ Energia" cooldown={substanceCooldowns['glucose']} onClick={handleUseSubstance} color="yellow" />
+                                            <SubstanceButton id="energy_drink" name="⚡ Energético" description="↑↑ Energia, ↑↑ FC, Estresse" cooldown={substanceCooldowns['energy_drink']} onClick={handleUseSubstance} color="orange" />
+                                            <SubstanceButton id="sugar" name="🍭 Açúcar" description="Pico rápido de glicose" cooldown={substanceCooldowns['sugar']} onClick={handleUseSubstance} color="pink" />
+                                        </div>
+                                    </div>
+
+                                    {/* Hydration & Electrolytes */}
+                                    <div className="mb-3">
+                                        <h4 className="text-xs font-semibold text-gray-700 mb-2">💧 Hidratação & Eletrólitos</h4>
+                                        <div className="grid grid-cols-1 gap-2">
+                                            <SubstanceButton id="water" name="💧 Água" description="↑ Hidratação, Balanço" cooldown={substanceCooldowns['water']} onClick={handleUseSubstance} color="cyan" />
+                                            <SubstanceButton id="electrolytes" name="⚡ Eletrólitos" description="↑ Na⁺, K⁺, Performance" cooldown={substanceCooldowns['electrolytes']} onClick={handleUseSubstance} color="blue" />
+                                            <SubstanceButton id="isotonic" name="🥤 Isotônico" description="Hidratação + Energia" cooldown={substanceCooldowns['isotonic']} onClick={handleUseSubstance} color="indigo" />
+                                            <SubstanceButton id="salt" name="🧂 Sal" description="↑ Sódio, ↑ PA" cooldown={substanceCooldowns['salt']} onClick={handleUseSubstance} color="gray" />
+                                        </div>
+                                    </div>
+
+                                    {/* Medications */}
+                                    <div className="mb-3">
+                                        <h4 className="text-xs font-semibold text-gray-700 mb-2">💊 Medicamentos</h4>
+                                        <div className="grid grid-cols-1 gap-2">
+                                            <SubstanceButton id="painkiller" name="💊 Analgésico" description="↓ Dor, ↓ Inflamação" cooldown={substanceCooldowns['painkiller']} onClick={handleUseSubstance} color="red" />
+                                            <SubstanceButton id="antihistamine" name="💊 Anti-histamínico" description="↓ Alergias, Sonência" cooldown={substanceCooldowns['antihistamine']} onClick={handleUseSubstance} color="purple" />
+                                            <SubstanceButton id="beta_blocker" name="💊 Betabloqueador" description="↓ FC, ↓ PA" cooldown={substanceCooldowns['beta_blocker']} onClick={handleUseSubstance} color="indigo" />
+                                            <SubstanceButton id="aspirin" name="💊 Aspirina" description="↓ Coagulação, ↓ Dor" cooldown={substanceCooldowns['aspirin']} onClick={handleUseSubstance} color="pink" />
+                                        </div>
+                                    </div>
+
+                                    {/* Hormones - Hunger & Thirst */}
+                                    <div className="mb-3">
+                                        <h4 className="text-xs font-semibold text-gray-700 mb-2">🧬 Hormônios de Fome & Sede</h4>
+                                        <div className="grid grid-cols-1 gap-2">
+                                            <SubstanceButton id="ghrelin" name="😋 Grelina" description="↑↑ Sinal de Fome" cooldown={substanceCooldowns['ghrelin']} onClick={handleUseSubstance} color="orange" />
+                                            <SubstanceButton id="leptin" name="🚫 Leptina" description="↓ Fome, Saciedade" cooldown={substanceCooldowns['leptin']} onClick={handleUseSubstance} color="green" />
+                                            <SubstanceButton id="adh" name="💧 ADH" description="↑ Sede, Retenção H₂O" cooldown={substanceCooldowns['adh']} onClick={handleUseSubstance} color="blue" />
+                                            <SubstanceButton id="angiotensin" name="💦 Angiotensina" description="↑ Sede, ↑ PA" cooldown={substanceCooldowns['angiotensin']} onClick={handleUseSubstance} color="cyan" />
+                                        </div>
+                                    </div>
+
+                                    {/* Stress & Relaxation */}
+                                    <div className="mb-3">
+                                        <h4 className="text-xs font-semibold text-gray-700 mb-2">🧘 Estresse & Relaxamento</h4>
+                                        <div className="grid grid-cols-1 gap-2">
+                                            <SubstanceButton id="melatonin" name="🌙 Melatonina" description="↑ Sono, ↓ Energia" cooldown={substanceCooldowns['melatonin']} onClick={handleUseSubstance} color="violet" />
+                                            <SubstanceButton id="magnesium" name="✨ Magnésio" description="↓ Estresse, Relaxamento" cooldown={substanceCooldowns['magnesium']} onClick={handleUseSubstance} color="emerald" />
+                                            <SubstanceButton id="cortisol_blocker" name="🛡️ Bloq. Cortisol" description="↓ Hormônio Estresse" cooldown={substanceCooldowns['cortisol_blocker']} onClick={handleUseSubstance} color="teal" />
+                                            <SubstanceButton id="cbd" name="🌿 CBD" description="↓ Ansiedade, Calma" cooldown={substanceCooldowns['cbd']} onClick={handleUseSubstance} color="lime" />
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            </main>
+
+            {/* Settings Modal */}
+            <SettingsModal
+                isOpen={settingsOpen}
+                onClose={() => setSettingsOpen(false)}
+                showTips={showTips}
+                onToggleTips={setShowTips}
+                pauseOnEvent={pauseOnEvent}
+                onTogglePauseOnEvent={setPauseOnEvent}
+            />
+
+            {/* Organ Detail Modals */}
+            <OrganModals
+                selectedOrgan={selectedOrgan}
+                parameters={parameters}
+                onClose={() => setSelectedOrgan(null)}
+            />
+        </div>
+    );
+}
+
+// Helper component for substance buttons
+function SubstanceButton({ id, name, description, cooldown, onClick, color }: {
+    id: string;
+    name: string;
+    description: string;
+    cooldown: number;
+    onClick: (id: string) => void;
+    color: string;
+}) {
+    const colorClasses = {
+        cyan: 'from-cyan-50 border-cyan-200 hover:border-cyan-400',
+        blue: 'from-blue-50 border-blue-200 hover:border-blue-400',
+        purple: 'from-purple-50 border-purple-200 hover:border-purple-400',
+        red: 'from-red-50 border-red-200 hover:border-red-400',
+        amber: 'from-amber-50 border-amber-200 hover:border-amber-400',
+        yellow: 'from-yellow-50 border-yellow-200 hover:border-yellow-400',
+        orange: 'from-orange-50 border-orange-200 hover:border-orange-400',
+        pink: 'from-pink-50 border-pink-200 hover:border-pink-400',
+        indigo: 'from-indigo-50 border-indigo-200 hover:border-indigo-400',
+        green: 'from-green-50 border-green-200 hover:border-green-400',
+        teal: 'from-teal-50 border-teal-200 hover:border-teal-400',
+        lime: 'from-lime-50 border-lime-200 hover:border-lime-400',
+        emerald: 'from-emerald-50 border-emerald-200 hover:border-emerald-400',
+        violet: 'from-violet-50 border-violet-200 hover:border-violet-400',
+        gray: 'from-gray-50 border-gray-200 hover:border-gray-400',
     };
 
     return (
-        <div className="min-h-screen bg-black text-white overflow-hidden">
-            {/* Scanline Effect */}
-            <div className="fixed inset-0 pointer-events-none bg-gradient-to-b from-transparent via-cyan-500/5 to-transparent opacity-30 animate-pulse"></div>
-
-            {/* Header */}
-            <header className="relative border-b border-cyan-500/50 bg-gradient-to-r from-gray-900/80 via-black/90 to-gray-900/80 backdrop-blur-sm">
-                <div className="absolute inset-0 bg-gradient-to-r from-cyan-500/10 via-purple-500/10 to-cyan-500/10 animate-pulse"></div>
-                <div className="relative px-6 py-4 flex items-center justify-between">
-                    <div className="flex items-center gap-6">
-                        <div className="flex items-center gap-3">
-                            <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-cyan-500 to-purple-600 flex items-center justify-center shadow-lg shadow-cyan-500/50">
-                                <span className="text-2xl">🧬</span>
-                            </div>
-                            <div>
-                                <h1 className="text-2xl font-bold tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-purple-400 to-cyan-400">
-                                    BODY OPS
-                                </h1>
-                                <p className="text-xs text-cyan-500/70 tracking-widest uppercase">
-                                    Sistema de Controle Neurohormonal
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="flex gap-6 items-center">
-                        <div className="flex gap-4">
-                            <div className="text-right border-l-2 border-cyan-500/50 pl-4">
-                                <div className="text-2xl font-bold text-cyan-400 font-mono">
-                                    {Math.floor(parameters.time)}
-                                </div>
-                                <div className="text-[10px] text-gray-500 tracking-widest uppercase">Tempo Missão</div>
-                            </div>
-                            <div className="text-right border-l-2 border-purple-500/50 pl-4">
-                                <div className="text-2xl font-bold text-purple-400">
-                                    {Math.round(parameters.heartRate)}
-                                </div>
-                                <div className="text-[10px] text-gray-500 tracking-widest uppercase">BPM</div>
-                            </div>
-                        </div>
-
-                        <button
-                            onClick={isRunning ? pause : start}
-                            className={`px-6 py-3 rounded-lg font-bold tracking-wider transition-all shadow-lg ${isRunning
-                                ? 'bg-gradient-to-r from-orange-500 to-red-600 hover:shadow-red-500/50 text-white'
-                                : 'bg-gradient-to-r from-cyan-500 to-purple-600 hover:shadow-cyan-500/50 text-white'
-                                }`}
-                        >
-                            {isRunning ? '⏸ PAUSAR' : '▶ INICIAR'}
-                        </button>
-                    </div>
+        <button
+            onClick={() => onClick(id)}
+            disabled={cooldown > 0}
+            className={`w-full text-left p-2 rounded-lg border transition-all ${cooldown > 0
+                ? 'bg-gray-100 border-gray-200 opacity-50 cursor-not-allowed'
+                : `bg-gradient-to-r ${colorClasses[color as keyof typeof colorClasses] || colorClasses.blue} to-white hover:shadow-md`
+                }`}
+        >
+            <div className="text-xs font-semibold text-gray-900">{name}</div>
+            <div className="text-[10px] text-gray-500">{description}</div>
+            {cooldown > 0 && (
+                <div className="text-[9px] text-red-500 mt-1">
+                    ⏱ {cooldown.toFixed(0)}s
                 </div>
-
-                {/* Tabs */}
-                <div className="relative px-6 flex gap-2 border-t border-cyan-500/30">
-                    {[
-                        { id: 'overview', label: '📊 Visão Geral' },
-                        { id: 'organs', label: '🫀 Órgãos' },
-                        { id: 'molecular', label: '🧬 Molecular' },
-                        { id: 'charts', label: '📈 Gráficos' },
-                        { id: 'substances', label: '💊 Substâncias' },
-                    ].map((tab) => (
-                        <button
-                            key={tab.id}
-                            onClick={() => setActiveTab(tab.id as TabType)}
-                            className={`px-6 py-3 font-semibold tracking-wider transition-all border-b-2 ${activeTab === tab.id
-                                ? 'border-cyan-400 text-cyan-400 bg-cyan-500/10'
-                                : 'border-transparent text-gray-500 hover:text-gray-300 hover:bg-gray-800/50'
-                                }`}
-                        >
-                            {tab.label}
-                        </button>
-                    ))}
-                </div>
-            </header>
-
-            {/* Main Content */}
-            <main className="p-6 space-y-6 max-w-[1800px] mx-auto">
-                {/* OVERVIEW TAB */}
-                {activeTab === 'overview' && (
-                    <>
-                        {/* Event Timeline - Frostpunk Style */}
-                        <EventTimeline
-                            events={timelineEvents}
-                            currentTime={currentDayTime}
-                            onEventClick={handleEventClick}
-                        />
-
-                        {/* Vitals Grid - Biomedic Style */}
-                        <div className="grid grid-cols-4 gap-4">
-                            <BiomedicCard
-                                title="Frequência Cardíaca"
-                                value={parameters.heartRate}
-                                unit="BPM"
-                                icon={<Heart className="w-6 h-6" />}
-                                color="text-red-400"
-                                subtitle="Cardiac Output"
-                                warning={parameters.heartRate > 120 || parameters.heartRate < 50}
-                                pulseRate={parameters.heartRate}
-                            />
-                            <BiomedicCard
-                                title="Glicose Sanguínea"
-                                value={parameters.glucose}
-                                unit="mg/dL"
-                                icon={<Droplet className="w-6 h-6" />}
-                                color="text-yellow-400"
-                                subtitle="Blood Glucose"
-                                warning={parameters.glucose < 70 || parameters.glucose > 180}
-                            />
-                            <BiomedicCard
-                                title="Saturação O₂"
-                                value={parameters.bloodOxygen.toFixed(0)}
-                                unit="%"
-                                icon={<Wind className="w-6 h-6" />}
-                                color="text-cyan-400"
-                                subtitle="SpO₂ Level"
-                                warning={parameters.bloodOxygen < 90}
-                                pulseRate={parameters.respiratoryRate}
-                            />
-                            <BiomedicCard
-                                title="Temperatura"
-                                value={parameters.temperature}
-                                unit="°C"
-                                icon={<Thermometer className="w-6 h-6" />}
-                                color="text-orange-400"
-                                subtitle="Core Temp"
-                                warning={parameters.temperature > 38 || parameters.temperature < 36}
-                            />
-                        </div>
-
-                        {/* Main Grid - Personagem + Órgãos */}
-                        <div className="grid grid-cols-2 gap-6">
-                            {/* Anatomia Realista - Sistema Circulatório */}
-                            <div className="bg-gradient-to-br from-gray-900/80 to-black/90 border-2 border-cyan-500/50 rounded-2xl p-6 shadow-2xl shadow-cyan-500/20">
-                                <h3 className="text-cyan-400 font-bold text-lg mb-4 tracking-wider text-center">🫀 SISTEMA CIRCULATÓRIO - ATLAS ANATÔMICO</h3>
-                                <div className="h-[500px] flex items-center justify-center">
-                                    <AnatomicalBody
-                                        venousPerfusion={parameters.heartPerfusion}
-                                        arterialPerfusion={parameters.musclePerfusion}
-                                        heartRate={parameters.heartRate}
-                                        respiratoryRate={parameters.respiratoryRate}
-                                    />
-                                </div>
-                            </div>
-
-                            {/* Painéis de Órgãos à Direita */}
-                            <div className="space-y-4">
-                                {/* Coração Anatômico */}
-                                <div className="bg-gradient-to-br from-red-900/20 to-black border-2 border-red-500/50 rounded-2xl p-4 shadow-xl shadow-red-500/20">
-                                    <h3 className="text-red-400 font-bold text-sm mb-2 tracking-wider">❤️ CORAÇÃO ANATÔMICO</h3>
-                                    <div className="h-[220px]">
-                                        <AnatomicalHeart
-                                            heartRate={parameters.heartRate}
-                                            perfusion={parameters.heartPerfusion}
-                                            bloodOxygen={parameters.bloodOxygen}
-                                        />
-                                    </div>
-                                </div>
-
-                                {/* Pulmões */}
-                                <div className="bg-gradient-to-br from-blue-900/20 to-black border-2 border-blue-500/50 rounded-2xl p-4 shadow-xl shadow-blue-500/20">
-                                    <h3 className="text-blue-400 font-bold text-sm mb-2 tracking-wider">🫁 PULMÕES</h3>
-                                    <div className="h-[160px] flex items-center justify-center">
-                                        <Lungs
-                                            respiratoryRate={parameters.respiratoryRate}
-                                            bloodOxygen={parameters.bloodOxygen}
-                                            tidalVolume={parameters.tidalVolume}
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Circulação Sistêmica */}
-                        <div className="bg-gradient-to-br from-purple-900/20 to-black border-2 border-purple-500/50 rounded-2xl p-4 shadow-xl shadow-purple-500/20">
-                            <h3 className="text-purple-400 font-bold text-sm mb-3 tracking-wider">🔄 CIRCULAÇÃO SISTÊMICA</h3>
-                            <div className="h-[150px]">
-                                <Circulation
-                                    cardiacOutput={parameters.cardiacOutput}
-                                    bloodOxygen={parameters.bloodOxygen}
-                                />
-                            </div>
-                        </div>
-
-                        {/* Painel Hormonal Completo - Biomedic Style */}
-                        <div className="bg-gradient-to-br from-purple-900/20 to-black border-2 border-purple-500/50 rounded-2xl p-6 shadow-xl shadow-purple-500/20">
-                            <h3 className="text-purple-400 font-bold text-lg mb-4 tracking-wider flex items-center gap-2">
-                                <Activity className="w-6 h-6" /> PAINEL NEURO-HORMONAL
-                            </h3>
-                            <div className="grid grid-cols-5 gap-3">
-                                {/* Hormônios de Estresse */}
-                                <BiomedicCard
-                                    title="Adrenalina"
-                                    value={parameters.adrenaline.toFixed(0)}
-                                    unit="pg/mL"
-                                    icon={<Zap className="w-5 h-5" />}
-                                    color="text-red-400"
-                                    subtitle="Epinephrine"
-                                    warning={parameters.adrenaline > 70}
-                                />
-                                <BiomedicCard
-                                    title="Cortisol"
-                                    value={parameters.cortisol.toFixed(0)}
-                                    unit="mcg/dL"
-                                    icon={<Activity className="w-5 h-5" />}
-                                    color="text-purple-400"
-                                    subtitle="Stress Hormone"
-                                    warning={parameters.cortisol > 60}
-                                />
-
-                                {/* Hormônios Metabólicos */}
-                                <BiomedicCard
-                                    title="Insulina"
-                                    value={parameters.insulin.toFixed(0)}
-                                    unit="μIU/mL"
-                                    icon={<Droplet className="w-5 h-5" />}
-                                    color="text-blue-300"
-                                    subtitle="Glucose Control"
-                                />
-                                <BiomedicCard
-                                    title="Glucagon"
-                                    value={parameters.glucagon.toFixed(0)}
-                                    unit="pg/mL"
-                                    icon={<ArrowUp className="w-5 h-5" />}
-                                    color="text-yellow-300"
-                                    subtitle="Glycogenolysis"
-                                />
-                                <BiomedicCard
-                                    title="Tireoide"
-                                    value={parameters.thyroid.toFixed(0)}
-                                    unit="μg/dL"
-                                    icon={<Flame className="w-5 h-5" />}
-                                    color="text-orange-400"
-                                    subtitle="T3/T4"
-                                />
-
-                                {/* Hormônios Anabólicos */}
-                                <BiomedicCard
-                                    title="Testosterona"
-                                    value={parameters.testosterone.toFixed(0)}
-                                    unit="ng/dL"
-                                    icon={<Dna className="w-5 h-5" />}
-                                    color="text-cyan-400"
-                                    subtitle="Anabolic"
-                                />
-                                <BiomedicCard
-                                    title="GH"
-                                    value={parameters.growthHormone.toFixed(0)}
-                                    unit="ng/mL"
-                                    icon={<ArrowUp className="w-5 h-5" />}
-                                    color="text-green-400"
-                                    subtitle="Somatotropin"
-                                />
-
-                                {/* Neurotransmissores */}
-                                <BiomedicCard
-                                    title="Dopamina"
-                                    value={parameters.dopamine.toFixed(0)}
-                                    unit="pg/mL"
-                                    icon={<Target className="w-5 h-5" />}
-                                    color="text-pink-400"
-                                    subtitle="Reward System"
-                                />
-                                <BiomedicCard
-                                    title="Serotonina"
-                                    value={parameters.serotonin.toFixed(0)}
-                                    unit="ng/mL"
-                                    icon={<Smile className="w-5 h-5" />}
-                                    color="text-indigo-400"
-                                    subtitle="5-HT"
-                                />
-
-                                {/* Hormônio Circadiano */}
-                                <BiomedicCard
-                                    title="Melatonina"
-                                    value={parameters.melatonin.toFixed(0)}
-                                    unit="pg/mL"
-                                    icon={<Moon className="w-5 h-5" />}
-                                    color="text-purple-300"
-                                    subtitle="Sleep Hormone"
-                                />
-                            </div>
-                        </div>                        {/* Electrolytes */}
-                        <div className="grid grid-cols-5 gap-3">
-                            <ParameterCard
-                                title="Sódio"
-                                value={parameters.sodium.toFixed(0)}
-                                unit="mmol/L"
-                                color="text-yellow-300"
-                                warning={parameters.sodium > 145 || parameters.sodium < 135}
-                            />
-                            <ParameterCard
-                                title="Potássio"
-                                value={parameters.potassium.toFixed(1)}
-                                unit="mmol/L"
-                                color="text-orange-300"
-                                warning={parameters.potassium > 5.0 || parameters.potassium < 3.5}
-                            />
-                            <ParameterCard
-                                title="Cálcio"
-                                value={parameters.calcium.toFixed(1)}
-                                unit="mmol/L"
-                                color="text-green-300"
-                            />
-                            <ParameterCard
-                                title="pH"
-                                value={parameters.pH.toFixed(2)}
-                                unit=""
-                                color="text-cyan-300"
-                                warning={parameters.pH < 7.35 || parameters.pH > 7.45}
-                            />
-                        </div>
-                    </>
-                )}
-
-                {/* ORGANS TAB */}
-                {activeTab === 'organs' && (
-                    <div className="grid grid-cols-2 gap-6">
-                        <div
-                            className="bg-gradient-to-br from-orange-900/20 to-black border-2 border-orange-500/50 rounded-2xl p-6 cursor-pointer hover:scale-105 transition-transform shadow-xl shadow-orange-500/20"
-                            onClick={() => setSelectedOrgan('liver')}
-                        >
-                            <h3 className="text-orange-400 font-bold text-xl mb-4 tracking-wider">🫀 FÍGADO</h3>
-                            <LiverTissue
-                                perfusion={parameters.organsPerfusion}
-                                glucose={parameters.glucose}
-                                detoxification={100 - parameters.stress}
-                            />
-                            <div className="mt-4 grid grid-cols-3 gap-2">
-                                <div className="bg-black/50 rounded p-2">
-                                    <div className="text-orange-300 text-xs">Perfusão</div>
-                                    <div className="text-white font-bold">{parameters.organsPerfusion.toFixed(0)}%</div>
-                                </div>
-                                <div className="bg-black/50 rounded p-2">
-                                    <div className="text-yellow-300 text-xs">Glicose</div>
-                                    <div className="text-white font-bold">{parameters.glucose.toFixed(0)}</div>
-                                </div>
-                                <div className="bg-black/50 rounded p-2">
-                                    <div className="text-green-300 text-xs">Detox</div>
-                                    <div className="text-white font-bold">{(100 - parameters.stress).toFixed(0)}%</div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div
-                            className="bg-gradient-to-br from-purple-900/20 to-black border-2 border-purple-500/50 rounded-2xl p-6 cursor-pointer hover:scale-105 transition-transform shadow-xl shadow-purple-500/20"
-                            onClick={() => setSelectedOrgan('kidney')}
-                        >
-                            <h3 className="text-purple-400 font-bold text-xl mb-4 tracking-wider">🫘 RINS</h3>
-                            <KidneyNephrons
-                                perfusion={parameters.organsPerfusion}
-                                osmolarity={parameters.osmolarity}
-                                filtrationRate={parameters.organsPerfusion}
-                            />
-                            <div className="mt-4 grid grid-cols-3 gap-2">
-                                <div className="bg-black/50 rounded p-2">
-                                    <div className="text-purple-300 text-xs">Perfusão</div>
-                                    <div className="text-white font-bold">{parameters.organsPerfusion.toFixed(0)}%</div>
-                                </div>
-                                <div className="bg-black/50 rounded p-2">
-                                    <div className="text-blue-300 text-xs">Osmolaridade</div>
-                                    <div className="text-white font-bold">{parameters.osmolarity.toFixed(0)}</div>
-                                </div>
-                                <div className="bg-black/50 rounded p-2">
-                                    <div className="text-cyan-300 text-xs">Taxa Filtração</div>
-                                    <div className="text-white font-bold">{parameters.organsPerfusion.toFixed(0)}%</div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div
-                            className="bg-gradient-to-br from-red-900/20 to-black border-2 border-red-500/50 rounded-2xl p-6 cursor-pointer hover:scale-105 transition-transform shadow-xl shadow-red-500/20"
-                            onClick={() => setSelectedOrgan('muscle')}
-                        >
-                            <h3 className="text-red-400 font-bold text-xl mb-4 tracking-wider">💪 MÚSCULOS</h3>
-                            <MuscleFibers
-                                perfusion={parameters.musclePerfusion}
-                                vo2Max={parameters.vo2Max}
-                                lactate={parameters.lactate}
-                                contractionRate={parameters.heartRate / 60}
-                            />
-                            <div className="mt-4 grid grid-cols-3 gap-2">
-                                <div className="bg-black/50 rounded p-2">
-                                    <div className="text-red-300 text-xs">Perfusão</div>
-                                    <div className="text-white font-bold">{parameters.musclePerfusion.toFixed(0)}%</div>
-                                </div>
-                                <div className="bg-black/50 rounded p-2">
-                                    <div className="text-cyan-300 text-xs">VO₂ Max</div>
-                                    <div className="text-white font-bold">{parameters.vo2Max.toFixed(0)}</div>
-                                </div>
-                                <div className="bg-black/50 rounded p-2">
-                                    <div className="text-orange-300 text-xs">Lactato</div>
-                                    <div className="text-white font-bold">{parameters.lactate.toFixed(1)}</div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div
-                            className="bg-gradient-to-br from-blue-900/20 to-black border-2 border-blue-500/50 rounded-2xl p-6 cursor-pointer hover:scale-105 transition-transform shadow-xl shadow-blue-500/20"
-                            onClick={() => setSelectedOrgan('neuron')}
-                        >
-                            <h3 className="text-blue-400 font-bold text-xl mb-4 tracking-wider">🧠 NEURÔNIOS</h3>
-                            <NeuronNetwork
-                                brainPerfusion={parameters.brainPerfusion}
-                                glucose={parameters.glucose}
-                                neurotransmitters={100 - parameters.stress}
-                            />
-                            <div className="mt-4 grid grid-cols-3 gap-2">
-                                <div className="bg-black/50 rounded p-2">
-                                    <div className="text-blue-300 text-xs">Perfusão Cerebral</div>
-                                    <div className="text-white font-bold">{parameters.brainPerfusion.toFixed(0)}%</div>
-                                </div>
-                                <div className="bg-black/50 rounded p-2">
-                                    <div className="text-yellow-300 text-xs">Glicose</div>
-                                    <div className="text-white font-bold">{parameters.glucose.toFixed(0)}</div>
-                                </div>
-                                <div className="bg-black/50 rounded p-2">
-                                    <div className="text-purple-300 text-xs">Neurotransmissores</div>
-                                    <div className="text-white font-bold">{(100 - parameters.stress).toFixed(0)}%</div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                {/* MOLECULAR TAB */}
-                {activeTab === 'molecular' && (
-                    <div className="space-y-6">
-                        {/* Animated Molecular Pathways - GSAP Enhanced */}
-                        <div className="grid grid-cols-2 gap-6">
-                            <MolecularPathway
-                                pathwayName="AMPK"
-                                activity={parameters.ampk}
-                                color="cyan"
-                                nodes={[
-                                    { id: 'amp', label: 'AMP/ATP', active: parameters.ampk > 50, position: { x: 40, y: 100 } },
-                                    { id: 'lkb1', label: 'LKB1', active: parameters.ampk > 60, position: { x: 120, y: 80 } },
-                                    { id: 'ampk', label: 'AMPK', active: parameters.ampk > 70, position: { x: 200, y: 100 } },
-                                    { id: 'ppar', label: 'PPARα', active: parameters.ampk > 80, position: { x: 280, y: 80 } },
-                                    { id: 'pgc1', label: 'PGC-1α', active: parameters.ampk > 85, position: { x: 360, y: 100 } },
-                                ]}
-                            />
-                            <MolecularPathway
-                                pathwayName="mTOR"
-                                activity={parameters.mtor}
-                                color="purple"
-                                nodes={[
-                                    { id: 'insulin', label: 'Insulin', active: parameters.mtor > 50, position: { x: 40, y: 100 } },
-                                    { id: 'pi3k', label: 'PI3K', active: parameters.mtor > 60, position: { x: 120, y: 80 } },
-                                    { id: 'akt', label: 'AKT', active: parameters.mtor > 70, position: { x: 200, y: 100 } },
-                                    { id: 'mtor', label: 'mTOR', active: parameters.mtor > 80, position: { x: 280, y: 80 } },
-                                    { id: 's6k', label: 'S6K', active: parameters.mtor > 85, position: { x: 360, y: 100 } },
-                                ]}
-                            />
-                        </div>
-
-                        <MolecularPathways
-                            nrf2={parameters.nrf2}
-                            mtor={parameters.mtor}
-                            ampk={parameters.ampk}
-                            nfkb={parameters.nfkb}
-                        />
-
-                        <div className="grid grid-cols-2 gap-6">
-                            <div className="bg-gradient-to-br from-green-900/20 to-black border-2 border-green-500/50 rounded-2xl p-6">
-                                <h3 className="text-green-400 font-bold text-xl mb-4">🛡️ Nrf2 - Proteção Antioxidante</h3>
-                                <p className="text-gray-400 text-sm mb-4">
-                                    Via de sinalização que responde ao estresse oxidativo, ativando genes de proteção celular e detoxificação.
-                                </p>
-                                <div className="space-y-2">
-                                    <div className="flex justify-between text-sm">
-                                        <span className="text-gray-400">Ativação Atual:</span>
-                                        <span className="text-green-400 font-bold">{parameters.nrf2.toFixed(0)}%</span>
-                                    </div>
-                                    <div className="w-full bg-black/50 rounded-full h-3">
-                                        <div
-                                            className="bg-gradient-to-r from-green-500 to-green-300 h-3 rounded-full transition-all duration-500"
-                                            style={{ width: `${parameters.nrf2}%` }}
-                                        ></div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="bg-gradient-to-br from-blue-900/20 to-black border-2 border-blue-500/50 rounded-2xl p-6">
-                                <h3 className="text-blue-400 font-bold text-xl mb-4">🔧 mTOR - Crescimento Celular</h3>
-                                <p className="text-gray-400 text-sm mb-4">
-                                    Regula crescimento, síntese proteica e metabolismo. Ativado por nutrientes e insulina.
-                                </p>
-                                <div className="space-y-2">
-                                    <div className="flex justify-between text-sm">
-                                        <span className="text-gray-400">Ativação Atual:</span>
-                                        <span className="text-blue-400 font-bold">{parameters.mtor.toFixed(0)}%</span>
-                                    </div>
-                                    <div className="w-full bg-black/50 rounded-full h-3">
-                                        <div
-                                            className="bg-gradient-to-r from-blue-500 to-blue-300 h-3 rounded-full transition-all duration-500"
-                                            style={{ width: `${parameters.mtor}%` }}
-                                        ></div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="bg-gradient-to-br from-yellow-900/20 to-black border-2 border-yellow-500/50 rounded-2xl p-6">
-                                <h3 className="text-yellow-400 font-bold text-xl mb-4">⚡ AMPK - Sensor de Energia</h3>
-                                <p className="text-gray-400 text-sm mb-4">
-                                    Ativado quando energia celular está baixa. Promove catabolismo e oxidação de gorduras.
-                                </p>
-                                <div className="space-y-2">
-                                    <div className="flex justify-between text-sm">
-                                        <span className="text-gray-400">Ativação Atual:</span>
-                                        <span className="text-yellow-400 font-bold">{parameters.ampk.toFixed(0)}%</span>
-                                    </div>
-                                    <div className="w-full bg-black/50 rounded-full h-3">
-                                        <div
-                                            className="bg-gradient-to-r from-yellow-500 to-yellow-300 h-3 rounded-full transition-all duration-500"
-                                            style={{ width: `${parameters.ampk}%` }}
-                                        ></div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="bg-gradient-to-br from-red-900/20 to-black border-2 border-red-500/50 rounded-2xl p-6">
-                                <h3 className="text-red-400 font-bold text-xl mb-4">🔥 NF-κB - Inflamação</h3>
-                                <p className="text-gray-400 text-sm mb-4">
-                                    Via de resposta inflamatória. Ativado por estresse, dano tecidual e lactato elevado.
-                                </p>
-                                <div className="space-y-2">
-                                    <div className="flex justify-between text-sm">
-                                        <span className="text-gray-400">Ativação Atual:</span>
-                                        <span className="text-red-400 font-bold">{parameters.nfkb.toFixed(0)}%</span>
-                                    </div>
-                                    <div className="w-full bg-black/50 rounded-full h-3">
-                                        <div
-                                            className="bg-gradient-to-r from-red-500 to-red-300 h-3 rounded-full transition-all duration-500"
-                                            style={{ width: `${parameters.nfkb}%` }}
-                                        ></div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                {/* CHARTS TAB */}
-                {activeTab === 'charts' && (
-                    <div className="grid grid-cols-2 gap-6">
-                        <RealTimeChart
-                            title="Frequência Cardíaca"
-                            currentValue={parameters.heartRate}
-                            unit="BPM"
-                            color="#EF4444"
-                            min={40}
-                            max={180}
-                        />
-                        <RealTimeChart
-                            title="Saturação de Oxigênio"
-                            currentValue={parameters.bloodOxygen}
-                            unit="%"
-                            color="#06B6D4"
-                            min={70}
-                            max={100}
-                        />
-                        <RealTimeChart
-                            title="Glicose Sanguínea"
-                            currentValue={parameters.glucose}
-                            unit="mg/dL"
-                            color="#FBBF24"
-                            min={40}
-                            max={200}
-                        />
-                        <RealTimeChart
-                            title="Lactato"
-                            currentValue={parameters.lactate}
-                            unit="mmol/L"
-                            color="#F97316"
-                            min={0}
-                            max={5}
-                        />
-                        <RealTimeChart
-                            title="Cortisol"
-                            currentValue={parameters.cortisol}
-                            unit="mcg/dL"
-                            color="#A855F7"
-                            min={0}
-                            max={100}
-                        />
-                        <RealTimeChart
-                            title="pH Sanguíneo"
-                            currentValue={parameters.pH}
-                            unit=""
-                            color="#06B6D4"
-                            min={7.0}
-                            max={7.8}
-                        />
-                    </div>
-                )}
-
-                {/* Actions Panel - Always Visible */}
-                <div className="bg-gradient-to-br from-purple-900/20 to-black border-2 border-purple-500/50 rounded-2xl p-6 shadow-xl shadow-purple-500/20">
-                    <h2 className="text-xl font-bold text-purple-400 mb-4 tracking-wider uppercase border-l-4 border-purple-500 pl-3">
-                        🎮 Centro de Comando Neural
-                    </h2>
-                    <div className="grid grid-cols-3 gap-4">
-                        {Object.values(ACTIONS).map((action) => (
-                            <ActionButton
-                                key={action.id}
-                                label={action.name}
-                                description={action.description}
-                                onClick={() => applyAction(action)}
-                                cooldown={getCooldownTime(action.id)}
-                                maxCooldown={action.cooldown}
-                                cost={action.cost}
-                            />
-                        ))}
-                    </div>
-                </div>
-
-                {/* Active Events */}
-                {activeEvents.length > 0 && (
-                    <div className="bg-gradient-to-br from-yellow-900/20 to-black border-2 border-yellow-500/50 rounded-2xl p-6 shadow-xl shadow-yellow-500/20">
-                        <h3 className="text-lg font-bold text-yellow-400 mb-4 tracking-wider uppercase border-l-4 border-yellow-500 pl-3">
-                            ⚠️ Eventos Fisiológicos Ativos
-                        </h3>
-                        <div className="space-y-3">
-                            {activeEvents.map((ae: any, i: number) => (
-                                <div
-                                    key={i}
-                                    className="flex justify-between items-center bg-black/50 p-4 rounded-lg border border-yellow-500/30"
-                                >
-                                    <div>
-                                        <div className="text-white font-semibold">{ae.event.title}</div>
-                                        <div className="text-sm text-gray-400">{ae.event.description}</div>
-                                    </div>
-                                    <div className="text-yellow-400 font-mono text-xl font-bold">
-                                        {Math.ceil(ae.remainingTime)}s
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                )}
-
-                {/* SUBSTANCES TAB */}
-                {activeTab === 'substances' && (
-                    <div className="space-y-6">
-                        <div className="bg-gradient-to-br from-red-900/30 to-black border-2 border-red-500/50 rounded-2xl p-6 shadow-xl">
-                            <div className="flex items-center gap-4 mb-4">
-                                <div className="text-4xl">⚠️</div>
-                                <div>
-                                    <h3 className="text-red-400 font-bold text-xl tracking-wider">
-                                        PAINEL DE SUBSTÂNCIAS
-                                    </h3>
-                                    <p className="text-gray-400 text-sm mt-1">
-                                        Medicamentos, suplementos e substâncias controladas. Use com responsabilidade.
-                                    </p>
-                                </div>
-                            </div>
-                            <div className="grid grid-cols-3 gap-4 text-sm">
-                                <div className="bg-cyan-500/10 border border-cyan-500/30 rounded-lg p-3">
-                                    <div className="text-cyan-400 font-bold mb-1">💊 Medicamentos</div>
-                                    <div className="text-gray-400 text-xs">Aprovados pela ANVISA</div>
-                                </div>
-                                <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-3">
-                                    <div className="text-green-400 font-bold mb-1">🌟 Suplementos</div>
-                                    <div className="text-gray-400 text-xs">Vitaminas e aminoácidos</div>
-                                </div>
-                                <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3">
-                                    <div className="text-red-400 font-bold mb-1">⚠️ Substâncias Ilícitas</div>
-                                    <div className="text-gray-400 text-xs">Alto risco - Apenas educacional</div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <SubstancePanel
-                            onUseSubstance={handleUseSubstance}
-                            cooldowns={substanceCooldowns}
-                        />
-                    </div>
-                )}
-            </main>
-
-            {/* Notifications */}
-            <div className="fixed top-24 right-6 space-y-3 z-50 max-w-md">
-                {notifications.slice(-3).map((notification: string, index: number) => (
-                    <EventPopup
-                        key={index}
-                        title="📢 ALERTA DO SISTEMA"
-                        description={notification}
-                        onClose={() => clearNotification(index)}
-                    />
-                ))}
-            </div>
-
-            {/* Detail Modals */}
-            <DetailModal
-                isOpen={selectedOrgan === 'liver'}
-                onClose={() => setSelectedOrgan(null)}
-                title="ANÁLISE DETALHADA - TECIDO HEPÁTICO"
-            >
-                <div className="grid grid-cols-2 gap-6">
-                    <LiverTissue
-                        perfusion={parameters.organsPerfusion}
-                        glucose={parameters.glucose}
-                        detoxification={100 - parameters.stress}
-                    />
-                    <div>
-                        <h4 className="text-orange-400 font-bold mb-4 text-xl">Funções Hepáticas</h4>
-                        <ul className="text-sm text-gray-300 space-y-2">
-                            <li>• Metabolismo e armazenamento de glicose</li>
-                            <li>• Síntese de proteínas plasmáticas</li>
-                            <li>• Detoxificação de toxinas</li>
-                            <li>• Produção de bile</li>
-                            <li>• Armazenamento de vitaminas</li>
-                        </ul>
-                    </div>
-                </div>
-            </DetailModal>
-
-            <DetailModal
-                isOpen={selectedOrgan === 'kidney'}
-                onClose={() => setSelectedOrgan(null)}
-                title="ANÁLISE DETALHADA - NÉFRONS RENAIS"
-            >
-                <div className="grid grid-cols-2 gap-6">
-                    <KidneyNephrons
-                        perfusion={parameters.organsPerfusion}
-                        osmolarity={parameters.osmolarity}
-                        filtrationRate={parameters.organsPerfusion}
-                    />
-                    <div>
-                        <h4 className="text-purple-400 font-bold mb-4 text-xl">Funções Renais</h4>
-                        <ul className="text-sm text-gray-300 space-y-2">
-                            <li>• Filtração sanguínea (TFG)</li>
-                            <li>• Balanço de eletrólitos</li>
-                            <li>• Regulação da osmolaridade</li>
-                            <li>• Equilíbrio ácido-base</li>
-                            <li>• Controle da pressão arterial</li>
-                        </ul>
-                    </div>
-                </div>
-            </DetailModal>
-
-            <DetailModal
-                isOpen={selectedOrgan === 'muscle'}
-                onClose={() => setSelectedOrgan(null)}
-                title="ANÁLISE DETALHADA - FIBRAS MUSCULARES"
-            >
-                <div className="grid grid-cols-2 gap-6">
-                    <MuscleFibers
-                        perfusion={parameters.musclePerfusion}
-                        vo2Max={parameters.vo2Max}
-                        lactate={parameters.lactate}
-                        contractionRate={parameters.heartRate / 60}
-                    />
-                    <div>
-                        <h4 className="text-red-400 font-bold mb-4 text-xl">Fisiologia Muscular</h4>
-                        <ul className="text-sm text-gray-300 space-y-2">
-                            <li>• Fibras Tipo I: Contração lenta, aeróbicas</li>
-                            <li>• Fibras Tipo II: Contração rápida, anaeróbicas</li>
-                            <li>• Densidade mitocondrial</li>
-                            <li>• Limiar de lactato</li>
-                            <li>• Capacidade VO₂ máximo</li>
-                        </ul>
-                    </div>
-                </div>
-            </DetailModal>
-
-            <DetailModal
-                isOpen={selectedOrgan === 'neuron'}
-                onClose={() => setSelectedOrgan(null)}
-                title="ANÁLISE DETALHADA - REDE NEURONAL"
-            >
-                <div className="grid grid-cols-2 gap-6">
-                    <NeuronNetwork
-                        brainPerfusion={parameters.brainPerfusion}
-                        glucose={parameters.glucose}
-                        neurotransmitters={100 - parameters.stress}
-                    />
-                    <div>
-                        <h4 className="text-blue-400 font-bold mb-4 text-xl">Funções Neurais</h4>
-                        <ul className="text-sm text-gray-300 space-y-2">
-                            <li>• Transmissão sináptica</li>
-                            <li>• Liberação de neurotransmissores</li>
-                            <li>• Propagação do potencial de ação</li>
-                            <li>• Neuroplasticidade</li>
-                            <li>• Perfusão cerebral crítica</li>
-                        </ul>
-                    </div>
-                </div>
-            </DetailModal>
-        </div>
+            )}
+        </button>
     );
 }

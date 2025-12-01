@@ -153,8 +153,6 @@ export function MolecularPathway({
                         r="3"
                         fill={`var(--${color}-400)`}
                         filter="url(#glow)"
-                        initial={{ offsetDistance: '0%' }}
-                        animate={{ offsetDistance: '100%' }}
                         transition={{
                             duration: 3,
                             delay: i * 0.6,

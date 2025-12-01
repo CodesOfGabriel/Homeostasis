@@ -10,13 +10,19 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@react-three/drei": "^9.92.0",
+    "@react-three/fiber": "^8.15.0",
+    "@react-three/gltfjsx": "^4.3.4",
     "@types/gsap": "^1.20.2",
+    "@types/three": "^0.160.0",
     "framer-motion": "^10.16.16",
+    "gltf-loader": "^1.0.0",
     "gsap": "^3.13.0",
     "lucide-react": "^0.555.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "rough-notation": "^0.5.1",
+    "three": "^0.160.0",
     "zustand": "^4.4.7"
   },
   "devDependencies": {

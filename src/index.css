@@ -32,3 +32,19 @@ body {
     @apply bg-neuro-dark text-white;
   }
 }
+
+/* Idle Game Animations */
+@keyframes float-up {
+  0% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-100px);
+  }
+}
+
+.animate-float-up {
+  animation: float-up 1s ease-out forwards;
+}

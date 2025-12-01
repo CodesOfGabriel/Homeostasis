@@ -143,19 +143,20 @@ export function NeuronNetwork({
                         key={i}
                         r="2"
                         fill="#FFD700"
-                        animate={{
-                            offsetDistance: ['0%', '100%'],
-                        }}
                         transition={{
                             duration: 1.5,
                             repeat: Infinity,
                             delay: i * 0.3,
                             ease: 'linear',
                         }}
-                        style={{
-                            offsetPath: 'path("M62 50 L88 80")',
-                        }}
-                    />
+                    >
+                        <animateMotion
+                            dur="1.5s"
+                            repeatCount="indefinite"
+                            begin={`${i * 0.3}s`}
+                            path="M62 50 L88 80"
+                        />
+                    </motion.circle>
                 ))}
 
                 {/* Myelin sheath indicator */}

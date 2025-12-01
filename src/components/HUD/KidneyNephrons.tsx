@@ -101,18 +101,18 @@ export function KidneyNephrons({
                 <motion.circle
                     r="3"
                     fill="#FFD700"
-                    animate={{
-                        offsetDistance: ['0%', '100%'],
-                    }}
                     transition={{
                         duration: 2 / (filtrationRate / 50),
                         repeat: Infinity,
                         ease: 'linear',
                     }}
-                    style={{
-                        offsetPath: 'path("M130 50 L180 80")',
-                    }}
-                />
+                >
+                    <animateMotion
+                        dur={`${2 / (filtrationRate / 50)}s`}
+                        repeatCount="indefinite"
+                        path="M130 50 L180 80"
+                    />
+                </motion.circle>
             </svg>
 
             {/* Stats */}

@@ -80,18 +80,20 @@ export function Circulation({
             key={`artery-${i}`}
             r="4"
             fill={bloodColor}
-            initial={{ offsetDistance: '0%' }}
-            animate={{ offsetDistance: '100%' }}
             transition={{
               duration: flowDuration,
               repeat: Infinity,
               delay: i * (flowDuration / particles.length),
               ease: 'linear',
             }}
-            style={{
-              offsetPath: 'path("M150 50 Q100 150 120 250 L120 380")',
-            }}
-          />
+          >
+            <animateMotion
+              dur={`${flowDuration}s`}
+              repeatCount="indefinite"
+              begin={`${i * (flowDuration / particles.length)}s`}
+              path="M150 50 Q100 150 120 250 L120 380"
+            />
+          </motion.circle>
         ))}
 
         {/* Blood particles flowing through veins */}
@@ -100,28 +102,30 @@ export function Circulation({
             key={`vein-${i}`}
             r="4"
             fill="#3b82f6"
-            initial={{ offsetDistance: '0%' }}
-            animate={{ offsetDistance: '100%' }}
             transition={{
               duration: flowDuration * 1.2,
               repeat: Infinity,
               delay: i * (flowDuration / particles.length),
               ease: 'linear',
             }}
-            style={{
-              offsetPath: 'path("M150 380 Q200 250 180 150 L180 50")',
-            }}
-          />
+          >
+            <animateMotion
+              dur={`${flowDuration * 1.2}s`}
+              repeatCount="indefinite"
+              begin={`${i * (flowDuration / particles.length)}s`}
+              path="M150 380 Q200 250 180 150 L180 50"
+            />
+          </motion.circle>
         ))}
       </svg>
 
       {/* CO display */}
-      <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 text-center">
+      < div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 text-center" >
         <div className="text-lg font-bold text-cyan-400">
           {cardiacOutput.toFixed(1)} L/min
         </div>
         <div className="text-xs text-gray-400">Cardiac Output</div>
       </div>
-    </div>
+    </div >
   );
 }
