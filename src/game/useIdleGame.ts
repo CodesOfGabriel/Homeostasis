@@ -12,6 +12,7 @@ import {
     calculatePrestigeReward
 } from './idleSystem';
 import { Achievement, ACHIEVEMENTS, checkAchievements } from './achievements';
+import { useSimulationStore } from './simulationStore';
 
 const SAVE_KEY = 'homeostasis_idle_save';
 const ACHIEVEMENTS_SAVE_KEY = 'homeostasis_achievements_save';
@@ -23,12 +24,20 @@ interface IdleGameHookOptions {
 
 export function useIdleGame(options: IdleGameHookOptions = {}) {
     const { isRunning = true, timeSpeed = 1 } = options;
+    const physiology = useSimulationStore(state => state.parameters);
     const [gameState, setGameState] = useState<GameState>(() => {
         // Try to load from localStorage
         const saved = localStorage.getItem(SAVE_KEY);
         if (saved) {
             try {
                 const parsed = JSON.parse(saved) as GameState;
+
+                // Add default values for new Phase 2 fields (backward compatibility)
+                if (parsed.homeostasisPoints === undefined) parsed.homeostasisPoints = 0;
+                if (parsed.totalHomeostasisPointsEarned === undefined) parsed.totalHomeostasisPointsEarned = 0;
+                if (parsed.currentHomeostasisRate === undefined) parsed.currentHomeostasisRate = 0;
+                if (parsed.longestHomeostasisStreak === undefined) parsed.longestHomeostasisStreak = 0;
+
                 // Process offline earnings
                 const offlineEarnings = processOfflineEarnings(parsed);
                 if (offlineEarnings > 0) {
@@ -111,10 +120,10 @@ export function useIdleGame(options: IdleGameHookOptions = {}) {
             setTimeout(() => {
                 setNewAchievementUnlocks([]);
             }, 5000);
-        } else {
+        } else if (JSON.stringify(updatedAchievements) !== JSON.stringify(achievements)) {
             setAchievements(updatedAchievements);
         }
-    }, [gameState.totalATPEarned, gameState.prestige.level, gameState.atpPerSecond, achievements]);
+    }, [gameState.totalATPEarned, gameState.prestige.level, gameState.atpPerSecond]);
 
     // Show offline popup if there was offline time
     useEffect(() => {
@@ -129,6 +138,7 @@ export function useIdleGame(options: IdleGameHookOptions = {}) {
         if (!isRunning) return; // Pausa quando a simulação está pausada
 
         let lastTick = Date.now();
+        let homeostasisStreakTime = 0;
 
         const gameLoop = () => {
             const now = Date.now();
@@ -147,11 +157,39 @@ export function useIdleGame(options: IdleGameHookOptions = {}) {
                     hormonesGained = (hormonesPerMinute / 60) * deltaTime;
                 }
 
+                // PHASE 2.5: HOMEOSTASIS POINTS GENERATION
+                let homeostasisPointsGain = 0;
+                let newHomeostasisRate = 0;
+                let newLongestStreak = prev.longestHomeostasisStreak;
+
+                // Get REAL physiology data from simulation store
+                const currentHomeostasisScore = physiology.homeostasisScore || 75;
+                const currentAllostaticLoad = physiology.allostaticLoad || 20;
+
+                // Generate HP only when in good homeostasis (score > 70, load < 30)
+                if (currentHomeostasisScore > 70 && currentAllostaticLoad < 30) {
+                    homeostasisPointsGain = (currentHomeostasisScore / 100) * deltaTime;
+                    newHomeostasisRate = currentHomeostasisScore / 100;
+
+                    // Track streak
+                    homeostasisStreakTime += deltaTime;
+                    if (homeostasisStreakTime > newLongestStreak) {
+                        newLongestStreak = homeostasisStreakTime;
+                    }
+                } else {
+                    homeostasisStreakTime = 0; // Reset streak
+                    newHomeostasisRate = 0;
+                }
+
                 return {
                     ...prev,
                     atp: prev.atp + atpGained,
                     hormones: prev.hormones + hormonesGained,
+                    homeostasisPoints: prev.homeostasisPoints + homeostasisPointsGain,
                     totalATPEarned: prev.totalATPEarned + atpGained,
+                    totalHomeostasisPointsEarned: prev.totalHomeostasisPointsEarned + homeostasisPointsGain,
+                    currentHomeostasisRate: newHomeostasisRate,
+                    longestHomeostasisStreak: newLongestStreak,
                     atpPerSecond,
                     lastUpdate: now
                 };

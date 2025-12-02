@@ -313,6 +313,105 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
     params.ampk = Math.max(0, Math.min(100, params.ampk));
     params.nfkb = Math.max(0, Math.min(100, params.nfkb));
 
+    // === PHASE 2: NEW ATP BALANCE SYSTEM ===
+    // Calculate ATP production and consumption with new physiology model
+
+    // 1. CALCULATE ATP PRODUCTION (mmol/s)
+    const baseProduction = 50; // mmol/s base
+    const glucoseModifier = params.glucose / 90; // glicose normal = 1.0
+    const oxygenModifier = params.bloodOxygen / 98; // O2 normal = 1.0
+    const thyroidModifier = params.thyroid / 60; // tireoide normal = 1.0
+
+    params.atpProduction = baseProduction * glucoseModifier * oxygenModifier * thyroidModifier;
+    params.atpProduction = Math.max(5, Math.min(200, params.atpProduction));
+
+    // 2. CALCULATE ATP CONSUMPTION (mmol/s)
+    // Base consumption from basal metabolic rate
+    const basalConsumption = 45; // mmol/s at rest
+    const activityMultiplier = 1 + (params.heartRate - 70) / 130; // mais atividade = mais consumo
+
+    params.atpConsumption = basalConsumption * activityMultiplier;
+    params.atpConsumption = Math.max(30, Math.min(150, params.atpConsumption));
+
+    // 3. CALCULATE ATP BALANCE
+    params.atpBalance = params.atpProduction - params.atpConsumption;
+
+    // 4. MANAGE ENERGY STORES (BIOMASS CONVERSION)
+    const atpDelta = params.atpBalance * adjustedTickInterval;
+
+    if (atpDelta > 0) {
+      // SURPLUS: Convert excess ATP to biomass
+      const excessATP = atpDelta;
+
+      // Prioritize glycogen (up to 600g max)
+      if (params.glycogen < 600) {
+        const glycogenIncrease = Math.min(excessATP * 0.1, 600 - params.glycogen);
+        params.glycogen += glycogenIncrease;
+      } else {
+        // Glycogen full -> store as fat (less efficient)
+        const fatIncrease = excessATP * 0.05;
+        params.adiposeTissue += fatIncrease / 1000; // g to kg
+      }
+    } else if (atpDelta < 0) {
+      // DEFICIT: Break down reserves to compensate
+      const deficit = Math.abs(atpDelta);
+
+      // Prioritize glycogen first
+      if (params.glycogen > 0) {
+        const glycogenDecrease = Math.min(deficit * 0.1, params.glycogen);
+        params.glycogen -= glycogenDecrease;
+      } else if (params.adiposeTissue > 5) {
+        // Then fat (slower mobilization)
+        const fatDecrease = deficit * 0.03;
+        params.adiposeTissue -= fatDecrease / 1000;
+      } else {
+        // CRITICAL: No reserves left -> track organ damage
+        // This will be expanded in Phase 2.3
+        params.allostaticLoad += deficit * 0.5;
+      }
+    }
+
+    // Clamp biomass reserves
+    params.glycogen = Math.max(0, Math.min(600, params.glycogen));
+    params.adiposeTissue = Math.max(5, Math.min(50, params.adiposeTissue));
+
+    // 5. CALCULATE HOMEOSTASIS SCORE (0-100)
+    let homeostasisScore = 100;
+
+    // Penalize deviations from ideal ranges
+    const deviations = [
+      Math.abs(params.heartRate - 70) / 130,
+      Math.abs(params.respiratoryRate - 14) / 26,
+      Math.abs(params.glucose - 90) / 90,
+      Math.abs(params.temperature - 36.8) / 5.2,
+      Math.abs(params.pH - 7.4) / 0.4,
+      Math.abs(params.bloodOxygen - 98) / 28,
+    ];
+
+    deviations.forEach(deviation => {
+      homeostasisScore -= deviation * 20;
+    });
+
+    params.homeostasisScore = Math.max(0, Math.min(100, homeostasisScore));
+
+    // 6. UPDATE ALLOSTATIC LOAD (chronic stress accumulation)
+    let allostaticLoadIncrease = 0;
+
+    if (params.cortisol > 60) allostaticLoadIncrease += (params.cortisol - 60) * 0.01;
+    if (params.glucose > 140) allostaticLoadIncrease += (params.glucose - 140) * 0.002;
+    if (params.bloodOxygen < 90) allostaticLoadIncrease += (90 - params.bloodOxygen) * 0.05;
+    if (params.temperature > 37.5) allostaticLoadIncrease += (params.temperature - 37.5) * 0.2;
+    if (params.stress > 50) allostaticLoadIncrease += (params.stress - 50) * 0.01;
+
+    params.allostaticLoad += allostaticLoadIncrease * adjustedTickInterval;
+
+    // Natural recovery (sleep, rest reduces load)
+    if (params.stress < 30 && params.homeostasisScore > 70) {
+      params.allostaticLoad -= 0.1 * adjustedTickInterval;
+    }
+
+    params.allostaticLoad = Math.max(0, Math.min(100, params.allostaticLoad));
+
     set({
       parameters: params,
       activeEvents: updatedEvents,

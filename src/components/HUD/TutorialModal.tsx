@@ -33,13 +33,23 @@ export function TutorialModal({ onClose }: TutorialModalProps) {
             icon: '💵',
             content: (
                 <div className="space-y-3">
+                    <div className="bg-gradient-to-r from-green-600/20 to-emerald-800/20 border border-green-500/50 rounded-lg p-4">
+                        <div className="flex items-center gap-2 mb-2">
+                            <span className="text-2xl">⚖️</span>
+                            <h4 className="font-bold text-green-400">Pontos de Homeostase (NOVO!)</h4>
+                        </div>
+                        <p className="text-sm text-gray-300">
+                            <strong>Moeda PRINCIPAL do jogo!</strong> Gerada automaticamente quando você mantém o corpo em equilíbrio.
+                            Homeostase {'>'} 70 e Carga Alostática {'<'} 30 = Ganhe HP/s!
+                        </p>
+                    </div>
                     <div className="bg-gradient-to-r from-yellow-600/20 to-yellow-800/20 border border-yellow-500/50 rounded-lg p-4">
                         <div className="flex items-center gap-2 mb-2">
                             <Zap className="text-yellow-400" size={24} />
                             <h4 className="font-bold text-yellow-400">ATP (Adenosina Trifosfato)</h4>
                         </div>
                         <p className="text-sm text-gray-300">
-                            Moeda principal gerada pelos órgãos. Use para desbloquear e melhorar órgãos,
+                            Moeda gerada pelos órgãos. Use para desbloquear e melhorar órgãos,
                             comprar upgrades metabólicos.
                         </p>
                     </div>
@@ -100,6 +110,49 @@ export function TutorialModal({ onClose }: TutorialModalProps) {
                         <p className="text-xs text-gray-300">
                             <span className="font-bold text-green-400">💡 Dica:</span> Clique nos órgãos para ver detalhes!
                             Melhorar aumenta produção em ~5% por nível. Custos crescem exponencialmente (×1.15).
+                        </p>
+                    </div>
+                </div>
+            )
+        },
+        {
+            title: 'Sistema de Homeostase ⚖️ (NOVO!)',
+            icon: '⚖️',
+            content: (
+                <div className="space-y-4">
+                    <div className="bg-green-600/20 border border-green-500/50 rounded-lg p-4">
+                        <h4 className="font-bold text-green-400 mb-2">📊 Score de Homeostase (0-100)</h4>
+                        <p className="text-sm text-gray-300 mb-3">
+                            Mede o quão bem seu corpo está equilibrado. Quanto mais próximo dos valores ideais,
+                            maior o score!
+                        </p>
+                        <div className="text-xs space-y-1 text-gray-400">
+                            <div>✓ Frequência Cardíaca: ~70 bpm</div>
+                            <div>✓ Respiração: ~14 rpm</div>
+                            <div>✓ Glicose: ~90 mg/dL</div>
+                            <div>✓ Temperatura: ~36.8°C</div>
+                            <div>✓ pH: ~7.4</div>
+                            <div>✓ Oxigênio: ~98%</div>
+                        </div>
+                    </div>
+
+                    <div className="bg-red-600/20 border border-red-500/50 rounded-lg p-4">
+                        <h4 className="font-bold text-red-400 mb-2">⚠️ Carga Alostática (0-100)</h4>
+                        <p className="text-sm text-gray-300 mb-2">
+                            Acumula quando você está em estresse crônico. Reduz lentamente durante descanso.
+                        </p>
+                        <div className="text-xs text-gray-400">
+                            Alto cortisol, glicose desregulada, baixo O₂ = aumenta carga!
+                        </div>
+                    </div>
+
+                    <div className="bg-yellow-600/20 border border-yellow-500/50 rounded-lg p-4">
+                        <h4 className="font-bold text-yellow-400 mb-2">⚡ Balanço de ATP</h4>
+                        <p className="text-sm text-gray-300">
+                            <strong>Produção - Consumo = Balanço</strong><br />
+                            Positivo = armazena glicogênio/gordura<br />
+                            Negativo = queima reservas!<br />
+                            Crítico negativo = aumenta carga alostática
                         </p>
                     </div>
                 </div>

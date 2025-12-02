@@ -49,11 +49,15 @@ export interface GameState {
     atp: number;
     hormones: number;
     experience: number;
+    homeostasisPoints: number; // NEW: Main game currency (Phase 2.5)
 
     // Statistics
     totalATPEarned: number;
     totalATPSpent: number;
     atpPerSecond: number;
+    totalHomeostasisPointsEarned: number; // NEW: Track total HP earned
+    currentHomeostasisRate: number; // NEW: HP per second
+    longestHomeostasisStreak: number; // NEW: Seconds in high homeostasis
 
     // Generators
     organs: Record<string, OrganGenerator>;
@@ -347,9 +351,13 @@ export function createInitialGameState(): GameState {
         atp: 0,
         hormones: 0,
         experience: 0,
+        homeostasisPoints: 0, // NEW
         totalATPEarned: 0,
         totalATPSpent: 0,
         atpPerSecond: 0,
+        totalHomeostasisPointsEarned: 0, // NEW
+        currentHomeostasisRate: 0, // NEW
+        longestHomeostasisStreak: 0, // NEW
         organs: { ...INITIAL_ORGANS },
         managers: { ...MANAGERS },
         upgrades: { ...GLOBAL_UPGRADES },

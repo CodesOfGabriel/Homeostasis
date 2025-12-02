@@ -396,9 +396,31 @@ export function AnatomicalBody3D(props: AnatomicalBody3DProps) {
     return (
         <div className="w-full h-full rounded-xl overflow-hidden bg-gradient-to-br from-gray-900 to-gray-800">
             <Canvas
+                key="anatomy-canvas-simple"
                 shadows
-                gl={{ antialias: true, alpha: true }}
+                gl={{
+                    antialias: true,
+                    alpha: true,
+                    preserveDrawingBuffer: false,
+                    failIfMajorPerformanceCaveat: false,
+                }}
                 dpr={[1, 2]}
+                onCreated={({ gl }) => {
+                    const handleContextLost = (e: Event) => {
+                        e.preventDefault();
+                    };
+                    const handleContextRestored = () => {
+                        // Auto restore
+                    };
+
+                    gl.domElement.addEventListener('webglcontextlost', handleContextLost, false);
+                    gl.domElement.addEventListener('webglcontextrestored', handleContextRestored, false);
+
+                    return () => {
+                        gl.domElement.removeEventListener('webglcontextlost', handleContextLost);
+                        gl.domElement.removeEventListener('webglcontextrestored', handleContextRestored);
+                    };
+                }}
             >
                 <Suspense fallback={null}>
                     <AnatomyScene {...props} />
@@ -425,7 +447,7 @@ export function AnatomicalBody3D(props: AnatomicalBody3DProps) {
                         <span className="text-pink-300">Pulmões ({props.respiratoryRate} rpm)</span>
                     </div>
                 </div>
-            </div>
-        </div>
+            </div >
+        </div >
     );
 }

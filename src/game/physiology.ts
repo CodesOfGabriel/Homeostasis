@@ -107,6 +107,31 @@ export interface Physiology {
   leanMass: number; // kg - massa magra
   bmi: number; // kg/m² - índice de massa corporal
   metabolicRate: number; // kcal/day - taxa metabólica
+
+  // ========== HOMEOSTASE E CARGA ALOSTÁTICA (v2.0) ==========
+  homeostasisScore: number;        // 0-100 (quão bem o corpo está em equilíbrio)
+  allostaticLoad: number;          // 0-100 (carga de estresse crônico acumulado)
+
+  // ========== FLUXO ENERGÉTICO REAL (v2.0) ==========
+  atpProduction: number;           // mmol/s (produção celular real)
+  atpConsumption: number;          // mmol/s (consumo celular real)
+  atpBalance: number;              // mmol/s (produção - consumo)
+
+  // ========== ESTOQUES METABÓLICOS / BIOMASSA (v2.0) ==========
+  glycogen: number;                // g (glicogênio hepático/muscular, max ~600g)
+  adiposeTissue: number;           // kg (gordura armazenada)
+  proteinReserve: number;          // g (proteína estrutural disponível)
+
+  // ========== DRIVES COMPORTAMENTAIS NPC (v2.0) ==========
+  hungerDrive: number;             // 0-100 (vontade de comer)
+  thirstDrive: number;             // 0-100 (vontade de beber)
+  sleepDrive: number;              // 0-100 (vontade de dormir)
+  exerciseDrive: number;           // 0-100 (vontade de se exercitar)
+
+  // ========== MICRONUTRIENTES (v2.0) ==========
+  vitamins: number;                // 0-100 (vitaminas gerais)
+  minerals: number;                // 0-100 (minerais gerais)
+  aminoAcids: number;              // 0-100 (aminoácidos disponíveis)
 }
 
 export const DEFAULT_PHYSIOLOGY: Physiology = {
@@ -207,6 +232,27 @@ export const DEFAULT_PHYSIOLOGY: Physiology = {
   leanMass: 56, // kg (80% lean mass)
   bmi: 22.9, // Normal weight
   metabolicRate: 1800, // kcal/day
+
+  // ========== VALORES PADRÃO v2.0 ==========
+  homeostasisScore: 80,
+  allostaticLoad: 10,
+
+  atpProduction: 50,     // mmol/s base
+  atpConsumption: 45,    // mmol/s base
+  atpBalance: 5,         // excesso convertido em biomassa
+
+  glycogen: 500,         // 500g (máximo ~600g)
+  adiposeTissue: 14,     // 14kg (20% de 70kg)
+  proteinReserve: 200,   // 200g disponíveis
+
+  hungerDrive: 30,
+  thirstDrive: 20,
+  sleepDrive: 25,
+  exerciseDrive: 40,
+
+  vitamins: 80,
+  minerals: 80,
+  aminoAcids: 70,
 };
 
 export const LIMITS = {

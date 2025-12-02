@@ -66,6 +66,33 @@ export function IdleGameHeader() {
 
                             {/* Currency Cards - Compact Inline */}
                             <div className="flex items-center gap-2">
+                                {/* NEW: HOMEOSTASIS POINTS - PRIMARY CURRENCY */}
+                                <div className={`bg-gradient-to-br from-green-600 to-emerald-800 px-3 py-1.5 rounded-lg shadow-md border hover:scale-105 transition-transform relative ${gameState.currentHomeostasisRate > 0
+                                        ? 'border-green-400/50 shadow-green-500/50 animate-pulse'
+                                        : 'border-green-500/30'
+                                    }`}>
+                                    <div className="flex items-center gap-2">
+                                        <div className="text-[10px] opacity-70 font-medium">Homeostase</div>
+                                        <div className="text-base font-bold">{formatNumber(gameState.homeostasisPoints)}</div>
+                                        <div className="text-[10px] flex items-center gap-0.5">
+                                            {gameState.currentHomeostasisRate > 0 ? (
+                                                <>
+                                                    <span className="animate-pulse">✅</span>
+                                                    <span className="font-medium text-green-200">+{gameState.currentHomeostasisRate.toFixed(2)}/s</span>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <span>⚖️</span>
+                                                    <span className="font-medium opacity-50">0/s</span>
+                                                </>
+                                            )}
+                                        </div>
+                                    </div>
+                                    {gameState.currentHomeostasisRate > 0 && (
+                                        <div className="absolute -top-1 -right-1 w-2 h-2 bg-green-400 rounded-full animate-ping" />
+                                    )}
+                                </div>
+
                                 <div className="bg-gradient-to-br from-yellow-600 to-yellow-800 px-3 py-1.5 rounded-lg shadow-md border border-yellow-500/30 hover:scale-105 transition-transform">
                                     <div className="flex items-center gap-2">
                                         <div className="text-[10px] opacity-70 font-medium">ATP Total</div>

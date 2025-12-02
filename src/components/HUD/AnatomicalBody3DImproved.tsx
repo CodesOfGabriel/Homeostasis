@@ -653,13 +653,32 @@ export function AnatomicalBody3DImproved(props: AnatomicalBody3DProps) {
     return (
         <div className="w-full h-full rounded-xl overflow-hidden bg-gradient-to-br from-gray-900 via-gray-900 to-blue-950/20 relative">
             <Canvas
+                key="anatomy-canvas-3d"
                 shadows
                 gl={{
                     antialias: true,
                     alpha: true,
-                    powerPreference: 'high-performance'
+                    powerPreference: 'high-performance',
+                    preserveDrawingBuffer: false,
+                    failIfMajorPerformanceCaveat: false,
                 }}
                 dpr={[1, 2]}
+                onCreated={({ gl }) => {
+                    const handleContextLost = (e: Event) => {
+                        e.preventDefault();
+                    };
+                    const handleContextRestored = () => {
+                        // Auto restore
+                    };
+
+                    gl.domElement.addEventListener('webglcontextlost', handleContextLost, false);
+                    gl.domElement.addEventListener('webglcontextrestored', handleContextRestored, false);
+
+                    return () => {
+                        gl.domElement.removeEventListener('webglcontextlost', handleContextLost);
+                        gl.domElement.removeEventListener('webglcontextrestored', handleContextRestored);
+                    };
+                }}
             >
                 <Suspense fallback={null}>
                     <AnatomyScene {...props} />
@@ -689,7 +708,7 @@ export function AnatomicalBody3DImproved(props: AnatomicalBody3DProps) {
                 <div className="mt-2 pt-2 border-t border-gray-700/50 text-[10px] text-gray-400 text-center">
                     🖱️ Arraste para rotacionar • 🔍 Scroll para zoom
                 </div>
-            </div>
-        </div>
+            </div >
+        </div >
     );
 }

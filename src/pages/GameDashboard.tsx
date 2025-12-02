@@ -16,6 +16,7 @@ import { AnatomicalBody3DImproved } from '../components/HUD/AnatomicalBody3DImpr
 import { BiomedicCard } from '../components/HUD/BiomedicCard';
 import { EnergyBalanceScale } from '../components/HUD/EnergyBalanceScale';
 import IdleGamePanel from '../components/HUD/IdleGamePanel';
+import { PhysiologyStatusPanel } from '../components/HUD/PhysiologyStatusPanel';
 
 import { ACTIONS } from '../game/actions';
 import { Wind, Thermometer, Droplet, Activity, Settings } from 'lucide-react';
@@ -553,6 +554,9 @@ export function GameDashboard() {
                             <div className="space-y-6">
                                 {activeTab === 'overview' && (
                                     <div className="space-y-6">
+                                        {/* NEW: Physiology Status Panel */}
+                                        <PhysiologyStatusPanel />
+
                                         {/* Primary Vitals Cards */}
                                         <div className="grid grid-cols-2 gap-4">
                                             <div className="bg-gradient-to-br from-cyan-950/30 to-gray-900/50 rounded-xl p-4 border border-cyan-900/30">
