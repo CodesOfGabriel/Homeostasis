@@ -17,6 +17,8 @@ export interface Substance {
 interface SubstancePanelProps {
     onUseSubstance: (substanceId: string) => void;
     cooldowns: Record<string, number>;
+    categoryFilter?: string;
+    searchFilter?: string;
 }
 
 const SUBSTANCES: Substance[] = [
@@ -196,7 +198,7 @@ const SUBSTANCES: Substance[] = [
     },
 ];
 
-export function SubstancePanel({ onUseSubstance, cooldowns }: SubstancePanelProps) {
+export function SubstancePanel({ onUseSubstance, cooldowns, categoryFilter, searchFilter }: SubstancePanelProps) {
     const categories = [
         { id: 'medication', label: '💊 Medicamentos', color: 'cyan' },
         { id: 'supplement', label: '🌟 Suplementos', color: 'green' },
@@ -205,10 +207,19 @@ export function SubstancePanel({ onUseSubstance, cooldowns }: SubstancePanelProp
         { id: 'illicit', label: '⚠️ Ilícitas', color: 'red' },
     ];
 
+    // Aplicar filtros
+    const filteredSubstances = SUBSTANCES.filter((substance) => {
+        const categoryMatch = !categoryFilter || substance.category === categoryFilter;
+        const searchMatch = !searchFilter ||
+            substance.name.toLowerCase().includes(searchFilter.toLowerCase()) ||
+            substance.effects.some(e => e.toLowerCase().includes(searchFilter.toLowerCase()));
+        return categoryMatch && searchMatch;
+    });
+
     return (
         <div className="space-y-6">
             {categories.map((category) => {
-                const categorySubstances = SUBSTANCES.filter((s) => s.category === category.id);
+                const categorySubstances = filteredSubstances.filter((s) => s.category === category.id);
                 if (categorySubstances.length === 0) return null;
 
                 return (

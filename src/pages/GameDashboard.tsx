@@ -7,7 +7,8 @@ import { ChartsTab } from './GameDashboard/ChartsTab';
 import { LabMarkersPanel } from './GameDashboard/LabMarkersPanel';
 import { Notifications } from './GameDashboard/Notifications';
 import { OrganModals } from './GameDashboard/OrganModals';
-import { MiniTimeline } from './GameDashboard/MiniTimeline';
+import { EventTimeline, TimelineEvent } from '../components/HUD/EventTimeline';
+import { IdleGameHeader } from '../components/HUD/IdleGameHeader';
 import { ComboDisplay } from './GameDashboard/ComboDisplay';
 import { ActiveEventHelp } from './GameDashboard/ActiveEventHelp';
 import { SettingsModal } from './GameDashboard/SettingsModal';
@@ -15,7 +16,7 @@ import { AnatomicalBody3DImproved } from '../components/HUD/AnatomicalBody3DImpr
 import { BiomedicCard } from '../components/HUD/BiomedicCard';
 import { EnergyBalanceScale } from '../components/HUD/EnergyBalanceScale';
 import IdleGamePanel from '../components/HUD/IdleGamePanel';
-import { IdleGameHeader } from '../components/HUD/IdleGameHeader';
+
 import { ACTIONS } from '../game/actions';
 import { Wind, Thermometer, Droplet, Activity, Settings } from 'lucide-react';
 
@@ -26,6 +27,7 @@ export function GameDashboard() {
     const {
         parameters,
         isRunning,
+        timeSpeed,
         notifications,
         actionCooldowns,
         activeEvents,
@@ -34,6 +36,7 @@ export function GameDashboard() {
         tick,
         start,
         pause,
+        setTimeSpeed,
         applyAction,
         clearNotification,
     } = useSimulationStore();
@@ -44,6 +47,19 @@ export function GameDashboard() {
     const [substanceCooldowns, setSubstanceCooldowns] = useState<Record<string, number>>({});
     const [currentDayTime, setCurrentDayTime] = useState(480);
     const [myBodyTab, setMyBodyTab] = useState<'body' | 'events' | 'energy'>('body');
+
+    // Mock timeline events
+    const mockTimelineEvents: TimelineEvent[] = [
+        { id: '1', name: 'Despertar', description: 'Início do dia', time: 420, icon: '🌅', type: 'completed', severity: 'low' },
+        { id: '2', name: 'Café da Manhã', description: 'Refeição matinal', time: 480, icon: '🍳', type: currentDayTime >= 480 ? 'active' : 'scheduled', severity: 'low' },
+        { id: '3', name: 'Exercício', description: 'Atividade física', time: 600, icon: '🏃', type: 'scheduled', severity: 'medium' },
+        { id: '4', name: 'Almoço', description: 'Refeição principal', time: 780, icon: '🍽️', type: 'scheduled', severity: 'low' },
+        { id: '5', name: 'Estresse Trabalho', description: 'Pico de cortisol', time: 900, icon: '💼', type: 'scheduled', severity: 'high' },
+        { id: '6', name: 'Lanche', description: 'Lanche da tarde', time: 960, icon: '☕', type: 'scheduled', severity: 'low' },
+        { id: '7', name: 'Jantar', description: 'Refeição noturna', time: 1140, icon: '🍲', type: 'scheduled', severity: 'low' },
+        { id: '8', name: 'Relaxamento', description: 'Tempo de descanso', time: 1260, icon: '📺', type: 'scheduled', severity: 'low' },
+        { id: '9', name: 'Sono', description: 'Preparação para dormir', time: 1320, icon: '🌙', type: 'scheduled', severity: 'medium' },
+    ];
 
     // Settings
     const [showTips, setShowTips] = useState(true);
@@ -63,16 +79,16 @@ export function GameDashboard() {
         if (isRunning) {
             tick();
             setCurrentDayTime((prev) => {
-                const next = prev + 0.2;
+                const next = prev + (0.2 * timeSpeed);
                 return next >= 1440 ? 0 : next;
             });
 
-            // Update substance cooldowns
+            // Update substance cooldowns (scaled by time speed)
             setSubstanceCooldowns((prev) => {
                 const updated = { ...prev };
                 Object.keys(updated).forEach((key) => {
                     if (updated[key] > 0) {
-                        updated[key] = Math.max(0, updated[key] - 0.2);
+                        updated[key] = Math.max(0, updated[key] - (0.2 * timeSpeed));
                     }
                 });
                 return updated;
@@ -335,10 +351,17 @@ export function GameDashboard() {
                         </>
                     )}
 
-                    {/* Timeline - Minimalista e Compacta */}
+                    {/* Timeline - Melhorada com controles */}
                     <div className="flex items-center gap-3">
-                        <div className="flex-1 scale-75 origin-left">
-                            <MiniTimeline currentTime={currentDayTime} />
+                        <div className="flex-1">
+                            <EventTimeline
+                                events={mockTimelineEvents}
+                                currentTime={currentDayTime}
+                                isPlaying={isRunning}
+                                timeSpeed={timeSpeed}
+                                onTogglePlay={handleToggleSimulation}
+                                onSpeedChange={setTimeSpeed}
+                            />
                         </div>
 
                         {/* Performance Score - Minimized with Glassmorphism */}
@@ -348,7 +371,7 @@ export function GameDashboard() {
 
                         {/* Notifications - Small with Glassmorphism */}
                         {notifications.length > 0 && (
-                            <div className="backdrop-blur-md bg-gray-900/40 border border-gray-700/50 rounded-xl px-3 py-1.5 shadow-lg max-w-xs">
+                            <div className="backdrop-blur-md bg-gray-900/40 border border-gray-700/50 rounded-xl px-3 py-1.5 shadow-lg max-w-xs z-50 relative">
                                 <Notifications
                                     notifications={notifications.slice(0, 2)}
                                     onClearNotification={clearNotification}
@@ -624,26 +647,353 @@ export function GameDashboard() {
                             {actionTab === 'actions' && (
                                 <div className="space-y-3">
                                     <h3 className="text-base font-bold text-gray-900 mb-3">⚡ Ações</h3>
-                                    <div className="grid grid-cols-1 gap-2">
-                                        {Object.values(ACTIONS).map((action) => (
-                                            <button
-                                                key={action.id}
-                                                onClick={() => applyAction(action)}
-                                                disabled={getCooldownTime(action.id) > 0}
-                                                className={`w-full text-left p-2.5 rounded-lg border transition-all ${getCooldownTime(action.id) > 0
-                                                    ? 'bg-gray-100 border-gray-200 opacity-50 cursor-not-allowed'
-                                                    : 'bg-gradient-to-r from-blue-50 to-white border-blue-200 hover:border-blue-400 hover:shadow-md'
-                                                    }`}
-                                            >
-                                                <div className="text-xs font-semibold text-gray-900">{action.name}</div>
-                                                <div className="text-[10px] text-gray-500 mt-0.5">{action.description}</div>
-                                                {getCooldownTime(action.id) > 0 && (
-                                                    <div className="text-[10px] text-red-500 mt-1">
-                                                        ⏱ {getCooldownTime(action.id).toFixed(0)}s
-                                                    </div>
-                                                )}
-                                            </button>
-                                        ))}
+
+                                    {/* Hormonal & Stress Control */}
+                                    <div className="mb-3">
+                                        <h4 className="text-xs font-semibold text-gray-700 mb-2">🧠 Controle Hormonal & Estresse</h4>
+                                        <div className="grid grid-cols-1 gap-2">
+                                            {['releaseAdrenaline', 'reduceCortisol', 'vasodilation', 'antioxidantBoost', 'antiInflammatory', 'neurotransmitterBalance'].map((actionId) => {
+                                                const action = ACTIONS[actionId];
+                                                return (
+                                                    <button
+                                                        key={action.id}
+                                                        onClick={() => applyAction(action)}
+                                                        disabled={getCooldownTime(action.id) > 0}
+                                                        className={`w-full text-left p-2.5 rounded-lg border transition-all ${getCooldownTime(action.id) > 0
+                                                            ? 'bg-gray-100 border-gray-200 opacity-50 cursor-not-allowed'
+                                                            : 'bg-gradient-to-r from-blue-50 to-white border-blue-200 hover:border-blue-400 hover:shadow-md'
+                                                            }`}
+                                                    >
+                                                        <div className="text-xs font-semibold text-gray-900">{action.name}</div>
+                                                        <div className="text-[10px] text-gray-500 mt-0.5">{action.description}</div>
+                                                        {getCooldownTime(action.id) > 0 && (
+                                                            <div className="text-[10px] text-red-500 mt-1">
+                                                                ⏱ {getCooldownTime(action.id).toFixed(0)}s
+                                                            </div>
+                                                        )}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+
+                                    {/* Respiratory & Oxygenation */}
+                                    <div className="mb-3">
+                                        <h4 className="text-xs font-semibold text-gray-700 mb-2">🫁 Respiratório & Oxigenação</h4>
+                                        <div className="grid grid-cols-1 gap-2">
+                                            {['increaseVentilation', 'oxygenationBoost'].map((actionId) => {
+                                                const action = ACTIONS[actionId];
+                                                return (
+                                                    <button
+                                                        key={action.id}
+                                                        onClick={() => applyAction(action)}
+                                                        disabled={getCooldownTime(action.id) > 0}
+                                                        className={`w-full text-left p-2.5 rounded-lg border transition-all ${getCooldownTime(action.id) > 0
+                                                            ? 'bg-gray-100 border-gray-200 opacity-50 cursor-not-allowed'
+                                                            : 'bg-gradient-to-r from-cyan-50 to-white border-cyan-200 hover:border-cyan-400 hover:shadow-md'
+                                                            }`}
+                                                    >
+                                                        <div className="text-xs font-semibold text-gray-900">{action.name}</div>
+                                                        <div className="text-[10px] text-gray-500 mt-0.5">{action.description}</div>
+                                                        {getCooldownTime(action.id) > 0 && (
+                                                            <div className="text-[10px] text-red-500 mt-1">
+                                                                ⏱ {getCooldownTime(action.id).toFixed(0)}s
+                                                            </div>
+                                                        )}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+
+                                    {/* Metabolic & Energy */}
+                                    <div className="mb-3">
+                                        <h4 className="text-xs font-semibold text-gray-700 mb-2">⚡ Metabolismo & Energia</h4>
+                                        <div className="grid grid-cols-1 gap-2">
+                                            {['releaseInsulin', 'releaseGlucose', 'metabolicSwitch', 'thermoregulation', 'anabolicPush', 'thyroidBoost'].map((actionId) => {
+                                                const action = ACTIONS[actionId];
+                                                return (
+                                                    <button
+                                                        key={action.id}
+                                                        onClick={() => applyAction(action)}
+                                                        disabled={getCooldownTime(action.id) > 0}
+                                                        className={`w-full text-left p-2.5 rounded-lg border transition-all ${getCooldownTime(action.id) > 0
+                                                            ? 'bg-gray-100 border-gray-200 opacity-50 cursor-not-allowed'
+                                                            : 'bg-gradient-to-r from-yellow-50 to-white border-yellow-200 hover:border-yellow-400 hover:shadow-md'
+                                                            }`}
+                                                    >
+                                                        <div className="text-xs font-semibold text-gray-900">{action.name}</div>
+                                                        <div className="text-[10px] text-gray-500 mt-0.5">{action.description}</div>
+                                                        {getCooldownTime(action.id) > 0 && (
+                                                            <div className="text-[10px] text-red-500 mt-1">
+                                                                ⏱ {getCooldownTime(action.id).toFixed(0)}s
+                                                            </div>
+                                                        )}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+
+                                    {/* Hydration & Detox */}
+                                    <div className="mb-3">
+                                        <h4 className="text-xs font-semibold text-gray-700 mb-2">💧 Hidratação & Desintoxicação</h4>
+                                        <div className="grid grid-cols-1 gap-2">
+                                            {['hydrationBoost', 'detoxification', 'renalSupport', 'thirstDrive'].map((actionId) => {
+                                                const action = ACTIONS[actionId];
+                                                return (
+                                                    <button
+                                                        key={action.id}
+                                                        onClick={() => applyAction(action)}
+                                                        disabled={getCooldownTime(action.id) > 0}
+                                                        className={`w-full text-left p-2.5 rounded-lg border transition-all ${getCooldownTime(action.id) > 0
+                                                            ? 'bg-gray-100 border-gray-200 opacity-50 cursor-not-allowed'
+                                                            : 'bg-gradient-to-r from-blue-50 to-white border-blue-200 hover:border-blue-400 hover:shadow-md'
+                                                            }`}
+                                                    >
+                                                        <div className="text-xs font-semibold text-gray-900">{action.name}</div>
+                                                        <div className="text-[10px] text-gray-500 mt-0.5">{action.description}</div>
+                                                        {getCooldownTime(action.id) > 0 && (
+                                                            <div className="text-[10px] text-red-500 mt-1">
+                                                                ⏱ {getCooldownTime(action.id).toFixed(0)}s
+                                                            </div>
+                                                        )}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+
+                                    {/* Sleep & Circadian */}
+                                    <div className="mb-3">
+                                        <h4 className="text-xs font-semibold text-gray-700 mb-2">😴 Sono & Ritmo Circadiano</h4>
+                                        <div className="grid grid-cols-1 gap-2">
+                                            {['sleepDrive', 'wakefulnessBoost', 'circadianReset', 'melatoninRelease'].map((actionId) => {
+                                                const action = ACTIONS[actionId];
+                                                return (
+                                                    <button
+                                                        key={action.id}
+                                                        onClick={() => applyAction(action)}
+                                                        disabled={getCooldownTime(action.id) > 0}
+                                                        className={`w-full text-left p-2.5 rounded-lg border transition-all ${getCooldownTime(action.id) > 0
+                                                            ? 'bg-gray-100 border-gray-200 opacity-50 cursor-not-allowed'
+                                                            : 'bg-gradient-to-r from-purple-50 to-white border-purple-200 hover:border-purple-400 hover:shadow-md'
+                                                            }`}
+                                                    >
+                                                        <div className="text-xs font-semibold text-gray-900">{action.name}</div>
+                                                        <div className="text-[10px] text-gray-500 mt-0.5">{action.description}</div>
+                                                        {getCooldownTime(action.id) > 0 && (
+                                                            <div className="text-[10px] text-red-500 mt-1">
+                                                                ⏱ {getCooldownTime(action.id).toFixed(0)}s
+                                                            </div>
+                                                        )}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+
+                                    {/* Appetite & Satiety */}
+                                    <div className="mb-3">
+                                        <h4 className="text-xs font-semibold text-gray-700 mb-2">🍽️ Apetite & Saciedade</h4>
+                                        <div className="grid grid-cols-1 gap-2">
+                                            {['hungerSignal', 'satietySignal', 'leptinResponse'].map((actionId) => {
+                                                const action = ACTIONS[actionId];
+                                                return (
+                                                    <button
+                                                        key={action.id}
+                                                        onClick={() => applyAction(action)}
+                                                        disabled={getCooldownTime(action.id) > 0}
+                                                        className={`w-full text-left p-2.5 rounded-lg border transition-all ${getCooldownTime(action.id) > 0
+                                                            ? 'bg-gray-100 border-gray-200 opacity-50 cursor-not-allowed'
+                                                            : 'bg-gradient-to-r from-orange-50 to-white border-orange-200 hover:border-orange-400 hover:shadow-md'
+                                                            }`}
+                                                    >
+                                                        <div className="text-xs font-semibold text-gray-900">{action.name}</div>
+                                                        <div className="text-[10px] text-gray-500 mt-0.5">{action.description}</div>
+                                                        {getCooldownTime(action.id) > 0 && (
+                                                            <div className="text-[10px] text-red-500 mt-1">
+                                                                ⏱ {getCooldownTime(action.id).toFixed(0)}s
+                                                            </div>
+                                                        )}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+
+                                    {/* Autonomic Balance */}
+                                    <div className="mb-3">
+                                        <h4 className="text-xs font-semibold text-gray-700 mb-2">⚖️ Balanço Autonômico</h4>
+                                        <div className="grid grid-cols-1 gap-2">
+                                            {['sympatheticDrive', 'parasympatheticDrive'].map((actionId) => {
+                                                const action = ACTIONS[actionId];
+                                                return (
+                                                    <button
+                                                        key={action.id}
+                                                        onClick={() => applyAction(action)}
+                                                        disabled={getCooldownTime(action.id) > 0}
+                                                        className={`w-full text-left p-2.5 rounded-lg border transition-all ${getCooldownTime(action.id) > 0
+                                                            ? 'bg-gray-100 border-gray-200 opacity-50 cursor-not-allowed'
+                                                            : 'bg-gradient-to-r from-red-50 to-white border-red-200 hover:border-red-400 hover:shadow-md'
+                                                            }`}
+                                                    >
+                                                        <div className="text-xs font-semibold text-gray-900">{action.name}</div>
+                                                        <div className="text-[10px] text-gray-500 mt-0.5">{action.description}</div>
+                                                        {getCooldownTime(action.id) > 0 && (
+                                                            <div className="text-[10px] text-red-500 mt-1">
+                                                                ⏱ {getCooldownTime(action.id).toFixed(0)}s
+                                                            </div>
+                                                        )}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+
+                                    {/* Temperature Regulation */}
+                                    <div className="mb-3">
+                                        <h4 className="text-xs font-semibold text-gray-700 mb-2">🌡️ Regulação Térmica</h4>
+                                        <div className="grid grid-cols-1 gap-2">
+                                            {['heatProduction', 'coolDown', 'feverResponse'].map((actionId) => {
+                                                const action = ACTIONS[actionId];
+                                                return (
+                                                    <button
+                                                        key={action.id}
+                                                        onClick={() => applyAction(action)}
+                                                        disabled={getCooldownTime(action.id) > 0}
+                                                        className={`w-full text-left p-2.5 rounded-lg border transition-all ${getCooldownTime(action.id) > 0
+                                                            ? 'bg-gray-100 border-gray-200 opacity-50 cursor-not-allowed'
+                                                            : 'bg-gradient-to-r from-amber-50 to-white border-amber-200 hover:border-amber-400 hover:shadow-md'
+                                                            }`}
+                                                    >
+                                                        <div className="text-xs font-semibold text-gray-900">{action.name}</div>
+                                                        <div className="text-[10px] text-gray-500 mt-0.5">{action.description}</div>
+                                                        {getCooldownTime(action.id) > 0 && (
+                                                            <div className="text-[10px] text-red-500 mt-1">
+                                                                ⏱ {getCooldownTime(action.id).toFixed(0)}s
+                                                            </div>
+                                                        )}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+
+                                    {/* Pain & Pleasure */}
+                                    <div className="mb-3">
+                                        <h4 className="text-xs font-semibold text-gray-700 mb-2">😌 Dor & Prazer</h4>
+                                        <div className="grid grid-cols-1 gap-2">
+                                            {['endorphinRelease', 'painModulation'].map((actionId) => {
+                                                const action = ACTIONS[actionId];
+                                                return (
+                                                    <button
+                                                        key={action.id}
+                                                        onClick={() => applyAction(action)}
+                                                        disabled={getCooldownTime(action.id) > 0}
+                                                        className={`w-full text-left p-2.5 rounded-lg border transition-all ${getCooldownTime(action.id) > 0
+                                                            ? 'bg-gray-100 border-gray-200 opacity-50 cursor-not-allowed'
+                                                            : 'bg-gradient-to-r from-pink-50 to-white border-pink-200 hover:border-pink-400 hover:shadow-md'
+                                                            }`}
+                                                    >
+                                                        <div className="text-xs font-semibold text-gray-900">{action.name}</div>
+                                                        <div className="text-[10px] text-gray-500 mt-0.5">{action.description}</div>
+                                                        {getCooldownTime(action.id) > 0 && (
+                                                            <div className="text-[10px] text-red-500 mt-1">
+                                                                ⏱ {getCooldownTime(action.id).toFixed(0)}s
+                                                            </div>
+                                                        )}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+
+                                    {/* Defensive & Reproductive */}
+                                    <div className="mb-3">
+                                        <h4 className="text-xs font-semibold text-gray-700 mb-2">⚔️ Defesa & Reprodução</h4>
+                                        <div className="grid grid-cols-1 gap-2">
+                                            {['freezeResponse', 'aggressionDrive', 'gnrhPulse', 'prolactinSuppress'].map((actionId) => {
+                                                const action = ACTIONS[actionId];
+                                                return (
+                                                    <button
+                                                        key={action.id}
+                                                        onClick={() => applyAction(action)}
+                                                        disabled={getCooldownTime(action.id) > 0}
+                                                        className={`w-full text-left p-2.5 rounded-lg border transition-all ${getCooldownTime(action.id) > 0
+                                                            ? 'bg-gray-100 border-gray-200 opacity-50 cursor-not-allowed'
+                                                            : 'bg-gradient-to-r from-violet-50 to-white border-violet-200 hover:border-violet-400 hover:shadow-md'
+                                                            }`}
+                                                    >
+                                                        <div className="text-xs font-semibold text-gray-900">{action.name}</div>
+                                                        <div className="text-[10px] text-gray-500 mt-0.5">{action.description}</div>
+                                                        {getCooldownTime(action.id) > 0 && (
+                                                            <div className="text-[10px] text-red-500 mt-1">
+                                                                ⏱ {getCooldownTime(action.id).toFixed(0)}s
+                                                            </div>
+                                                        )}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+
+                                    {/* Immune System */}
+                                    <div className="mb-3">
+                                        <h4 className="text-xs font-semibold text-gray-700 mb-2">🛡️ Sistema Imune</h4>
+                                        <div className="grid grid-cols-1 gap-2">
+                                            {['immunoBoost'].map((actionId) => {
+                                                const action = ACTIONS[actionId];
+                                                return (
+                                                    <button
+                                                        key={action.id}
+                                                        onClick={() => applyAction(action)}
+                                                        disabled={getCooldownTime(action.id) > 0}
+                                                        className={`w-full text-left p-2.5 rounded-lg border transition-all ${getCooldownTime(action.id) > 0
+                                                            ? 'bg-gray-100 border-gray-200 opacity-50 cursor-not-allowed'
+                                                            : 'bg-gradient-to-r from-green-50 to-white border-green-200 hover:border-green-400 hover:shadow-md'
+                                                            }`}
+                                                    >
+                                                        <div className="text-xs font-semibold text-gray-900">{action.name}</div>
+                                                        <div className="text-[10px] text-gray-500 mt-0.5">{action.description}</div>
+                                                        {getCooldownTime(action.id) > 0 && (
+                                                            <div className="text-[10px] text-red-500 mt-1">
+                                                                ⏱ {getCooldownTime(action.id).toFixed(0)}s
+                                                            </div>
+                                                        )}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+
+                                    {/* Emergency */}
+                                    <div className="mb-3">
+                                        <h4 className="text-xs font-semibold text-red-700 mb-2">🚨 EMERGÊNCIA</h4>
+                                        <div className="grid grid-cols-1 gap-2">
+                                            {['lastResort'].map((actionId) => {
+                                                const action = ACTIONS[actionId];
+                                                return (
+                                                    <button
+                                                        key={action.id}
+                                                        onClick={() => applyAction(action)}
+                                                        disabled={getCooldownTime(action.id) > 0}
+                                                        className={`w-full text-left p-2.5 rounded-lg border-2 transition-all ${getCooldownTime(action.id) > 0
+                                                            ? 'bg-gray-100 border-gray-200 opacity-50 cursor-not-allowed'
+                                                            : 'bg-gradient-to-r from-red-100 to-orange-100 border-red-400 hover:border-red-600 hover:shadow-lg animate-pulse'
+                                                            }`}
+                                                    >
+                                                        <div className="text-xs font-bold text-red-900">{action.name}</div>
+                                                        <div className="text-[10px] text-red-700 mt-0.5 font-medium">{action.description}</div>
+                                                        {getCooldownTime(action.id) > 0 && (
+                                                            <div className="text-[10px] text-red-500 mt-1">
+                                                                ⏱ {getCooldownTime(action.id).toFixed(0)}s
+                                                            </div>
+                                                        )}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
                                     </div>
                                 </div>
                             )}

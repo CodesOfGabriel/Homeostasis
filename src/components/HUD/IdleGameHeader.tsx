@@ -1,5 +1,5 @@
 // Sticky Currency Cards - Always visible at top
-import { useIdleGame } from '../../game/useIdleGame';
+import { useIdleGameContext } from '../../game/IdleGameContext';
 import { formatNumber } from '../../game/idleSystem';
 import { Award, HelpCircle, RefreshCw } from 'lucide-react';
 import { useState } from 'react';
@@ -14,9 +14,7 @@ export function IdleGameHeader() {
         prestigeReward,
         achievements,
         prestige
-    } = useIdleGame();
-
-    const [showAchievementsModal, setShowAchievementsModal] = useState(false);
+    } = useIdleGameContext(); const [showAchievementsModal, setShowAchievementsModal] = useState(false);
     const [showTutorialModal, setShowTutorialModal] = useState(false);
     const [showPrestigeModal, setShowPrestigeModal] = useState(false);
 

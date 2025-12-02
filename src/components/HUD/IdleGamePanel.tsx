@@ -1,6 +1,6 @@
-// Idle Game UI Panel Component
+// Idle Game UI Panel Component - Sincronizado com simulação
 import { useState } from 'react';
-import { useIdleGame } from '../../game/useIdleGame';
+import { useIdleGameContext } from '../../game/IdleGameContext';
 import { formatNumber, formatTime, calculateGlobalMultiplier } from '../../game/idleSystem';
 import { OrganModal } from './OrganModal';
 import { ManagerModal } from './ManagerModal';
@@ -18,9 +18,7 @@ export default function IdleGamePanel() {
         showOfflinePopup,
         floatingNumbers,
         newAchievementUnlocks
-    } = useIdleGame();
-
-    // Modal states
+    } = useIdleGameContext();    // Modal states
     const [selectedOrgan, setSelectedOrgan] = useState<string | null>(null);
     const [selectedManager, setSelectedManager] = useState<string | null>(null);
     const [selectedUpgrade, setSelectedUpgrade] = useState<string | null>(null);

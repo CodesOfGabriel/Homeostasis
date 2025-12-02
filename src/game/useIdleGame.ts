@@ -1,4 +1,4 @@
-// React hook for Idle Game System
+// React hook for Idle Game System - Sincronizado com simulação
 import { useEffect, useState, useCallback, useRef } from 'react';
 import {
     GameState,
@@ -16,7 +16,13 @@ import { Achievement, ACHIEVEMENTS, checkAchievements } from './achievements';
 const SAVE_KEY = 'homeostasis_idle_save';
 const ACHIEVEMENTS_SAVE_KEY = 'homeostasis_achievements_save';
 
-export function useIdleGame() {
+interface IdleGameHookOptions {
+    isRunning?: boolean;
+    timeSpeed?: number;
+}
+
+export function useIdleGame(options: IdleGameHookOptions = {}) {
+    const { isRunning = true, timeSpeed = 1 } = options;
     const [gameState, setGameState] = useState<GameState>(() => {
         // Try to load from localStorage
         const saved = localStorage.getItem(SAVE_KEY);
@@ -118,13 +124,15 @@ export function useIdleGame() {
         }
     }, []);
 
-    // Main game loop - passive income generation
+    // Main game loop - passive income generation (sincronizado com simulação)
     useEffect(() => {
+        if (!isRunning) return; // Pausa quando a simulação está pausada
+
         let lastTick = Date.now();
 
         const gameLoop = () => {
             const now = Date.now();
-            const deltaTime = (now - lastTick) / 1000; // seconds
+            const deltaTime = ((now - lastTick) / 1000) * timeSpeed; // seconds com multiplicador de velocidade
 
             setGameState(prev => {
                 const atpPerSecond = calculateTotalATPPerSecond(prev);
@@ -160,7 +168,7 @@ export function useIdleGame() {
                 cancelAnimationFrame(animationFrameRef.current);
             }
         };
-    }, []);
+    }, [isRunning, timeSpeed]); // Re-executa quando isRunning ou timeSpeed mudam
 
     // Manual collection (clicking organ when not automated)
     const collectOrgan = useCallback((organId: string, x?: number, y?: number) => {

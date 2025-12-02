@@ -42,6 +42,7 @@ interface SimulationState {
   // Core parameters
   parameters: Physiology;
   isRunning: boolean;
+  timeSpeed: number; // Velocidade da timeline (0.5x, 1x, 2x, 5x, 10x)
 
   // Events
   activeEvents: ActiveEvent[];
@@ -63,6 +64,7 @@ interface SimulationState {
   start: () => void;
   pause: () => void;
   reset: () => void;
+  setTimeSpeed: (speed: number) => void;
   applyAction: (action: PlayerAction) => void;
   addEvent: (event: GameEvent) => void;
   clearNotification: (index: number) => void;
@@ -73,6 +75,7 @@ const TICK_INTERVAL = 0.2; // 200ms in seconds
 export const useSimulationStore = create<SimulationState>((set, get) => ({
   parameters: { ...DEFAULT_PHYSIOLOGY },
   isRunning: true,
+  timeSpeed: 1,
   activeEvents: [],
   eventQueue: [],
   actionCooldowns: [],
@@ -83,6 +86,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
 
   start: () => set({ isRunning: true }),
   pause: () => set({ isRunning: false }),
+  setTimeSpeed: (speed: number) => set({ timeSpeed: speed }),
   reset: () =>
     set({
       parameters: { ...DEFAULT_PHYSIOLOGY },
@@ -94,6 +98,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
       activeCombo: null,
       comboScore: 0,
       isRunning: true,
+      timeSpeed: 1,
     }),
 
   tick: () => {
@@ -102,18 +107,19 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
 
     let params = { ...state.parameters };
 
-    // Update time
-    params.time += TICK_INTERVAL;
+    // Update time with speed multiplier
+    const adjustedTickInterval = TICK_INTERVAL * state.timeSpeed;
+    params.time += adjustedTickInterval;
 
-    // Apply active event effects
+    // Apply active event effects (scaled by time speed)
     const updatedEvents: ActiveEvent[] = [];
     state.activeEvents.forEach((ae) => {
-      const newTime = ae.remainingTime - TICK_INTERVAL;
+      const newTime = ae.remainingTime - adjustedTickInterval;
       if (newTime > 0) {
-        // Apply ongoing effects (scaled per tick)
+        // Apply ongoing effects (scaled per tick and time speed)
         Object.entries(ae.event.effects).forEach(([key, value]) => {
           if (value && key in params) {
-            const scaledEffect = (value / ae.event.duration) * TICK_INTERVAL;
+            const scaledEffect = (value / ae.event.duration) * adjustedTickInterval;
             (params as any)[key] += scaledEffect;
           }
         });
@@ -121,11 +127,11 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
       }
     });
 
-    // Update cooldowns
+    // Update cooldowns (scaled by time speed)
     const updatedCooldowns = state.actionCooldowns
       .map((cd) => ({
         ...cd,
-        remainingTime: cd.remainingTime - TICK_INTERVAL,
+        remainingTime: cd.remainingTime - adjustedTickInterval,
       }))
       .filter((cd) => cd.remainingTime > 0);
 
