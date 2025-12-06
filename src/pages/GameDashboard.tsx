@@ -17,6 +17,7 @@ import { BiomedicCard } from '../components/HUD/BiomedicCard';
 import { EnergyBalanceScale } from '../components/HUD/EnergyBalanceScale';
 import IdleGamePanel from '../components/HUD/IdleGamePanel';
 import { PhysiologyStatusPanel } from '../components/HUD/PhysiologyStatusPanel';
+import { QuestPanel } from '../components/HUD/QuestPanel';
 
 import { ACTIONS } from '../game/actions';
 import { Wind, Thermometer, Droplet, Activity, Settings } from 'lucide-react';
@@ -66,6 +67,7 @@ export function GameDashboard() {
     const [showTips, setShowTips] = useState(true);
     const [pauseOnEvent, setPauseOnEvent] = useState(true);
     const [settingsOpen, setSettingsOpen] = useState(false);
+    const [questPanelOpen, setQuestPanelOpen] = useState(false);
 
     // Death and critical condition system
     const [isDead, setIsDead] = useState(false);
@@ -388,6 +390,15 @@ export function GameDashboard() {
                                 <span>ESTADO CRÍTICO</span>
                             </div>
                         )}
+
+                        {/* Quest Button */}
+                        <button
+                            onClick={() => setQuestPanelOpen(true)}
+                            className="px-4 py-2 rounded-xl font-semibold bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white transition-all shadow-md flex items-center gap-2 border border-purple-500/30"
+                            title="Missões"
+                        >
+                            📜 Quests
+                        </button>
 
                         {/* Settings Button */}
                         <button
@@ -1067,6 +1078,12 @@ export function GameDashboard() {
                     </div>
                 </div>
             </main>
+
+            {/* Quest Panel */}
+            <QuestPanel
+                isOpen={questPanelOpen}
+                onClose={() => setQuestPanelOpen(false)}
+            />
 
             {/* Settings Modal */}
             <SettingsModal

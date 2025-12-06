@@ -27,6 +27,7 @@ import {
   EVENT_SOLUTIONS,
   ActionCombo,
 } from './eventSolutions';
+import { Quest, updateQuestProgress, checkQuestUnlocks, DAILY_QUESTS, STORY_QUESTS, resetDailyQuests } from './questSystem';
 
 interface ActiveEvent {
   event: GameEvent;
@@ -59,6 +60,11 @@ interface SimulationState {
   activeCombo: ActionCombo | null;
   comboScore: number;
 
+  // Quests
+  dailyQuests: Quest[];
+  storyQuests: Quest[];
+  lastDailyReset: number; // Timestamp of last daily reset
+
   // Methods
   tick: () => void;
   start: () => void;
@@ -68,6 +74,8 @@ interface SimulationState {
   applyAction: (action: PlayerAction) => void;
   addEvent: (event: GameEvent) => void;
   clearNotification: (index: number) => void;
+  updateQuests: (gameState: any) => void;
+  checkDailyReset: () => void;
 }
 
 const TICK_INTERVAL = 0.2; // 200ms in seconds
@@ -83,6 +91,9 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
   notifications: [],
   activeCombo: null,
   comboScore: 0,
+  dailyQuests: [...DAILY_QUESTS],
+  storyQuests: [...STORY_QUESTS],
+  lastDailyReset: Date.now(),
 
   start: () => set({ isRunning: true }),
   pause: () => set({ isRunning: false }),
@@ -97,6 +108,9 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
       notifications: [],
       activeCombo: null,
       comboScore: 0,
+      dailyQuests: resetDailyQuests(),
+      storyQuests: [...STORY_QUESTS],
+      lastDailyReset: Date.now(),
       isRunning: true,
       timeSpeed: 1,
     }),
@@ -570,5 +584,48 @@ export const useSimulationStore = create<SimulationState>((set, get) => ({
     const newNotifications = [...state.notifications];
     newNotifications.splice(index, 1);
     set({ notifications: newNotifications });
+  },
+
+  updateQuests: (gameState: any) => {
+    const state = get();
+    const deltaTime = TICK_INTERVAL * state.timeSpeed;
+
+    // Update daily quests
+    const updatedDaily = updateQuestProgress(
+      state.dailyQuests,
+      gameState,
+      state.parameters,
+      deltaTime
+    );
+
+    // Update story quests
+    let updatedStory = updateQuestProgress(
+      state.storyQuests,
+      gameState,
+      state.parameters,
+      deltaTime
+    );
+
+    // Check for unlocks
+    updatedStory = checkQuestUnlocks(updatedStory);
+
+    set({
+      dailyQuests: updatedDaily,
+      storyQuests: updatedStory,
+    });
+  },
+
+  checkDailyReset: () => {
+    const state = get();
+    const now = Date.now();
+    const hoursSinceReset = (now - state.lastDailyReset) / (1000 * 60 * 60);
+
+    // Reset after 24 hours
+    if (hoursSinceReset >= 24) {
+      set({
+        dailyQuests: resetDailyQuests(),
+        lastDailyReset: now,
+      });
+    }
   },
 }));

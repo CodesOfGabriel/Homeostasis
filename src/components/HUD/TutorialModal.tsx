@@ -128,7 +128,7 @@ export function TutorialModal({ onClose }: TutorialModalProps) {
                         </p>
                         <div className="text-xs space-y-1 text-gray-400">
                             <div>✓ Frequência Cardíaca: ~70 bpm</div>
-                            <div>✓ Respiração: ~14 rpm</div>
+                            <div>✓ Respiração: ~14 FR</div>
                             <div>✓ Glicose: ~90 mg/dL</div>
                             <div>✓ Temperatura: ~36.8°C</div>
                             <div>✓ pH: ~7.4</div>

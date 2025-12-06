@@ -444,7 +444,7 @@ export function AnatomicalBody3D(props: AnatomicalBody3DProps) {
                     </div>
                     <div className="flex items-center gap-1">
                         <div className="w-3 h-3 rounded-full bg-pink-400"></div>
-                        <span className="text-pink-300">Pulmões ({props.respiratoryRate} rpm)</span>
+                        <span className="text-pink-300">Pulmões ({props.respiratoryRate} FR)</span>
                     </div>
                 </div>
             </div >

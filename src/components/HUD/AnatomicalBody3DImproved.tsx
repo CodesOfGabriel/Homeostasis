@@ -702,7 +702,7 @@ export function AnatomicalBody3DImproved(props: AnatomicalBody3DProps) {
                     </div>
                     <div className="flex items-center gap-2">
                         <div className="w-4 h-4 rounded-full bg-gradient-to-br from-pink-400 to-pink-600 shadow-lg shadow-pink-400/50"></div>
-                        <span className="text-pink-200 font-medium">Pulmões {props.respiratoryRate} rpm</span>
+                        <span className="text-pink-200 font-medium">Pulmões {props.respiratoryRate} FR</span>
                     </div>
                 </div>
                 <div className="mt-2 pt-2 border-t border-gray-700/50 text-[10px] text-gray-400 text-center">

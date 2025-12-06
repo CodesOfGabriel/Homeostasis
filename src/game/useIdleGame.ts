@@ -69,6 +69,12 @@ export function useIdleGame(options: IdleGameHookOptions = {}) {
     });
     const [newAchievementUnlocks, setNewAchievementUnlocks] = useState<Achievement[]>([]);
     const animationFrameRef = useRef<number>();
+    const gameStateRef = useRef<GameState>(gameState);
+
+    // Keep ref in sync with state
+    useEffect(() => {
+        gameStateRef.current = gameState;
+    }, [gameState]);
 
     // Auto-save every 5 seconds
     useEffect(() => {
@@ -195,6 +201,15 @@ export function useIdleGame(options: IdleGameHookOptions = {}) {
                 };
             });
 
+            // Update quests using the ref (which has the latest state)
+            // Use setTimeout to defer to next tick to avoid race conditions
+            setTimeout(() => {
+                if (gameStateRef.current) {
+                    useSimulationStore.getState().updateQuests(gameStateRef.current);
+                    useSimulationStore.getState().checkDailyReset();
+                }
+            }, 0);
+
             lastTick = now;
             animationFrameRef.current = requestAnimationFrame(gameLoop);
         };
@@ -206,7 +221,7 @@ export function useIdleGame(options: IdleGameHookOptions = {}) {
                 cancelAnimationFrame(animationFrameRef.current);
             }
         };
-    }, [isRunning, timeSpeed]); // Re-executa quando isRunning ou timeSpeed mudam
+    }, [isRunning, timeSpeed, physiology]); // Re-executa quando isRunning, timeSpeed ou physiology mudam
 
     // Manual collection (clicking organ when not automated)
     const collectOrgan = useCallback((organId: string, x?: number, y?: number) => {

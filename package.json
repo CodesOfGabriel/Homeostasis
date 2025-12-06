@@ -21,6 +21,7 @@
     "lucide-react": "^0.555.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "react-hot-toast": "^2.6.0",
     "rough-notation": "^0.5.1",
     "three": "^0.160.0",
     "zustand": "^4.4.7"
