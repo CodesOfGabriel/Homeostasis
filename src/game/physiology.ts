@@ -1,297 +1,406 @@
-// This file defines default physiological parameters, limits and helper functions
-// for the Body Ops simulation system.
+/**
+ * Homeostasis v3.0 - Physiology Initialization
+ * Estado fisiológico inicial realista com parâmetros clínicos
+ */
 
-export interface Physiology {
-  // Cardiac
-  heartRate: number; // bpm
-  strokeVolume: number; // ml
-  cardiacOutput: number; // L/min
-  bloodPressureSystolic: number; // mmHg
-  bloodPressureDiastolic: number; // mmHg
+import {
+    PhysiologyState,
+    EnergyMatrix,
+    NutrientState,
+    HormonalProfile,
+    CardiovascularState,
+    RespiratoryState,
+    AcidBaseBalance,
+    RespiratoryExchange,
+    AllostaticLoad,
+    OrganSystem,
+    OrganState,
+} from './types';
 
-  // Respiratory
-  respiratoryRate: number; // breaths/min
-  bloodOxygen: number; // % saturation
-  tidalVolume: number; // ml
+// ============================================================================
+// INITIALIZATION FUNCTIONS
+// ============================================================================
 
-  // Metabolic
-  glucose: number; // mg/dL
-  lactate: number; // mmol/L
-  temperature: number; // °C
-
-  // Hormonal
-  adrenaline: number; // arbitrary units 0-100
-  cortisol: number; // arbitrary units 0-100
-  insulin: number; // arbitrary units 0-100
-  glucagon: number; // arbitrary units 0-100 (antagonista da insulina)
-  testosterone: number; // arbitrary units 0-100 (anabolismo)
-  growthHormone: number; // arbitrary units 0-100 (GH - crescimento)
-  thyroid: number; // arbitrary units 0-100 (T3/T4 - metabolismo)
-  melatonin: number; // arbitrary units 0-100 (sono/ritmo circadiano)
-  dopamine: number; // arbitrary units 0-100 (motivação/recompensa)
-  serotonin: number; // arbitrary units 0-100 (bem-estar/humor)
-
-  // Perfusion
-  brainPerfusion: number; // %
-  heartPerfusion: number; // %
-  musclePerfusion: number; // %
-  organsPerfusion: number; // %
-
-  // Meta
-  stress: number; // 0-100
-  energy: number; // 0-100
-  time: number; // seconds since start
-
-  // Advanced parameters
-  osmolarity: number; // mOsm/L
-  vo2Max: number; // mL/kg/min
-  pH: number; // blood pH
-  sodium: number; // mmol/L
-  potassium: number; // mmol/L
-  calcium: number; // mmol/L
-
-  // Respiratory Markers
-  pO2: number; // mmHg - Pressão parcial de O2
-  pCO2: number; // mmHg - Pressão parcial de CO2
-  hco3: number; // mEq/L - Bicarbonato
-  baseExcess: number; // mEq/L - Excesso de base
-
-  // Lipid Profile
-  totalCholesterol: number; // mg/dL
-  ldl: number; // mg/dL - "Colesterol ruim"
-  hdl: number; // mg/dL - "Colesterol bom"
-  triglycerides: number; // mg/dL
-  vldl: number; // mg/dL
-
-  // Hepatic Profile
-  alt: number; // U/L - Alanina aminotransferase
-  ast: number; // U/L - Aspartato aminotransferase
-  alp: number; // U/L - Fosfatase alcalina
-  ggt: number; // U/L - Gama glutamil transferase
-  bilirubin: number; // mg/dL - Bilirrubina total
-  albumin: number; // g/dL
-  totalProtein: number; // g/dL
-
-  // Renal Profile
-  creatinine: number; // mg/dL
-  urea: number; // mg/dL
-  bun: number; // mg/dL - Blood Urea Nitrogen
-  gfr: number; // mL/min/1.73m² - Taxa de filtração glomerular
-  uricAcid: number; // mg/dL
-
-  // Inflammatory Markers
-  crp: number; // mg/L - Proteína C reativa
-  esr: number; // mm/h - Velocidade de hemossedimentação
-
-  // Complete Blood Count (Hemograma)
-  hemoglobin: number; // g/dL
-  hematocrit: number; // %
-  rbc: number; // milhões/μL - Hemácias
-  wbc: number; // mil/μL - Leucócitos
-  platelets: number; // mil/μL - Plaquetas
-
-  // Electrolytes Extended
-  chloride: number; // mEq/L
-  magnesium: number; // mg/dL
-  phosphorus: number; // mg/dL
-
-  // Molecular pathways (0-100 activation)
-  nrf2: number;
-  mtor: number;
-  ampk: number;
-  nfkb: number;
-
-  // Body Composition / Energy Balance
-  bodyMass: number; // kg - peso corporal
-  fatMass: number; // kg - massa gorda
-  leanMass: number; // kg - massa magra
-  bmi: number; // kg/m² - índice de massa corporal
-  metabolicRate: number; // kcal/day - taxa metabólica
-
-  // ========== HOMEOSTASE E CARGA ALOSTÁTICA (v2.0) ==========
-  homeostasisScore: number;        // 0-100 (quão bem o corpo está em equilíbrio)
-  allostaticLoad: number;          // 0-100 (carga de estresse crônico acumulado)
-
-  // ========== FLUXO ENERGÉTICO REAL (v2.0) ==========
-  atpProduction: number;           // mmol/s (produção celular real)
-  atpConsumption: number;          // mmol/s (consumo celular real)
-  atpBalance: number;              // mmol/s (produção - consumo)
-
-  // ========== ESTOQUES METABÓLICOS / BIOMASSA (v2.0) ==========
-  glycogen: number;                // g (glicogênio hepático/muscular, max ~600g)
-  adiposeTissue: number;           // kg (gordura armazenada)
-  proteinReserve: number;          // g (proteína estrutural disponível)
-
-  // ========== DRIVES COMPORTAMENTAIS NPC (v2.0) ==========
-  hungerDrive: number;             // 0-100 (vontade de comer)
-  thirstDrive: number;             // 0-100 (vontade de beber)
-  sleepDrive: number;              // 0-100 (vontade de dormir)
-  exerciseDrive: number;           // 0-100 (vontade de se exercitar)
-
-  // ========== MICRONUTRIENTES (v2.0) ==========
-  vitamins: number;                // 0-100 (vitaminas gerais)
-  minerals: number;                // 0-100 (minerais gerais)
-  aminoAcids: number;              // 0-100 (aminoácidos disponíveis)
+/**
+ * Inicializa o estado fisiológico completo com valores basais normais
+ * Representa um adulto saudável de 70kg em repouso
+ */
+export function initializePhysiologyState(): PhysiologyState {
+    return {
+        energy: initializeEnergyMatrix(),
+        nutrients: initializeNutrientState(),
+        hormones: initializeHormonalProfile(),
+        cardiovascular: initializeCardiovascularState(),
+        respiratory: initializeRespiratoryState(),
+        organs: initializeOrganSystem(),
+        acidBase: initializeAcidBaseBalance(),
+        allostaticLoad: initializeAllostaticLoad(),
+        respiratoryExchange: initializeRespiratoryExchange(),
+        basalMetabolicRate: 1800, // kcal/day para 70kg
+        totalEnergyExpenditure: 1800,
+        activityLevel: 0,
+        timeElapsed: 0,
+        cyclePhase: 'awake',
+        isAlive: true,
+    };
 }
 
-export const DEFAULT_PHYSIOLOGY: Physiology = {
-  heartRate: 70,
-  strokeVolume: 70,
-  cardiacOutput: 5.0,
-  bloodPressureSystolic: 120,
-  bloodPressureDiastolic: 80,
+// ============================================================================
+// ENERGY MATRIX
+// ============================================================================
 
-  respiratoryRate: 14,
-  bloodOxygen: 98,
-  tidalVolume: 500,
+function initializeEnergyMatrix(): EnergyMatrix {
+    return {
+        // Phosphagen System
+        atpPool: 10,             // mmol - Pool imediato aumentado
+        pCrStore: 28,            // mmol - Reserva de fosfocreatina
+        maxATP: 12,              // mmol - Capacidade máxima
+        maxPCr: 30,              // mmol - Capacidade máxima PCr
 
-  glucose: 90,
-  lactate: 1.0,
-  temperature: 36.8,
+        // Glycolytic System
+        glycolyticRate: 0,       // mmol/min - Em repouso não usa
+        lactateLevel: 0.8,       // mmol/L - Nível basal reduzido
+        lactateClearance: 0.5,   // mmol/min - Remoção mais eficiente
 
-  adrenaline: 10,
-  cortisol: 20,
-  insulin: 30,
-  glucagon: 25,
-  testosterone: 50,
-  growthHormone: 40,
-  thyroid: 60,
-  melatonin: 20,
-  dopamine: 70,
-  serotonin: 75,
+        // Oxidative System
+        aerobicContribution: 100, // % - Em repouso é 100% aeróbio
+        vo2Current: 3.5,         // mL/kg/min - VO2 basal (~1 MET)
+        vo2Max: 45,              // mL/kg/min - Pessoa sedentária
 
-  brainPerfusion: 100,
-  heartPerfusion: 100,
-  musclePerfusion: 100,
-  organsPerfusion: 100,
-
-  stress: 10,
-  energy: 80,
-  time: 0,
-
-  osmolarity: 290,
-  vo2Max: 45,
-  pH: 7.4,
-  sodium: 140,
-  potassium: 4.0,
-  calcium: 2.4,
-
-  // Respiratory Markers
-  pO2: 95, // 80-100 mmHg normal
-  pCO2: 40, // 35-45 mmHg normal
-  hco3: 24, // 22-26 mEq/L normal
-  baseExcess: 0, // -2 a +2 normal
-
-  // Lipid Profile
-  totalCholesterol: 180, // <200 desejável
-  ldl: 100, // <100 ótimo
-  hdl: 55, // >40 homens, >50 mulheres
-  triglycerides: 120, // <150 normal
-  vldl: 25, // <30 normal
-
-  // Hepatic Profile
-  alt: 25, // 7-56 U/L normal
-  ast: 22, // 10-40 U/L normal
-  alp: 70, // 44-147 U/L normal
-  ggt: 30, // 9-48 U/L normal
-  bilirubin: 0.8, // 0.1-1.2 mg/dL normal
-  albumin: 4.2, // 3.5-5.5 g/dL normal
-  totalProtein: 7.0, // 6.0-8.3 g/dL normal
-
-  // Renal Profile
-  creatinine: 1.0, // 0.7-1.3 mg/dL normal
-  urea: 30, // 15-45 mg/dL normal
-  bun: 15, // 7-20 mg/dL normal
-  gfr: 95, // >90 normal
-  uricAcid: 5.5, // 3.5-7.2 mg/dL normal
-
-  // Inflammatory Markers
-  crp: 1.0, // <3.0 mg/L normal
-  esr: 10, // <20 mm/h normal
-
-  // Complete Blood Count
-  hemoglobin: 14.5, // 13.5-17.5 g/dL homens
-  hematocrit: 45, // 38-50% normal
-  rbc: 5.0, // 4.5-5.5 milhões/μL
-  wbc: 7.5, // 4.5-11.0 mil/μL
-  platelets: 250, // 150-400 mil/μL
-
-  // Electrolytes Extended
-  chloride: 102, // 96-106 mEq/L
-  magnesium: 2.0, // 1.7-2.2 mg/dL
-  phosphorus: 3.5, // 2.5-4.5 mg/dL
-
-  nrf2: 50,
-  mtor: 50,
-  ampk: 50,
-  nfkb: 20,
-
-  // Body Composition (70kg adult, 1.75m height)
-  bodyMass: 70, // kg
-  fatMass: 14, // kg (20% body fat)
-  leanMass: 56, // kg (80% lean mass)
-  bmi: 22.9, // Normal weight
-  metabolicRate: 1800, // kcal/day
-
-  // ========== VALORES PADRÃO v2.0 ==========
-  homeostasisScore: 80,
-  allostaticLoad: 10,
-
-  atpProduction: 50,     // mmol/s base
-  atpConsumption: 45,    // mmol/s base
-  atpBalance: 5,         // excesso convertido em biomassa
-
-  glycogen: 500,         // 500g (máximo ~600g)
-  adiposeTissue: 14,     // 14kg (20% de 70kg)
-  proteinReserve: 200,   // 200g disponíveis
-
-  hungerDrive: 30,
-  thirstDrive: 20,
-  sleepDrive: 25,
-  exerciseDrive: 40,
-
-  vitamins: 80,
-  minerals: 80,
-  aminoAcids: 70,
-};
-
-export const LIMITS = {
-  heartRate: { min: 40, max: 200 },
-  strokeVolume: { min: 40, max: 120 },
-  bloodOxygen: { min: 70, max: 100 },
-  respiratoryRate: { min: 8, max: 40 },
-  glucose: { min: 40, max: 300 },
-  temperature: { min: 35, max: 42 },
-  adrenaline: { min: 0, max: 100 },
-  cortisol: { min: 0, max: 100 },
-  insulin: { min: 0, max: 100 },
-  glucagon: { min: 0, max: 100 },
-  testosterone: { min: 0, max: 100 },
-  growthHormone: { min: 0, max: 100 },
-  thyroid: { min: 0, max: 100 },
-  melatonin: { min: 0, max: 100 },
-  dopamine: { min: 0, max: 100 },
-  serotonin: { min: 0, max: 100 },
-  stress: { min: 0, max: 100 },
-  energy: { min: 0, max: 100 },
-  perfusion: { min: 0, max: 100 },
-  osmolarity: { min: 270, max: 310 },
-  vo2Max: { min: 20, max: 80 },
-  pH: { min: 7.0, max: 7.8 },
-  sodium: { min: 125, max: 155 },
-  potassium: { min: 3.0, max: 6.0 },
-  calcium: { min: 2.0, max: 2.8 },
-  pathway: { min: 0, max: 100 },
-};
-
-export function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
+        // Demanda
+        atpDemand: 30,           // mmol/min - Demanda basal normalizada do modelo
+        energyDeficit: 0,        // mmol - Sem déficit inicial
+    };
 }
 
-export function clampParameter(
-  param: keyof typeof LIMITS,
-  value: number
+// ============================================================================
+// NUTRIENTS
+// ============================================================================
+
+function initializeNutrientState(): NutrientState {
+    return {
+        // Carboidratos
+        bloodGlucose: 90,        // mg/dL - Jejum normal
+        liverGlycogen: 80,       // g - ~80% da capacidade
+        muscleGlycogen: 300,     // g - ~75% da capacidade
+
+        // Lipídios
+        fattyAcids: 0.4,         // mmol/L - Nível basal
+        triglycerides: 100,      // mg/dL - Normal
+        adiposeTissue: 15,       // kg - ~20% de gordura corporal
+
+        // Proteínas
+        aminoAcids: 40,          // mg/dL - Pool circulante
+        muscleMass: 30,          // kg - Massa magra típica
+        proteinSynthesisRate: 250, // g/day - Taxa normal
+
+        // Hidratação
+        hydration: 42,           // L - 60% do peso corporal (70kg)
+        sodium: 140,             // mmol/L - Normal
+        potassium: 4.0,          // mmol/L - Normal
+
+        // Estado
+        fedState: true,
+        hoursSinceMeal: 3,
+    };
+}
+
+// ============================================================================
+// HORMONES
+// ============================================================================
+
+function initializeHormonalProfile(): HormonalProfile {
+    return {
+        // Anabólicos
+        insulin: 10,             // μIU/mL - Basal normal
+        gh: 1,                   // ng/mL - Basal baixo (pulsátil)
+        testosterone: 600,       // ng/dL - Homem adulto médio
+        igf1: 200,               // ng/mL - Normal
+
+        // Catabólicos
+        cortisol: 12,            // μg/dL - Manhã normal
+        glucagon: 80,            // pg/mL - Basal
+        adrenaline: 30,          // pg/mL - Repouso
+        noradrenaline: 200,      // pg/mL - Tônus basal
+
+        // Tireoidianos
+        t3: 120,                 // ng/dL - Normal
+        t4: 8,                   // μg/dL - Normal
+        tsh: 2.0,                // μIU/mL - Normal
+
+        // Sinalização
+        mTORActivity: 50,        // % - Atividade moderada
+    };
+}
+
+// ============================================================================
+// CARDIOVASCULAR
+// ============================================================================
+
+function initializeCardiovascularState(): CardiovascularState {
+    return {
+        // Frequência e Ritmo
+        heartRate: 70,           // bpm - Repouso normal
+        heartRateVariability: 50, // ms - RMSSD normal
+        rhythm: 'sinus',
+
+        // Pressão Arterial
+        systolicBP: 120,         // mmHg - Normal
+        diastolicBP: 80,         // mmHg - Normal
+        meanArterialPressure: 93, // mmHg - MAP normal
+
+        // Débito Cardíaco
+        strokeVolume: 70,        // mL - Normal
+        cardiacOutput: 4.9,      // L/min - 70bpm × 70mL
+        ejectionFraction: 60,    // % - Normal
+
+        // Resistência Vascular
+        systemicVascularResistance: 1000, // dyn·s/cm⁵ - Normal
+
+        // Perfusão
+        perfusionIndex: 85,      // % - Boa perfusão periférica
+    };
+}
+
+// ============================================================================
+// RESPIRATORY
+// ============================================================================
+
+function initializeRespiratoryState(): RespiratoryState {
+    return {
+        // Ventilação
+        respiratoryRate: 14,     // resp/min - Repouso normal
+        tidalVolume: 500,        // mL - Normal
+        minuteVentilation: 7.0,  // L/min - 14 × 500mL
+
+        // Oxigenação
+        spo2: 98,                // % - Normal
+        pao2: 95,                // mmHg - Normal
+        paco2: 40,               // mmHg - Normal
+
+        // Mecânica
+        lungCompliance: 100,     // mL/cmH2O - Normal
+        deadSpace: 150,          // mL - Anatômico normal
+    };
+}
+
+// ============================================================================
+// ACID-BASE BALANCE
+// ============================================================================
+
+function initializeAcidBaseBalance(): AcidBaseBalance {
+    return {
+        pH: 7.40,                // Normal
+        bicarbonate: 24,         // mmol/L - Ponto basal compatível com pH 7,40
+        pco2: 40,                // mmHg - Normal
+        baseExcess: 0,           // mmol/L - Sem excesso ou déficit de base
+        anionGap: 12,            // mmol/L - Normal
+        state: 'normal',
+        compensationActive: false,
+        compensationRate: 0,
+    };
+}
+
+// ============================================================================
+// RESPIRATORY EXCHANGE
+// ============================================================================
+
+function initializeRespiratoryExchange(): RespiratoryExchange {
+    return {
+        rer: 0.85,               // Mistura metabólica em repouso
+        vco2: 200,               // mL/min - Produção de CO2 basal
+        vo2: 245,                // mL/min - Consumo de O2 basal (3.5 mL/kg/min × 70kg)
+        substrate: 'mixed',      // Queimando mistura de substratos
+    };
+}
+
+// ============================================================================
+// ALLOSTATIC LOAD
+// ============================================================================
+
+function initializeAllostaticLoad(): AllostaticLoad {
+    return {
+        currentLoad: 10,         // Baixa carga inicial
+        maxCapacity: 100,
+        recoveryRate: 5,         // units/hour
+
+        metabolicStress: 5,
+        cardiovascularStress: 5,
+        oxidativeStress: 5,
+        inflammationLevel: 5,
+
+        fatigueLevel: 0,
+        adaptationCapacity: 100,
+    };
+}
+
+// ============================================================================
+// ORGAN SYSTEM
+// ============================================================================
+
+function initializeOrganSystem(): OrganSystem {
+    return {
+        heart: createOrgan('Coração', 0.3, 100, 5),
+        lungs: createOrgan('Pulmões', 1.0, 100, 3),
+        liver: createOrgan('Fígado', 1.5, 100, 8),
+        kidneys: createOrgan('Rins', 0.3, 100, 6),
+        brain: createOrgan('Cérebro', 1.4, 100, 10),
+        muscles: createOrgan('Músculos', 30.0, 100, 12),
+        adipose: createOrgan('Tecido Adiposo', 15.0, 100, 2),
+        gut: createOrgan('Intestinos', 1.5, 100, 4),
+    };
+}
+
+function createOrgan(
+    name: string,
+    mass: number,
+    perfusion: number,
+    metabolicRate: number
+): OrganState {
+    return {
+        name,
+        mass,                    // kg
+        perfusion,               // % (inicialmente 100)
+        oxygenation: 98,         // % (inicialmente normal)
+        metabolicRate,           // kcal/day
+        damage: 0,               // % (sem dano)
+        functionality: 100,      // % (plena função)
+        canGrow: name === 'Músculos' || name === 'Tecido Adiposo',
+        growthRate: 0,           // g/day (inicialmente sem crescimento)
+        growthSignaling: 0,      // % (sem sinalização)
+    };
+}
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+/**
+ * Calcula BMR pela equação de Harris-Benedict
+ * Homem: 88.362 + (13.397 × peso) + (4.799 × altura) - (5.677 × idade)
+ */
+export function calculateBMR(
+    weight: number,
+    height: number,
+    age: number,
+    sex: 'male' | 'female'
 ): number {
-  const limit = LIMITS[param];
-  return clamp(value, limit.min, limit.max);
+    if (sex === 'male') {
+        return 88.362 + (13.397 * weight) + (4.799 * height) - (5.677 * age);
+    } else {
+        return 447.593 + (9.247 * weight) + (3.098 * height) - (4.330 * age);
+    }
 }
+
+/**
+ * Calcula VO2max teórico pela idade
+ * VO2max = 15.3 × (MHR/RHR)
+ * MHR = 220 - age
+ */
+export function calculateVO2Max(age: number, restingHR: number): number {
+    const maxHR = 220 - age;
+    return 15.3 * (maxHR / restingHR);
+}
+
+/**
+ * Calcula composição corporal ideal
+ */
+export function calculateBodyComposition(
+    totalMass: number,
+    bodyFatPercentage: number
+): { leanMass: number; fatMass: number } {
+    const fatMass = totalMass * (bodyFatPercentage / 100);
+    const leanMass = totalMass - fatMass;
+    return { leanMass, fatMass };
+}
+
+/**
+ * Verifica se um parâmetro está dentro da faixa normal
+ */
+export function isInNormalRange(
+    value: number,
+    normalLow: number,
+    normalHigh: number
+): boolean {
+    return value >= normalLow && value <= normalHigh;
+}
+
+/**
+ * Calcula severidade do desvio de um parâmetro
+ */
+export function calculateDeviation(
+    value: number,
+    target: number,
+    tolerance: number
+): 'normal' | 'mild' | 'moderate' | 'severe' {
+    const deviation = Math.abs(value - target);
+    const normalizedDeviation = deviation / tolerance;
+
+    if (normalizedDeviation < 1) return 'normal';
+    if (normalizedDeviation < 2) return 'mild';
+    if (normalizedDeviation < 3) return 'moderate';
+    return 'severe';
+}
+
+// ============================================================================
+// EXPORTS ADICIONAIS (manter compatibilidade)
+// ============================================================================
+
+/**
+ * Interface legada - manter para compatibilidade
+ * @deprecated Use PhysiologyState do types.ts
+ */
+export interface Physiology {
+    heartRate: number;
+    strokeVolume: number;
+    cardiacOutput: number;
+    bloodPressureSystolic: number;
+    bloodPressureDiastolic: number;
+    respiratoryRate: number;
+    bloodOxygen: number;
+    tidalVolume: number;
+    glucose: number;
+    lactate: number;
+    temperature: number;
+    [key: string]: number | string | boolean;
+}
+
+/**
+ * Estado legado - manter para compatibilidade
+ * @deprecated Use initializePhysiologyState()
+ */
+export const DEFAULT_PHYSIOLOGY: Physiology = {
+    heartRate: 70,
+    strokeVolume: 70,
+    cardiacOutput: 4.9,
+    bloodPressureSystolic: 120,
+    bloodPressureDiastolic: 80,
+    respiratoryRate: 14,
+    bloodOxygen: 98,
+    tidalVolume: 500,
+    glucose: 90,
+    lactate: 1.0,
+    temperature: 36.8,
+};
+
+// ============================================================================
+// CONSTANTES CLÍNICAS
+// ============================================================================
+
+/**
+ * Valores de referência clínicos
+ */
+export const CLINICAL_RANGES = {
+    heartRate: { min: 60, max: 100, optimal: 70 },
+    bloodPressure: {
+        systolic: { min: 90, max: 120, optimal: 115 },
+        diastolic: { min: 60, max: 80, optimal: 75 },
+    },
+    glucose: { min: 70, max: 100, optimal: 85 },
+    pH: { min: 7.35, max: 7.45, optimal: 7.40 },
+    lactate: { min: 0.5, max: 2.0, optimal: 1.0 },
+    spo2: { min: 95, max: 100, optimal: 98 },
+    temperature: { min: 36.1, max: 37.2, optimal: 36.8 },
+    sodium: { min: 135, max: 145, optimal: 140 },
+    potassium: { min: 3.5, max: 5.0, optimal: 4.0 },
+} as const;

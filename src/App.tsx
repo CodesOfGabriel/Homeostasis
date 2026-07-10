@@ -1,25 +1,17 @@
+/**
+ * Homeostasis v3.0 - Simulação Fisiológica Realista
+ * Interface Frostpunk-inspired: Densa, clínica, sombria
+ */
+
 import './index.css';
-import { GameDashboard } from './pages/GameDashboard';
-import { IdleGameProvider } from './game/IdleGameContext';
-import { Toaster } from 'react-hot-toast';
+import { useSimulationLoop } from './game/simulationStore';
+import { FrostpunkDashboard } from './components/Dashboard/FrostpunkDashboard';
 
 function App() {
-  return (
-    <IdleGameProvider>
-      <Toaster
-        position="top-right"
-        toastOptions={{
-          duration: 4000,
-          style: {
-            background: '#1f2937',
-            color: '#fff',
-            border: '1px solid #374151',
-          },
-        }}
-      />
-      <GameDashboard />
-    </IdleGameProvider>
-  );
+  // Inicia o loop fisiológico (10 Hz, independente da taxa de pintura)
+  useSimulationLoop();
+
+  return <FrostpunkDashboard />;
 }
 
 export default App;

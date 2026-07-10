@@ -6,32 +6,49 @@ export default {
   ],
   theme: {
     extend: {
-      colors: {
-        'neuro': {
-          dark: '#0a0e27',
-          blue: '#1e3a8a',
-          cyan: '#06b6d4',
-          purple: '#7c3aed',
-          red: '#dc2626',
-          green: '#10b981',
-        },
-        'game': {
-          bg: '#000000',
-          panel: '#0a0a0a',
-          border: '#1a1a2e',
-          cyan: '#00f3ff',
-          purple: '#b026ff',
-          red: '#ff0055',
-          yellow: '#ffaa00',
-          green: '#00ff88',
-          blue: '#0066ff',
-        }
+      fontFamily: {
+        'sans': ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+        'mono': ['JetBrains Mono', 'Roboto Mono', 'Courier New', 'monospace'],
       },
-      boxShadow: {
-        'neon-cyan': '0 0 20px rgba(0, 243, 255, 0.5)',
-        'neon-purple': '0 0 20px rgba(176, 38, 255, 0.5)',
-        'neon-red': '0 0 20px rgba(255, 0, 85, 0.5)',
-      }
+      letterSpacing: {
+        'wide': '0.025em',
+        'wider': '0.05em',
+      },
+      colors: {
+        // Clinical Dark Palette (Frostpunk-inspired)
+        app: {
+          bg: '#09090b',        // Zinc-950 - Background total
+          surface: '#121214',   // Zinc-925 - Painéis de dados
+          panel: '#18181b',     // Zinc-900 - Cards elevados
+          border: '#27272a',    // Zinc-800 - Bordas de 1px
+          hover: '#3f3f46',     // Zinc-700 - Hover states
+        },
+        text: {
+          primary: '#e4e4e7',   // Zinc-200 - Leitura principal
+          secondary: '#a1a1aa', // Zinc-400 - Labels
+          dim: '#52525b',       // Zinc-600 - Unidades e hints
+          disabled: '#3f3f46',  // Zinc-700 - Disabled
+        },
+        // Cores de Dados (Apenas gráficos/barras)
+        data: {
+          atp: '#eab308',       // Amarelo Ouro - Energia
+          o2: '#ef4444',        // Vermelho Fosco - Arterial
+          co2: '#3b82f6',       // Azul Técnico - Venoso
+          ph: '#8b5cf6',        // Violeta - Equilíbrio Químico
+          lactate: '#f97316',   // Laranja - Ácido Lático
+          glucose: '#10b981',   // Verde - Glicose
+        },
+        // Estados Críticos
+        status: {
+          critical: '#dc2626',  // Vermelho intenso
+          warning: '#f97316',   // Laranja
+          normal: '#10b981',    // Verde técnico
+          optimal: '#06b6d4',   // Cyan
+        },
+      },
+      backgroundImage: {
+        'scan-line': 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(255,255,255,0.01) 2px, rgba(255,255,255,0.01) 4px)',
+      },
     },
   },
   plugins: [],

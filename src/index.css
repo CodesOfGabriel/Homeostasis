@@ -1,50 +1,214 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
+  font-family: 'Inter', -apple-system, system-ui, sans-serif;
+  line-height: 1.4;
   font-weight: 400;
+  letter-spacing: 0.01em;
 
   color-scheme: dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #0a0e27;
+  color: #e4e4e7;
+  background-color: #09090b;
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  text-size-adjust: 100%;
+}
+
+* {
+  box-sizing: border-box;
 }
 
 body {
   margin: 0;
   padding: 0;
   min-height: 100vh;
+  overflow: hidden;
 }
 
 #root {
   min-height: 100vh;
+  width: 100vw;
 }
 
 @layer base {
   body {
-    @apply bg-neuro-dark text-white;
+    @apply bg-app-bg text-text-primary;
+  }
+  
+  /* Números e valores dinâmicos sempre em mono com tabular-nums */
+  .value,
+  .metric,
+  .data,
+  .mono {
+    @apply font-mono tabular-nums;
+  }
+  
+  /* Foco clínico de alto contraste para teclado */
+  *:focus-visible {
+    @apply outline-none ring-2 ring-status-optimal ring-offset-2 ring-offset-app-bg;
   }
 }
 
-/* Idle Game Animations */
-@keyframes float-up {
-  0% {
+@layer components {
+  /* Frostpunk-style Panel */
+  .panel {
+    @apply bg-app-surface border border-app-border;
+  }
+  
+  .panel-elevated {
+    @apply bg-app-panel border border-app-border;
+  }
+  
+  /* Wireframe Buttons */
+  .btn-wire {
+    @apply border border-app-border bg-transparent hover:bg-app-hover text-text-primary transition-all duration-150 text-xs font-medium tracking-wide uppercase;
+  }
+  
+  .btn-wire-active {
+    @apply border border-data-atp bg-data-atp/10 text-data-atp;
+  }
+  
+  .btn-wire-critical {
+    @apply border border-status-critical bg-transparent hover:bg-status-critical/10 text-status-critical;
+  }
+  
+  /* Thin Progress Bars */
+  .bar-thin {
+    @apply h-0.5 bg-app-border overflow-hidden;
+  }
+  
+  .bar-fill {
+    @apply h-full transition-all duration-200 ease-out;
+  }
+  
+  /* Metric Display */
+  .metric-box {
+    @apply panel p-2;
+  }
+  
+  .metric-label {
+    @apply text-[10px] text-text-dim uppercase tracking-wider font-medium;
+  }
+  
+  .metric-value {
+    @apply font-mono text-xl text-text-primary tabular-nums leading-none;
+  }
+  
+  .metric-unit {
+    @apply text-xs text-text-dim font-mono ml-1;
+  }
+  
+  /* Scan Line Effect */
+  .scan-lines {
+    @apply relative;
+  }
+  
+  .scan-lines::before {
+    content: '';
+    @apply absolute inset-0 pointer-events-none bg-scan-line opacity-30;
+  }
+}
+
+/* Grid System (Frostpunk-inspired) */
+.grid-dense {
+  display: grid;
+  gap: 1px;
+  background-color: #27272a;
+}
+
+.grid-dense > * {
+  background-color: #121214;
+}
+
+.dashboard-main-grid {
+  grid-template-columns: 280px minmax(420px, 1fr) 320px;
+}
+
+@media (max-width: 1180px) {
+  .dashboard-main-grid {
+    grid-template-columns: 240px minmax(400px, 1fr) 280px;
+  }
+}
+
+@media (max-width: 900px) {
+  .dashboard-main-grid {
+    grid-template-columns: minmax(0, 1fr);
+    align-content: start;
+  }
+
+  .dashboard-main-grid > * {
+    min-width: 0;
+  }
+}
+
+/* Animations */
+@keyframes pulse-glow {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@keyframes slide-down {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
     opacity: 1;
     transform: translateY(0);
   }
-  100% {
-    opacity: 0;
-    transform: translateY(-100px);
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+.animate-slide-down {
+  animation: slide-down 0.15s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }
 
-.animate-float-up {
-  animation: float-up 1s ease-out forwards;
+/* Scrollbar customization */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #18181b;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #3f3f46;
+  border-radius: 0;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #52525b;
+}
+
+/* Selection */
+::selection {
+  background-color: rgba(234, 179, 8, 0.2);
+  color: #eab308;
 }
