@@ -1,4 +1,5 @@
-import { useState, type DragEvent } from 'react';
+import { useEffect, useState, type DragEvent } from 'react';
+import { Atom, Flame, Wind, Zap } from 'lucide-react';
 import type {
     CellularState,
     OxidationSubstrate,
@@ -9,7 +10,7 @@ import { ClinicalPanel, LevelBar, PanelHeading, WireButton } from './CellularPri
 
 interface CellularViewProps {
     cellular: CellularState;
-    onCapture: (kind: SubstrateKind) => void;
+    onCapture: (kind: SubstrateKind) => boolean;
 }
 
 interface SubstrateMeta {
@@ -18,6 +19,8 @@ interface SubstrateMeta {
     borderClass: string;
     textClass: string;
     dotClass: string;
+    icon: typeof Zap;
+    accentClass: string;
 }
 
 const SUBSTRATE_META: Record<SubstrateKind, SubstrateMeta> = {
@@ -27,6 +30,8 @@ const SUBSTRATE_META: Record<SubstrateKind, SubstrateMeta> = {
         borderClass: 'border-data-glucose',
         textClass: 'text-data-glucose',
         dotClass: 'bg-data-glucose',
+        icon: Zap,
+        accentClass: 'from-data-glucose/25 via-data-glucose/10 to-transparent',
     },
     oxygen: {
         label: 'Oxigênio',
@@ -34,6 +39,8 @@ const SUBSTRATE_META: Record<SubstrateKind, SubstrateMeta> = {
         borderClass: 'border-data-o2',
         textClass: 'text-data-o2',
         dotClass: 'bg-data-o2',
+        icon: Wind,
+        accentClass: 'from-data-o2/25 via-data-o2/10 to-transparent',
     },
     fattyAcid: {
         label: 'Ácido graxo',
@@ -41,6 +48,8 @@ const SUBSTRATE_META: Record<SubstrateKind, SubstrateMeta> = {
         borderClass: 'border-data-lactate',
         textClass: 'text-data-lactate',
         dotClass: 'bg-data-lactate',
+        icon: Flame,
+        accentClass: 'from-data-lactate/25 via-data-lactate/10 to-transparent',
     },
     aminoAcid: {
         label: 'Aminoácido',
@@ -48,6 +57,8 @@ const SUBSTRATE_META: Record<SubstrateKind, SubstrateMeta> = {
         borderClass: 'border-status-optimal',
         textClass: 'text-status-optimal',
         dotClass: 'bg-status-optimal',
+        icon: Atom,
+        accentClass: 'from-status-optimal/25 via-status-optimal/10 to-transparent',
     },
 };
 
@@ -59,7 +70,19 @@ const CAPTURE_COST: Record<SubstrateKind, number> = {
 };
 
 function CaptureDock({ cellular, onCapture }: CellularViewProps) {
+    const [flashKind, setFlashKind] = useState<SubstrateKind | null>(null);
     const kinds: SubstrateKind[] = ['glucose', 'oxygen', 'fattyAcid', 'aminoAcid'];
+
+    useEffect(() => {
+        if (!flashKind) return;
+        const timeout = window.setTimeout(() => setFlashKind(null), 320);
+        return () => window.clearTimeout(timeout);
+    }, [flashKind]);
+
+    const handleCapture = (kind: SubstrateKind) => {
+        const succeeded = onCapture(kind);
+        if (succeeded) setFlashKind(kind);
+    };
 
     return (
         <div className="border-t border-app-border bg-app-bg p-3">
@@ -81,22 +104,30 @@ function CaptureDock({ cellular, onCapture }: CellularViewProps) {
                     const meta = SUBSTRATE_META[kind];
                     const available = cellular.pools.available[kind];
                     const captured = cellular.pools.captured[kind];
+                    const Icon = meta.icon;
+                    const isFlashing = flashKind === kind;
 
                     return (
                         <button
                             key={kind}
                             type="button"
-                            onClick={() => onCapture(kind)}
+                            onClick={() => handleCapture(kind)}
                             disabled={available < CAPTURE_COST[kind]}
-                            className={`min-h-12 border bg-app-surface p-2 text-left transition-colors duration-150 hover:bg-app-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-status-optimal disabled:cursor-not-allowed disabled:border-app-border disabled:text-text-disabled ${meta.borderClass}`}
+                            className={`group relative overflow-hidden min-h-16 border bg-app-surface p-2 text-left transition-all duration-200 hover:-translate-y-0.5 hover:bg-app-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-status-optimal disabled:cursor-not-allowed disabled:border-app-border disabled:text-text-disabled ${meta.borderClass} ${isFlashing ? 'animate-collect-burst shadow-[0_0_0_1px_rgba(255,255,255,0.08),0_0_24px_rgba(255,255,255,0.12)]' : ''}`}
                             aria-label={`Captar ${meta.label}. ${available.toFixed(1)} pacotes disponíveis e ${captured.toFixed(1)} capturados`}
                         >
-                            <div className="flex items-center justify-between gap-2">
-                                <span className={`font-mono text-xs font-semibold ${meta.textClass}`}>{meta.shortLabel}</span>
+                            <span className={`pointer-events-none absolute inset-0 bg-gradient-to-br ${meta.accentClass} opacity-0 transition-opacity duration-150 group-hover:opacity-100 ${isFlashing ? 'opacity-100' : ''}`} />
+                            {isFlashing && <span className={`pointer-events-none absolute inset-0 rounded-none border border-current opacity-50 animate-collect-ring ${meta.textClass}`} aria-hidden="true" />}
+                            <div className="relative z-10 flex items-center justify-between gap-2">
+                                <span className={`flex items-center gap-1.5 font-mono text-xs font-semibold uppercase tracking-wider ${meta.textClass}`}>
+                                    <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+                                    {meta.shortLabel}
+                                </span>
                                 <span className="font-mono text-xs tabular-nums text-text-primary">{available.toFixed(1)}</span>
                             </div>
-                            <div className="mt-1 text-[9px] uppercase tracking-wider text-text-secondary">
-                                LIC {captured.toFixed(1)}
+                            <div className="relative z-10 mt-1 flex items-center justify-between gap-2 text-[9px] uppercase tracking-wider text-text-secondary">
+                                <span>{meta.label}</span>
+                                <span className="font-mono text-text-primary">LIC {captured.toFixed(1)}</span>
                             </div>
                         </button>
                     );
@@ -112,30 +143,50 @@ function TissueParticle({
     className,
     available,
     onCapture,
+    isFlashing,
 }: {
     kind: SubstrateKind;
     label: string;
     className: string;
     available: number;
-    onCapture: (kind: SubstrateKind) => void;
+    onCapture: (kind: SubstrateKind) => boolean;
+    isFlashing: boolean;
 }) {
     const meta = SUBSTRATE_META[kind];
+    const Icon = meta.icon;
 
     return (
         <button
             type="button"
             onClick={() => onCapture(kind)}
             disabled={available < CAPTURE_COST[kind]}
-            className={`absolute flex h-9 w-9 items-center justify-center rounded-full border bg-app-bg/90 font-mono text-[9px] font-semibold shadow-sm transition-transform duration-150 hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-status-optimal disabled:cursor-not-allowed disabled:opacity-30 ${meta.borderClass} ${meta.textClass} ${className}`}
+            className={`group absolute flex h-16 w-16 flex-col items-center justify-center gap-0.5 rounded-full border bg-app-bg/90 font-mono text-[9px] font-semibold shadow-lg shadow-black/25 backdrop-blur-sm transition-all duration-200 hover:-translate-y-1 hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-status-optimal disabled:cursor-not-allowed disabled:opacity-35 ${meta.borderClass} ${meta.textClass} ${className} ${isFlashing ? 'animate-collect-burst' : 'animate-float-gentle'}`}
             aria-label={`${label}. Clique para captar ${meta.label}`}
         >
-            {meta.shortLabel}
+            <span className={`pointer-events-none absolute inset-0 rounded-full bg-gradient-to-b ${meta.accentClass} opacity-30 transition-opacity duration-150 group-hover:opacity-70`} />
+            {isFlashing && <span className={`pointer-events-none absolute inset-0 rounded-full border border-current opacity-60 animate-collect-ring ${meta.textClass}`} aria-hidden="true" />}
+            <Icon className="relative z-10 h-4 w-4" aria-hidden="true" />
+            <span className="relative z-10 leading-none">{meta.shortLabel}</span>
+            <span className="relative z-10 text-[8px] uppercase tracking-[0.18em] text-text-secondary">{meta.label}</span>
         </button>
     );
 }
 
 export function TissueView({ cellular, onCapture }: CellularViewProps) {
     const tissue = cellular.tissue;
+    const [flashKind, setFlashKind] = useState<SubstrateKind | null>(null);
+
+    useEffect(() => {
+        if (!flashKind) return;
+        const timeout = window.setTimeout(() => setFlashKind(null), 320);
+        return () => window.clearTimeout(timeout);
+    }, [flashKind]);
+
+    const handleCapture = (kind: SubstrateKind) => {
+        const succeeded = onCapture(kind);
+        if (succeeded) setFlashKind(kind);
+        return succeeded;
+    };
 
     return (
         <ClinicalPanel className="flex min-h-[500px] flex-col xl:h-full xl:min-h-0" ariaLabel="Vista esquemática do tecido">
@@ -197,10 +248,10 @@ export function TissueView({ cellular, onCapture }: CellularViewProps) {
                     <text x="310" y="337" fill="#f97316" fontSize="10" textAnchor="middle">CO₂ · LACTATO · RESÍDUOS</text>
                 </svg>
 
-                <TissueParticle kind="glucose" label="Glicose no interstício" className="left-[35%] top-[23%]" available={cellular.pools.available.glucose} onCapture={onCapture} />
-                <TissueParticle kind="oxygen" label="Oxigênio no interstício" className="left-[45%] top-[39%]" available={cellular.pools.available.oxygen} onCapture={onCapture} />
-                <TissueParticle kind="fattyAcid" label="Ácido graxo no interstício" className="left-[30%] top-[55%]" available={cellular.pools.available.fattyAcid} onCapture={onCapture} />
-                <TissueParticle kind="aminoAcid" label="Aminoácido no interstício" className="left-[48%] top-[66%]" available={cellular.pools.available.aminoAcid} onCapture={onCapture} />
+                <TissueParticle kind="glucose" label="Glicose no interstício" className="left-[33%] top-[22%]" available={cellular.pools.available.glucose} onCapture={handleCapture} isFlashing={flashKind === 'glucose'} />
+                <TissueParticle kind="oxygen" label="Oxigênio no interstício" className="left-[44%] top-[38%]" available={cellular.pools.available.oxygen} onCapture={handleCapture} isFlashing={flashKind === 'oxygen'} />
+                <TissueParticle kind="fattyAcid" label="Ácido graxo no interstício" className="left-[29%] top-[55%]" available={cellular.pools.available.fattyAcid} onCapture={handleCapture} isFlashing={flashKind === 'fattyAcid'} />
+                <TissueParticle kind="aminoAcid" label="Aminoácido no interstício" className="left-[50%] top-[66%]" available={cellular.pools.available.aminoAcid} onCapture={handleCapture} isFlashing={flashKind === 'aminoAcid'} />
 
                 <div className="absolute bottom-3 right-3 max-w-56 border border-app-border bg-app-surface/95 p-2 text-[10px] text-text-secondary">
                     <span className="font-medium text-text-primary">Fluxo real:</span> perfusão entrega ao LEC; gradientes e transportadores controlam a entrada no LIC.
@@ -214,6 +265,19 @@ export function TissueView({ cellular, onCapture }: CellularViewProps) {
 
 export function IntracellularView({ cellular, onCapture }: CellularViewProps) {
     const cell = cellular.cell;
+    const [flashKind, setFlashKind] = useState<SubstrateKind | null>(null);
+
+    useEffect(() => {
+        if (!flashKind) return;
+        const timeout = window.setTimeout(() => setFlashKind(null), 320);
+        return () => window.clearTimeout(timeout);
+    }, [flashKind]);
+
+    const handleCapture = (kind: SubstrateKind) => {
+        const succeeded = onCapture(kind);
+        if (succeeded) setFlashKind(kind);
+        return succeeded;
+    };
 
     return (
         <ClinicalPanel className="flex min-h-[500px] flex-col xl:h-full xl:min-h-0" ariaLabel="Vista intracelular">
@@ -283,7 +347,7 @@ export function IntracellularView({ cellular, onCapture }: CellularViewProps) {
                 </div>
             </div>
 
-            <CaptureDock cellular={cellular} onCapture={onCapture} />
+            <CaptureDock cellular={cellular} onCapture={handleCapture} />
         </ClinicalPanel>
     );
 }

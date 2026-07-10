@@ -11,7 +11,9 @@ import {
     isActionSafe,
     HormonalActionDefinition,
     ACTION_CATEGORIES,
-} from '../game/actions'; export const HormonalControlPanel: React.FC = () => {
+} from '../game/actions';
+
+export const HormonalControlPanel: React.FC = () => {
     const [selectedCategory, setSelectedCategory] = useState<'anabolic' | 'catabolic' | 'regulatory'>('anabolic');
     const releaseHormone = useSimulationStore(state => state.releaseHormone);
     const cooldowns = useSimulationStore(state => state.hormonalCooldowns);
@@ -191,10 +193,10 @@ const HormonalActionCard: React.FC<HormonalActionCardProps> = ({
                 >
                     {isOnCooldown ? (
                         <span className="font-mono">
-                            Cooldown: {formatTime(cooldownRemaining)}
+                            Espera: {formatTime(cooldownRemaining)}
                         </span>
                     ) : !safetyCheck.safe ? (
-                        'Bloqueado - Não Seguro'
+                        'Bloqueado - não seguro'
                     ) : (
                         `Liberar ${action.baseAmount} ${getUnit(action.hormone)}`
                     )}
@@ -227,5 +229,5 @@ function getUnit(hormone: string): string {
         t4: 'μg/dL',
         mTORActivity: '%',
     };
-    return units[hormone] || 'u';
+    return units[hormone] || 'un';
 }

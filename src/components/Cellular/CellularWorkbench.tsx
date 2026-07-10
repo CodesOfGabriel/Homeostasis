@@ -8,6 +8,7 @@ import type {
     SubstrateKind,
 } from '../../game/cellularTypes';
 import type { PhysiologyState } from '../../game/types';
+import type { PhysiologicalWarning } from '../../game/types';
 import { useSimulationStore, type SystemicInterventions } from '../../game/simulationStore';
 import {
     ClinicalPanel,
@@ -236,6 +237,267 @@ function SystemicControls({
     );
 }
 
+interface WarningResponsePanelProps {
+    activeWarnings: PhysiologicalWarning[];
+    physiology: PhysiologyState;
+    interventions: SystemicInterventions;
+    activeTab: CellularTab;
+    onClose: () => void;
+    onSelectTab: (tab: CellularTab, focus?: boolean) => void;
+    onHeartRateTarget: (bpm: number) => void;
+    onVentilationDrive: (percent: number) => void;
+    onIngestWater: (ml: number) => void;
+}
+
+function WarningResponsePanel({
+    activeWarnings,
+    physiology,
+    interventions,
+    activeTab,
+    onClose,
+    onSelectTab,
+    onHeartRateTarget,
+    onVentilationDrive,
+    onIngestWater,
+}: WarningResponsePanelProps) {
+    const responses = activeWarnings.slice(0, 4).map(warning => buildWarningResponse({
+        warning,
+        physiology,
+        interventions,
+        activeTab,
+        onClose,
+        onSelectTab,
+        onHeartRateTarget,
+        onVentilationDrive,
+        onIngestWater,
+    }));
+
+    return (
+        <ClinicalPanel ariaLabel="Respostas clínicas disponíveis">
+            <PanelHeading eyebrow="Resposta guiada" title="O que fazer agora" action={<AlertTriangle className="h-4 w-4 text-status-warning" aria-hidden="true" />} />
+            <div className="space-y-2 p-3">
+                {responses.length === 0 ? (
+                    <div className="border border-app-border bg-app-bg p-3 text-[10px] text-text-secondary">
+                        Sem alertas ativos. A microfisiologia está estável e não exige intervenção imediata.
+                    </div>
+                ) : responses.map(response => (
+                    <div key={response.id} className={`border p-3 ${response.borderClass} bg-app-bg`}>
+                        <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                                <div className="text-[10px] font-medium uppercase tracking-wider text-text-secondary">
+                                    {response.parameter}
+                                </div>
+                                <div className="mt-1 text-xs text-text-primary">
+                                    {response.title}
+                                </div>
+                            </div>
+                            <span className={`shrink-0 border px-2 py-1 text-[9px] uppercase tracking-wider ${response.badgeClass}`}>
+                                {response.scopeLabel}
+                            </span>
+                        </div>
+                        <p className="mt-2 text-[10px] leading-relaxed text-text-secondary">
+                            {response.detail}
+                        </p>
+                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                            {response.available ? (
+                                <WireButton active className="min-h-9" onClick={response.onActivate}>
+                                    {response.buttonLabel}
+                                </WireButton>
+                            ) : (
+                                <WireButton className="min-h-9" onClick={response.onActivate}>
+                                    {response.buttonLabel}
+                                </WireButton>
+                            )}
+                            <span className="text-[9px] text-text-secondary">
+                                {response.hint}
+                            </span>
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </ClinicalPanel>
+    );
+}
+
+interface WarningResponse {
+    id: string;
+    parameter: string;
+    title: string;
+    detail: string;
+    hint: string;
+    buttonLabel: string;
+    scopeLabel: string;
+    available: boolean;
+    borderClass: string;
+    badgeClass: string;
+    onActivate: () => void;
+}
+
+type WarningResponseBuilderInput = Omit<WarningResponsePanelProps, 'activeWarnings'> & {
+    warning: PhysiologicalWarning;
+};
+
+function buildWarningResponse({
+    warning,
+    physiology,
+    interventions,
+    activeTab,
+    onClose,
+    onSelectTab,
+    onHeartRateTarget,
+    onVentilationDrive,
+    onIngestWater,
+}: WarningResponseBuilderInput): WarningResponse {
+    const acidBase = physiology.acidBase;
+    const cardio = physiology.cardiovascular;
+
+    if (warning.parameter === 'pH sanguíneo') {
+        const acidosis = acidBase.pH < 7.35;
+        const actionLabel = acidosis ? 'Aumentar ventilação +15%' : 'Reduzir ventilação -15%';
+        const nextDrive = acidosis
+            ? Math.min(180, interventions.ventilationDrive + 15)
+            : Math.max(50, interventions.ventilationDrive - 15);
+        return {
+            id: warning.parameter,
+            parameter: warning.parameter,
+            title: acidosis ? 'Corrigir acidose com suporte ventilatório' : 'Corrigir alcalose reduzindo hiperventilação',
+            detail: warning.recommendation,
+            hint: acidosis ? 'Alvo ventilatório disponível nesta tela.' : 'Menor drive ventilatório reduz PaCO₂ e tende a normalizar o pH.',
+            buttonLabel: actionLabel,
+            scopeLabel: 'Local',
+            available: true,
+            borderClass: acidosis ? 'border-status-critical/60' : 'border-status-warning/60',
+            badgeClass: acidosis ? 'border-status-critical/60 text-status-critical' : 'border-status-warning/60 text-status-warning',
+            onActivate: () => onVentilationDrive(nextDrive),
+        };
+    }
+
+    if (warning.parameter === 'Saturação de O₂') {
+        const useTissue = activeTab !== 'tissue';
+        return {
+            id: warning.parameter,
+            parameter: warning.parameter,
+            title: 'Garantir oferta de oxigênio ao microambiente',
+            detail: warning.recommendation,
+            hint: useTissue ? 'Aba TECIDO abre a captura direta de O₂ no LEC.' : 'A captura do O₂ fica mais efetiva com o tecido aberto.',
+            buttonLabel: useTissue ? 'Abrir TECIDO' : 'Captar O₂ agora',
+            scopeLabel: useTissue ? 'Trocar aba' : 'Local',
+            available: true,
+            borderClass: 'border-data-o2/60',
+            badgeClass: 'border-data-o2/60 text-data-o2',
+            onActivate: () => {
+                if (useTissue) {
+                    onSelectTab('tissue', true);
+                } else {
+                    onSelectTab('tissue', true);
+                }
+            },
+        };
+    }
+
+    if (warning.parameter === 'Frequência cardíaca') {
+        const target = cardio.heartRate > 110 ? Math.max(60, cardio.heartRate - 15) : Math.min(120, cardio.heartRate + 10);
+        return {
+            id: warning.parameter,
+            parameter: warning.parameter,
+            title: cardio.heartRate > 100 ? 'Reduzir taquicardia' : 'Sustentar perfusão e débito',
+            detail: warning.recommendation,
+            hint: cardio.heartRate > 100 ? 'Leve o alvo cronotrópico para baixo.' : 'Suba o alvo se houver bradicardia ou hipoperfusão.',
+            buttonLabel: `Ajustar FC alvo para ${target.toFixed(0)} bpm`,
+            scopeLabel: 'Local',
+            available: true,
+            borderClass: 'border-data-o2/60',
+            badgeClass: 'border-data-o2/60 text-data-o2',
+            onActivate: () => onHeartRateTarget(target),
+        };
+    }
+
+    if (warning.parameter === 'Hidratação corporal' || warning.parameter === 'Sódio plasmático') {
+        const needsWater = physiology.nutrients.hydration < 40 || physiology.nutrients.sodium > 145;
+        const amount = needsWater ? 250 : 100;
+        return {
+            id: warning.parameter,
+            parameter: warning.parameter,
+            title: needsWater ? 'Reposição hídrica e correção renal' : 'Evitar correção osmótica rápida',
+            detail: warning.recommendation,
+            hint: needsWater ? 'Água resolve a alavanca principal; reabsorção renal complementa.' : 'Ajustes lentos preservam osmolaridade e volume celular.',
+            buttonLabel: needsWater ? 'Ingerir 250 mL' : 'Ajustar água + renais',
+            scopeLabel: 'Local',
+            available: true,
+            borderClass: 'border-data-ph/60',
+            badgeClass: 'border-data-ph/60 text-data-ph',
+            onActivate: () => onIngestWater(amount),
+        };
+    }
+
+    if (warning.parameter === 'Glicose sanguínea') {
+        return {
+            id: warning.parameter,
+            parameter: warning.parameter,
+            title: 'Correção hormonal fora da microvista',
+            detail: warning.recommendation,
+            hint: 'Feche esta tela para abrir o painel hormonal e liberar insulina/glucagon.',
+            buttonLabel: 'Voltar ao painel principal',
+            scopeLabel: 'Global',
+            available: true,
+            borderClass: 'border-data-glucose/60',
+            badgeClass: 'border-data-glucose/60 text-data-glucose',
+            onActivate: onClose,
+        };
+    }
+
+    if (warning.parameter === 'Lactato') {
+        const canUseMachinery = activeTab !== 'machinery';
+        return {
+            id: warning.parameter,
+            parameter: warning.parameter,
+            title: 'Melhorar clareamento oxidativo do lactato',
+            detail: warning.recommendation,
+            hint: canUseMachinery ? 'A maquinaria permite oxidar piruvato e consumir O₂ com mais precisão.' : 'Na aba MAQUINARIA você pode oxidar substratos e alocar ATP.',
+            buttonLabel: canUseMachinery ? 'Abrir MAQUINARIA' : 'Já estou na MAQUINARIA',
+            scopeLabel: canUseMachinery ? 'Trocar aba' : 'Local',
+            available: true,
+            borderClass: 'border-data-lactate/60',
+            badgeClass: 'border-data-lactate/60 text-data-lactate',
+            onActivate: () => onSelectTab('machinery', true),
+        };
+    }
+
+    if (warning.parameter === 'Déficit energético') {
+        return {
+            id: warning.parameter,
+            parameter: warning.parameter,
+            title: 'Reabastecer ATP, O₂ e substratos',
+            detail: warning.recommendation,
+            hint: 'A aba MAQUINARIA concentra glicólise, oxidação e reparo.',
+            buttonLabel: 'Abrir MAQUINARIA',
+            scopeLabel: 'Trocar aba',
+            available: true,
+            borderClass: 'border-data-atp/60',
+            badgeClass: 'border-data-atp/60 text-data-atp',
+            onActivate: () => onSelectTab('machinery', true),
+        };
+    }
+
+    return {
+        id: warning.parameter,
+        parameter: warning.parameter,
+        title: warning.severity === 'severe' ? 'Intervenção necessária' : 'Acompanhar tendência',
+        detail: warning.recommendation,
+        hint: 'Use a microvista ou volte ao painel sistêmico conforme a origem do distúrbio.',
+        buttonLabel: 'Reavaliar tela principal',
+        scopeLabel: 'Global',
+        available: true,
+        borderClass: eventToneClass(warning.severity === 'severe' ? 'critical' : warning.severity === 'moderate' ? 'warning' : 'info'),
+        badgeClass: warning.severity === 'severe'
+            ? 'border-status-critical/60 text-status-critical'
+            : warning.severity === 'moderate'
+                ? 'border-status-warning/60 text-status-warning'
+                : 'border-status-optimal/60 text-status-optimal',
+        onActivate: onClose,
+    };
+}
+
 const AUTOMATION_DETAILS: Record<AutomationKind, { label: string; description: string; baseCost: number }> = {
     transporters: {
         label: 'Transportadores',
@@ -307,6 +569,7 @@ export function CellularWorkbench({ onClose }: CellularWorkbenchProps) {
     const cellular = useSimulationStore(state => state.cellular);
     const interventions = useSimulationStore(state => state.interventions);
     const physiology = useSimulationStore(state => state.physiology);
+    const activeWarnings = useSimulationStore(state => state.activeWarnings);
     const captureCellularSubstrate = useSimulationStore(state => state.captureCellularSubstrate);
     const runCellularGlycolysis = useSimulationStore(state => state.runCellularGlycolysis);
     const oxidizeCellularSubstrate = useSimulationStore(state => state.oxidizeCellularSubstrate);
@@ -469,6 +732,17 @@ export function CellularWorkbench({ onClose }: CellularWorkbenchProps) {
                             onHeartRateTarget={setHeartRateTarget}
                             onVentilationDrive={setVentilationDrive}
                             onRenalReabsorption={setRenalWaterReabsorption}
+                        />
+                        <WarningResponsePanel
+                            activeWarnings={activeWarnings}
+                            physiology={physiology}
+                            interventions={interventions}
+                            activeTab={activeTab}
+                            onClose={onClose}
+                            onSelectTab={selectTab}
+                            onHeartRateTarget={setHeartRateTarget}
+                            onVentilationDrive={setVentilationDrive}
+                            onIngestWater={ingestWater}
                         />
                         <AutomationPanel
                             cellular={cellular}

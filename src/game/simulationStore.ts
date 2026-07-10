@@ -160,7 +160,7 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
     // Estado inicial
     physiology: initializePhysiologyState(),
     cellular: initializeCellularState(),
-    isRunning: true,
+    isRunning: false,
     timeSpeed: 1,
     lastTickTime: Date.now(),
     lastHistoryRecordTime: 0,
@@ -345,6 +345,9 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
         // Atualizar warnings (substituir)
         const updatedWarnings = output.warnings;
 
+        const reinforcementEvent = createPositiveReinforcementEvent(state.physiology, output.newState);
+        const reinforcementEvents = reinforcementEvent ? [reinforcementEvent] : [];
+
         set({
             physiology: output.newState,
             cellular: cellularOutput.state,
@@ -356,7 +359,7 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
             activeHormonalActions: updatedHormonalActions,
             hormonalCooldowns: newCooldowns,
             history: newHistory,
-            recentEvents: updatedEvents,
+            recentEvents: [...reinforcementEvents, ...updatedEvents].slice(0, 50),
             activeWarnings: updatedWarnings,
         });
     },
@@ -666,6 +669,44 @@ function getHormoneCooldown(hormone: string): number {
         t4: 14400,           // 4 horas
     };
     return cooldowns[hormone] || 300;
+}
+
+function createPositiveReinforcementEvent(
+    previousState: PhysiologyState,
+    nextState: PhysiologyState,
+): PhysiologicalEvent | null {
+    if (!nextState.isAlive) return null;
+
+    const stableHeartRate = nextState.cardiovascular.heartRate >= 60 && nextState.cardiovascular.heartRate <= 95;
+    const stableOxygen = nextState.respiratory.spo2 >= 96;
+    const stablePh = nextState.acidBase.pH >= 7.36 && nextState.acidBase.pH <= 7.44;
+    const stableGlucose = nextState.nutrients.bloodGlucose >= 78 && nextState.nutrients.bloodGlucose <= 110;
+    const lowLoad = nextState.allostaticLoad.currentLoad <= 24;
+
+    if (!(stableHeartRate && stableOxygen && stablePh && stableGlucose && lowLoad)) {
+        return null;
+    }
+
+    const loadBonus = Math.min(0.28, Math.max(0.08, 0.28 - nextState.allostaticLoad.currentLoad / 120));
+    const heartbeatSeed = Math.sin(
+        nextState.timeElapsed * 12.9898
+        + nextState.cardiovascular.heartRate * 0.618
+        + nextState.nutrients.bloodGlucose * 0.17
+        + previousState.timeElapsed * 0.19,
+    ) * 43758.5453;
+    const noise = heartbeatSeed - Math.floor(heartbeatSeed);
+
+    if (noise > loadBonus) {
+        return null;
+    }
+
+    return {
+        type: 'system',
+        severity: 'info',
+        message: 'Reforço positivo variável: a homeostase se manteve estável e o sistema respondeu com recuperação eficiente.',
+        timestamp: nextState.timeElapsed,
+        affectedSystems: ['all'],
+    };
 }
 
 // ============================================================================

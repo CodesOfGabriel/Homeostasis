@@ -158,6 +158,38 @@ body {
   }
 }
 
+@keyframes heartbeat {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  10% {
+    transform: scale(1.03);
+  }
+  18% {
+    transform: scale(0.98);
+  }
+  28% {
+    transform: scale(1.06);
+  }
+  44% {
+    transform: scale(1);
+  }
+}
+
+@keyframes alarm-flicker {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  40% {
+    opacity: 0.68;
+  }
+  60% {
+    opacity: 0.88;
+  }
+}
+
 @keyframes slide-down {
   from {
     opacity: 0;
@@ -169,12 +201,68 @@ body {
   }
 }
 
+@keyframes float-gentle {
+  0%,
+  100% {
+    transform: translateY(0) translateZ(0);
+  }
+  50% {
+    transform: translateY(-6px) translateZ(0);
+  }
+}
+
+@keyframes collect-burst {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  45% {
+    transform: scale(1.18);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.92);
+    opacity: 0.75;
+  }
+}
+
+@keyframes collect-ring {
+  0% {
+    transform: scale(0.45);
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(1.65);
+    opacity: 0;
+  }
+}
+
 .animate-pulse-glow {
   animation: pulse-glow 2s ease-in-out infinite;
 }
 
+.animate-heartbeat {
+  animation: heartbeat 1.1s ease-in-out infinite;
+}
+
+.animate-alarm-flicker {
+  animation: alarm-flicker 1.4s steps(1, end) infinite;
+}
+
 .animate-slide-down {
   animation: slide-down 0.15s ease-out;
+}
+
+.animate-float-gentle {
+  animation: float-gentle 4.8s ease-in-out infinite;
+}
+
+.animate-collect-burst {
+  animation: collect-burst 0.28s ease-out;
+}
+
+.animate-collect-ring {
+  animation: collect-ring 0.42s ease-out;
 }
 
 @media (prefers-reduced-motion: reduce) {
