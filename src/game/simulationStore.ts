@@ -241,8 +241,9 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
         const adjustedDeltaTime = Math.min(2, realDeltaTime * state.timeSpeed);
 
         // A água ingerida primeiro ocupa o trato gastrointestinal e é absorvida
-        // gradualmente (limitada a 16 mL/min, ordem de grandeza de ~1 L/h).
-        const waterAbsorptionRate = Math.min(16, state.interventions.pendingWaterMl * 0.08);
+        // gradualmente. A escala de jogo comprime a fase gastrointestinal para
+        // que a intervenção gere feedback mensurável em dezenas de segundos.
+        const waterAbsorptionRate = Math.min(300, state.interventions.pendingWaterMl * 0.9);
         const absorbedWaterMl = waterAbsorptionRate * (adjustedDeltaTime / 60);
         const nextInterventions: SystemicInterventions = {
             ...state.interventions,
@@ -387,8 +388,9 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
             return;
         }
 
-        // Verificar custo energético
-        const metabolicCost = amount * 0.1; // Simplificado
+        // A concentração liberada não é uma medida de energia. Usar custos
+        // específicos evita bloquear glucagon/adrenalina por um falso custo.
+        const metabolicCost = getHormoneMetabolicCost(hormone);
         if (state.physiology.energy.atpPool < metabolicCost) {
             const event: PhysiologicalEvent = {
                 type: 'metabolic',
@@ -405,11 +407,14 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
 
         // Criar ação hormonal
         const cooldownTime = getHormoneCooldown(hormone);
-        const totalDuration = 300000;
+        const totalDuration = 18000;
+        const bolusFraction = hormone === 'adrenaline' ? 0.65 : 0.45;
+        const bolusAmount = amount * bolusFraction;
+        const sustainedAmount = amount - bolusAmount;
         const action: HormonalAction = {
             hormone,
-            amount,
-            duration: totalDuration, // 5 minutos (em ms)
+            amount: sustainedAmount,
+            duration: totalDuration,
             totalDuration,
             cooldown: cooldownTime,
             metabolicCost,
@@ -426,7 +431,7 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
         const event: PhysiologicalEvent = {
             type: 'hormonal',
             severity: 'info',
-            message: `Liberado ${amount.toFixed(1)} unidades de ${hormone}`,
+            message: `${getHormoneDisplayName(hormone)} liberado: resposta imediata e efeito sustentado por 18 segundos`,
             timestamp: state.physiology.timeElapsed,
             affectedSystems: ['hormonal'],
         };
@@ -437,6 +442,13 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
                 energy: {
                     ...state.physiology.energy,
                     atpPool: Math.max(0, state.physiology.energy.atpPool - metabolicCost),
+                },
+                hormones: {
+                    ...state.physiology.hormones,
+                    [hormone]: Math.min(
+                        getHormoneUpperLimit(hormone),
+                        state.physiology.hormones[hormone] + bolusAmount,
+                    ),
                 },
             },
             activeHormonalActions: newActions,
@@ -511,10 +523,16 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
         const accepted = Math.min(dose, Math.max(0, 2000 - state.interventions.pendingWaterMl));
         if (accepted <= 0) return;
 
+        const rapidlyAbsorbedMl = accepted * 0.2;
+        const gastricVolumeMl = accepted - rapidlyAbsorbedMl;
+        const previousHydration = state.physiology.nutrients.hydration;
+        const nextHydration = Math.min(55, previousHydration + rapidlyAbsorbedMl / 1000);
+        const dilutedSodium = state.physiology.nutrients.sodium * previousHydration / nextHydration;
+
         const event: PhysiologicalEvent = {
             type: 'environmental',
             severity: 'info',
-            message: `Ingestão de ${accepted.toFixed(0)} mL de água; absorção gastrointestinal em curso`,
+            message: `Ingestão de ${accepted.toFixed(0)} mL de água: ${rapidlyAbsorbedMl.toFixed(0)} mL absorvidos rapidamente e ${gastricVolumeMl.toFixed(0)} mL no estômago`,
             timestamp: state.physiology.timeElapsed,
             affectedSystems: ['gut', 'renal', 'tissue'],
         };
@@ -522,8 +540,16 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
         set({
             interventions: {
                 ...state.interventions,
-                pendingWaterMl: state.interventions.pendingWaterMl + accepted,
+                pendingWaterMl: state.interventions.pendingWaterMl + gastricVolumeMl,
                 cumulativeWaterMl: state.interventions.cumulativeWaterMl + accepted,
+            },
+            physiology: {
+                ...state.physiology,
+                nutrients: {
+                    ...state.physiology.nutrients,
+                    hydration: nextHydration,
+                    sodium: Math.max(115, Math.min(170, dilutedSodium)),
+                },
             },
             recentEvents: [event, ...state.recentEvents].slice(0, 50),
         });
@@ -541,10 +567,27 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
 
     setVentilationDrive: (drive: number) => {
         const state = get();
+        const clampedDrive = Math.max(50, Math.min(180, drive));
+        const currentRespiratory = state.physiology.respiratory;
+        const commandedRate = Math.max(5, Math.min(55, 14 * clampedDrive / 100));
+        const respiratoryRate = currentRespiratory.respiratoryRate
+            + (commandedRate - currentRespiratory.respiratoryRate) * 0.28;
+        const commandedTidalVolume = Math.max(280, Math.min(2200, 500 * Math.pow(clampedDrive / 100, 0.3)));
+        const tidalVolume = currentRespiratory.tidalVolume
+            + (commandedTidalVolume - currentRespiratory.tidalVolume) * 0.2;
         set({
             interventions: {
                 ...state.interventions,
-                ventilationDrive: Math.max(50, Math.min(180, drive)),
+                ventilationDrive: clampedDrive,
+            },
+            physiology: {
+                ...state.physiology,
+                respiratory: {
+                    ...currentRespiratory,
+                    respiratoryRate,
+                    tidalVolume,
+                    minuteVentilation: respiratoryRate * tidalVolume / 1000,
+                },
             },
         });
     },
@@ -659,16 +702,70 @@ function cellularActionUpdate(
  */
 function getHormoneCooldown(hormone: string): number {
     const cooldowns: Record<string, number> = {
-        insulin: 120,        // 2 minutos
-        glucagon: 180,       // 3 minutos
-        adrenaline: 300,     // 5 minutos
-        cortisol: 600,       // 10 minutos
-        gh: 3600,            // 1 hora
-        testosterone: 7200,  // 2 horas
-        t3: 14400,           // 4 horas
-        t4: 14400,           // 4 horas
+        insulin: 30,
+        glucagon: 35,
+        adrenaline: 45,
+        cortisol: 60,
+        gh: 75,
+        testosterone: 90,
+        t3: 120,
+        t4: 120,
     };
-    return cooldowns[hormone] || 300;
+    return cooldowns[hormone] || 60;
+}
+
+function getHormoneMetabolicCost(hormone: keyof PhysiologyState['hormones']): number {
+    const costs: Record<keyof PhysiologyState['hormones'], number> = {
+        insulin: 0.5,
+        gh: 0.8,
+        testosterone: 1,
+        igf1: 0.8,
+        cortisol: 0.7,
+        glucagon: 0.35,
+        adrenaline: 0.65,
+        noradrenaline: 0.65,
+        t3: 0.9,
+        t4: 0.9,
+        tsh: 0.6,
+        mTORActivity: 0.6,
+    };
+    return costs[hormone];
+}
+
+function getHormoneDisplayName(hormone: keyof PhysiologyState['hormones']): string {
+    const names: Record<keyof PhysiologyState['hormones'], string> = {
+        insulin: 'Insulina',
+        gh: 'Hormônio do crescimento',
+        testosterone: 'Testosterona',
+        igf1: 'Fator de crescimento semelhante à insulina 1',
+        cortisol: 'Cortisol',
+        glucagon: 'Glucagon',
+        adrenaline: 'Adrenalina',
+        noradrenaline: 'Noradrenalina',
+        t3: 'Triiodotironina',
+        t4: 'Tiroxina',
+        tsh: 'Hormônio estimulante da tireoide',
+        mTORActivity: 'Atividade da via mTOR',
+    };
+    return names[hormone];
+}
+
+function getHormoneUpperLimit(hormone: keyof PhysiologyState['hormones']): number {
+    const limits: Record<keyof PhysiologyState['hormones'], number> = {
+        insulin: 300,
+        gh: 100,
+        testosterone: 3000,
+        igf1: 1000,
+        cortisol: 150,
+        glucagon: 1000,
+        adrenaline: 3000,
+        noradrenaline: 5000,
+        t3: 800,
+        t4: 60,
+        tsh: 100,
+        mTORActivity: 100,
+    };
+    return limits[hormone];
 }
 
 function createPositiveReinforcementEvent(

@@ -75,8 +75,8 @@ export const HeartBpmCard: React.FC<{ bpm: number }> = ({ bpm }) => {
                         <Heart className="h-4 w-4" strokeWidth={1.7} aria-hidden="true" />
                     </div>
                     <div>
-                        <div className="metric-label">IMPULSO CARDÍACO</div>
-                        <div className="text-[10px] text-text-dim uppercase tracking-wider">human_heart.glb</div>
+                        <div className="metric-label">FREQUÊNCIA CARDÍACA GLOBAL</div>
+                        <div className="text-[10px] text-text-dim uppercase tracking-wider">sincronizada com a simulação</div>
                     </div>
                 </div>
                 <div className={`px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.18em] ${tone.badge}`}>
@@ -110,7 +110,7 @@ export const HeartBpmCard: React.FC<{ bpm: number }> = ({ bpm }) => {
                 </Canvas>
 
                 <div className="absolute inset-x-0 bottom-0 flex items-center justify-between border-t border-white/5 bg-black/50 px-3 py-2 text-[10px] text-text-dim">
-                    <span>3D view</span>
+                    <span>Modelo cardíaco tridimensional</span>
                     <span className={severity === 'critical' ? 'text-status-critical' : tone.value}>
                         {tone.subtitle}
                     </span>
@@ -119,7 +119,7 @@ export const HeartBpmCard: React.FC<{ bpm: number }> = ({ bpm }) => {
 
             <div className="relative grid grid-cols-[auto,1fr] gap-3 rounded-none border border-white/5 bg-black/20 p-3">
                 <div>
-                    <div className="text-[10px] text-text-dim uppercase tracking-wider">BPM</div>
+                    <div className="text-[10px] text-text-dim uppercase tracking-wider">BATIMENTOS POR MINUTO</div>
                     <div className={`font-mono text-5xl leading-none tabular-nums ${tone.value} ${severity !== 'normal' ? 'animate-heartbeat' : ''}`}>
                         {Math.round(bpm)}
                     </div>

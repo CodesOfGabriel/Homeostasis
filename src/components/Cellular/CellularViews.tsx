@@ -1,353 +1,257 @@
-import { useEffect, useState, type DragEvent } from 'react';
-import { Atom, Flame, Wind, Zap } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { ArrowRight, Atom, Factory, Flame, Wind, Zap } from 'lucide-react';
 import type {
     CellularState,
     OxidationSubstrate,
     RepairTarget,
     SubstrateKind,
 } from '../../game/cellularTypes';
-import { ClinicalPanel, LevelBar, PanelHeading, WireButton } from './CellularPrimitives';
+import { ClinicalPanel, PanelHeading, WireButton } from './CellularPrimitives';
+import { TissueFlowAnimation } from './TissueFlowAnimation';
 
 interface CellularViewProps {
     cellular: CellularState;
     onCapture: (kind: SubstrateKind) => boolean;
 }
 
-interface SubstrateMeta {
+interface ResourceMeta {
     label: string;
-    shortLabel: string;
+    formula: string;
+    role: string;
+    transport: string;
+    captureAmount: number;
+    capacity: number;
+    icon: typeof Zap;
     borderClass: string;
     textClass: string;
-    dotClass: string;
-    icon: typeof Zap;
-    accentClass: string;
+    barClass: string;
 }
 
-const SUBSTRATE_META: Record<SubstrateKind, SubstrateMeta> = {
+const RESOURCE_META: Record<SubstrateKind, ResourceMeta> = {
     glucose: {
         label: 'Glicose',
-        shortLabel: 'GLC',
+        formula: 'C₆H₁₂O₆',
+        role: 'Alimenta a glicólise e gera piruvato.',
+        transport: 'Transportadores de glicose',
+        captureAmount: 1,
+        capacity: 6,
+        icon: Zap,
         borderClass: 'border-data-glucose',
         textClass: 'text-data-glucose',
-        dotClass: 'bg-data-glucose',
-        icon: Zap,
-        accentClass: 'from-data-glucose/25 via-data-glucose/10 to-transparent',
+        barClass: 'bg-data-glucose',
     },
     oxygen: {
         label: 'Oxigênio',
-        shortLabel: 'O₂',
+        formula: 'O₂',
+        role: 'Sustenta a cadeia respiratória mitocondrial.',
+        transport: 'Difusão através da membrana',
+        captureAmount: 3,
+        capacity: 20,
+        icon: Wind,
         borderClass: 'border-data-o2',
         textClass: 'text-data-o2',
-        dotClass: 'bg-data-o2',
-        icon: Wind,
-        accentClass: 'from-data-o2/25 via-data-o2/10 to-transparent',
+        barClass: 'bg-data-o2',
     },
     fattyAcid: {
         label: 'Ácido graxo',
-        shortLabel: 'AG',
+        formula: 'Lipídio circulante',
+        role: 'Combustível de alto rendimento para beta-oxidação.',
+        transport: 'Translocase de ácidos graxos',
+        captureAmount: 0.5,
+        capacity: 4,
+        icon: Flame,
         borderClass: 'border-data-lactate',
         textClass: 'text-data-lactate',
-        dotClass: 'bg-data-lactate',
-        icon: Flame,
-        accentClass: 'from-data-lactate/25 via-data-lactate/10 to-transparent',
+        barClass: 'bg-data-lactate',
     },
     aminoAcid: {
         label: 'Aminoácido',
-        shortLabel: 'AA',
+        formula: 'Unidade de proteína',
+        role: 'Constrói transportadores e maquinaria de reparo.',
+        transport: 'Cotransporte de aminoácidos',
+        captureAmount: 0.5,
+        capacity: 4,
+        icon: Atom,
         borderClass: 'border-status-optimal',
         textClass: 'text-status-optimal',
-        dotClass: 'bg-status-optimal',
-        icon: Atom,
-        accentClass: 'from-status-optimal/25 via-status-optimal/10 to-transparent',
+        barClass: 'bg-status-optimal',
     },
 };
 
-const CAPTURE_COST: Record<SubstrateKind, number> = {
-    glucose: 1,
-    oxygen: 3,
-    fattyAcid: 0.5,
-    aminoAcid: 0.5,
-};
-
-function CaptureDock({ cellular, onCapture }: CellularViewProps) {
-    const [flashKind, setFlashKind] = useState<SubstrateKind | null>(null);
-    const kinds: SubstrateKind[] = ['glucose', 'oxygen', 'fattyAcid', 'aminoAcid'];
-
-    useEffect(() => {
-        if (!flashKind) return;
-        const timeout = window.setTimeout(() => setFlashKind(null), 320);
-        return () => window.clearTimeout(timeout);
-    }, [flashKind]);
-
-    const handleCapture = (kind: SubstrateKind) => {
-        const succeeded = onCapture(kind);
-        if (succeeded) setFlashKind(kind);
-    };
-
-    return (
-        <div className="border-t border-app-border bg-app-bg p-3">
-            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                <div>
-                    <div className="text-[10px] font-medium uppercase tracking-wider text-text-secondary">
-                        Substratos no LEC
-                    </div>
-                    <p className="text-[10px] text-text-secondary">
-                        Clique para captar pela membrana. A saturação dos transportadores limita o fluxo.
-                    </p>
-                </div>
-                <div className="font-mono text-[10px] text-text-secondary" aria-live="polite">
-                    CAPTURADOS: {Object.values(cellular.pools.captured).reduce((sum, value) => sum + value, 0).toFixed(0)}
-                </div>
-            </div>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                {kinds.map(kind => {
-                    const meta = SUBSTRATE_META[kind];
-                    const available = cellular.pools.available[kind];
-                    const captured = cellular.pools.captured[kind];
-                    const Icon = meta.icon;
-                    const isFlashing = flashKind === kind;
-
-                    return (
-                        <button
-                            key={kind}
-                            type="button"
-                            onClick={() => handleCapture(kind)}
-                            disabled={available < CAPTURE_COST[kind]}
-                            className={`group relative overflow-hidden min-h-16 border bg-app-surface p-2 text-left transition-all duration-200 hover:-translate-y-0.5 hover:bg-app-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-status-optimal disabled:cursor-not-allowed disabled:border-app-border disabled:text-text-disabled ${meta.borderClass} ${isFlashing ? 'animate-collect-burst shadow-[0_0_0_1px_rgba(255,255,255,0.08),0_0_24px_rgba(255,255,255,0.12)]' : ''}`}
-                            aria-label={`Captar ${meta.label}. ${available.toFixed(1)} pacotes disponíveis e ${captured.toFixed(1)} capturados`}
-                        >
-                            <span className={`pointer-events-none absolute inset-0 bg-gradient-to-br ${meta.accentClass} opacity-0 transition-opacity duration-150 group-hover:opacity-100 ${isFlashing ? 'opacity-100' : ''}`} />
-                            {isFlashing && <span className={`pointer-events-none absolute inset-0 rounded-none border border-current opacity-50 animate-collect-ring ${meta.textClass}`} aria-hidden="true" />}
-                            <div className="relative z-10 flex items-center justify-between gap-2">
-                                <span className={`flex items-center gap-1.5 font-mono text-xs font-semibold uppercase tracking-wider ${meta.textClass}`}>
-                                    <Icon className="h-3.5 w-3.5" aria-hidden="true" />
-                                    {meta.shortLabel}
-                                </span>
-                                <span className="font-mono text-xs tabular-nums text-text-primary">{available.toFixed(1)}</span>
-                            </div>
-                            <div className="relative z-10 mt-1 flex items-center justify-between gap-2 text-[9px] uppercase tracking-wider text-text-secondary">
-                                <span>{meta.label}</span>
-                                <span className="font-mono text-text-primary">LIC {captured.toFixed(1)}</span>
-                            </div>
-                        </button>
-                    );
-                })}
-            </div>
-        </div>
-    );
+function clearTimer(timer: React.MutableRefObject<number | null>) {
+    if (timer.current !== null) window.clearTimeout(timer.current);
+    timer.current = null;
 }
 
-function TissueParticle({
+function ManualResourceCard({
     kind,
-    label,
-    className,
-    available,
+    cellular,
     onCapture,
-    isFlashing,
+    onFeedback,
 }: {
     kind: SubstrateKind;
-    label: string;
-    className: string;
-    available: number;
+    cellular: CellularState;
     onCapture: (kind: SubstrateKind) => boolean;
-    isFlashing: boolean;
+    onFeedback: (message: string, succeeded: boolean) => void;
 }) {
-    const meta = SUBSTRATE_META[kind];
+    const meta = RESOURCE_META[kind];
+    const available = cellular.pools.available[kind];
+    const captured = cellular.pools.captured[kind];
+    const saturation = Math.min(100, captured / meta.capacity * 100);
+    const canCapture = available >= meta.captureAmount
+        && captured + meta.captureAmount <= meta.capacity;
+    const holdTimer = useRef<number | null>(null);
+    const repeatTimer = useRef<number | null>(null);
+    const repeated = useRef(false);
     const Icon = meta.icon;
+
+    const attemptCapture = () => {
+        const succeeded = onCapture(kind);
+        onFeedback(
+            succeeded
+                ? `${meta.label} transferido do tecido para a célula.`
+                : `${meta.label} indisponível: aguarde perfusão ou processe a reserva.`,
+            succeeded,
+        );
+        return succeeded;
+    };
+
+    const stopHolding = () => {
+        clearTimer(holdTimer);
+        if (repeatTimer.current !== null) window.clearInterval(repeatTimer.current);
+        repeatTimer.current = null;
+    };
+
+    useEffect(() => stopHolding, []);
+
+    const beginHolding = () => {
+        if (!canCapture) return;
+        repeated.current = false;
+        holdTimer.current = window.setTimeout(() => {
+            repeated.current = true;
+            attemptCapture();
+            repeatTimer.current = window.setInterval(() => {
+                if (!attemptCapture()) stopHolding();
+            }, 190);
+        }, 360);
+    };
+
+    const handleClick = () => {
+        if (repeated.current) {
+            repeated.current = false;
+            return;
+        }
+        attemptCapture();
+    };
+
+    const automationLevel = cellular.automation.transporters;
+    const status = captured + meta.captureAmount > meta.capacity
+        ? 'Reserva cheia'
+        : available < meta.captureAmount
+            ? 'Aguardando perfusão'
+            : 'Disponível para coleta';
 
     return (
         <button
             type="button"
-            onClick={() => onCapture(kind)}
-            disabled={available < CAPTURE_COST[kind]}
-            className={`group absolute flex h-16 w-16 flex-col items-center justify-center gap-0.5 rounded-full border bg-app-bg/90 font-mono text-[9px] font-semibold shadow-lg shadow-black/25 backdrop-blur-sm transition-all duration-200 hover:-translate-y-1 hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-status-optimal disabled:cursor-not-allowed disabled:opacity-35 ${meta.borderClass} ${meta.textClass} ${className} ${isFlashing ? 'animate-collect-burst' : 'animate-float-gentle'}`}
-            aria-label={`${label}. Clique para captar ${meta.label}`}
+            onClick={handleClick}
+            onPointerDown={beginHolding}
+            onPointerUp={stopHolding}
+            onPointerCancel={stopHolding}
+            onPointerLeave={stopHolding}
+            disabled={!canCapture}
+            className={`group relative min-h-40 overflow-hidden border bg-app-bg p-3 text-left transition-all duration-150 hover:-translate-y-0.5 hover:bg-app-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-status-optimal disabled:cursor-not-allowed disabled:border-app-border disabled:opacity-55 ${meta.borderClass}`}
+            aria-label={`Coletar ${meta.label}. ${available.toFixed(1)} no tecido e ${captured.toFixed(1)} na célula`}
         >
-            <span className={`pointer-events-none absolute inset-0 rounded-full bg-gradient-to-b ${meta.accentClass} opacity-30 transition-opacity duration-150 group-hover:opacity-70`} />
-            {isFlashing && <span className={`pointer-events-none absolute inset-0 rounded-full border border-current opacity-60 animate-collect-ring ${meta.textClass}`} aria-hidden="true" />}
-            <Icon className="relative z-10 h-4 w-4" aria-hidden="true" />
-            <span className="relative z-10 leading-none">{meta.shortLabel}</span>
-            <span className="relative z-10 text-[8px] uppercase tracking-[0.18em] text-text-secondary">{meta.label}</span>
+            <div className="flex items-start justify-between gap-3">
+                <span className={`flex h-9 w-9 items-center justify-center border bg-black/30 ${meta.borderClass} ${meta.textClass}`}>
+                    <Icon className="h-4 w-4" aria-hidden="true" />
+                </span>
+                <span className="border border-app-border px-2 py-1 text-[8px] uppercase tracking-wider text-text-secondary">
+                    {status}
+                </span>
+            </div>
+            <div className={`mt-3 text-sm font-semibold uppercase tracking-wider ${meta.textClass}`}>{meta.label}</div>
+            <div className="font-mono text-[9px] text-text-secondary">{meta.formula} · {meta.transport}</div>
+            <p className="mt-1 text-[9px] leading-relaxed text-text-secondary">{meta.role}</p>
+
+            <div className="mt-3 grid grid-cols-2 gap-3 text-[9px] uppercase tracking-wider text-text-secondary">
+                <span>No tecido<strong className="block font-mono text-sm font-medium text-text-primary">{available.toFixed(1)}</strong></span>
+                <span className="text-right">Na célula<strong className="block font-mono text-sm font-medium text-text-primary">{captured.toFixed(1)} / {meta.capacity}</strong></span>
+            </div>
+            <div className="mt-2 h-1.5 overflow-hidden bg-app-border">
+                <div className={`h-full transition-all duration-200 ${meta.barClass}`} style={{ width: `${saturation}%` }} />
+            </div>
+            <div className="mt-2 flex items-center justify-between text-[8px] uppercase tracking-wider text-text-secondary">
+                <span>Clique ou segure</span>
+                <span>Automação nível {automationLevel} de 4</span>
+            </div>
         </button>
     );
 }
 
 export function TissueView({ cellular, onCapture }: CellularViewProps) {
-    const tissue = cellular.tissue;
-    const [flashKind, setFlashKind] = useState<SubstrateKind | null>(null);
-
-    useEffect(() => {
-        if (!flashKind) return;
-        const timeout = window.setTimeout(() => setFlashKind(null), 320);
-        return () => window.clearTimeout(timeout);
-    }, [flashKind]);
-
-    const handleCapture = (kind: SubstrateKind) => {
-        const succeeded = onCapture(kind);
-        if (succeeded) setFlashKind(kind);
-        return succeeded;
-    };
+    const [feedback, setFeedback] = useState({
+        message: 'Escolha um substrato. Segure o botão para coleta contínua.',
+        succeeded: true,
+    });
+    const collection = cellular.collection ?? { score: 0, chain: 0, lastCaptureAt: -10 };
+    const chainActive = collection.chain > 0
+        && cellular.simulationTime - collection.lastCaptureAt <= 3.2;
 
     return (
-        <ClinicalPanel className="flex min-h-[500px] flex-col xl:h-full xl:min-h-0" ariaLabel="Vista esquemática do tecido">
+        <ClinicalPanel className="flex min-h-[620px] flex-col overflow-y-auto xl:h-full xl:min-h-0" ariaLabel="Tecido e célula">
             <PanelHeading
-                eyebrow="Microcirculação"
-                title="Capilar → LEC → membrana → LIC"
+                eyebrow="Operação celular"
+                title="Tecido e célula · captação manual de substratos"
                 action={(
-                    <span className="border border-app-border px-2 py-1 font-mono text-[9px] text-text-secondary">
-                        ESQUEMA · NÃO À ESCALA
-                    </span>
+                    <div className="flex items-center gap-3 font-mono text-[9px] text-text-secondary">
+                        <span>Pontuação <strong className="text-data-atp">{collection.score}</strong></span>
+                        <span>Cadeia <strong className={chainActive ? 'text-status-optimal' : 'text-text-dim'}>{chainActive ? `×${collection.chain}` : '—'}</strong></span>
+                    </div>
                 )}
             />
 
-            <div className="relative min-h-[350px] flex-1 overflow-hidden bg-app-bg">
-                <svg
-                    viewBox="0 0 760 430"
-                    className="absolute inset-0 h-full w-full"
-                    role="img"
-                    aria-labelledby="tissue-view-title tissue-view-description"
-                    preserveAspectRatio="xMidYMid meet"
-                >
-                    <title id="tissue-view-title">Fluxo entre capilar, líquido extracelular e células</title>
-                    <desc id="tissue-view-description">
-                        Nutrientes e oxigênio deixam o capilar, atravessam o líquido extracelular e são captados pela célula. Dióxido de carbono, lactato e resíduos fazem o caminho inverso.
-                    </desc>
-                    <defs>
-                        <pattern id="tissue-grid" width="24" height="24" patternUnits="userSpaceOnUse">
-                            <path d="M 24 0 L 0 0 0 24" fill="none" stroke="#27272a" strokeWidth="1" />
-                        </pattern>
-                        <marker id="arrow-forward" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-                            <path d="M 0 0 L 10 5 L 0 10 z" fill="#10b981" />
-                        </marker>
-                        <marker id="arrow-waste" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-                            <path d="M 0 0 L 10 5 L 0 10 z" fill="#f97316" />
-                        </marker>
-                    </defs>
-                    <rect width="760" height="430" fill="url(#tissue-grid)" opacity="0.7" />
+            <div className="grid min-h-0 flex-1 grid-cols-1 gap-px bg-app-border xl:grid-cols-12">
+                <section className="relative min-h-64 overflow-hidden bg-black xl:col-span-5" aria-label="Microcirculação do tecido">
+                    <TissueFlowAnimation />
+                    <div className="absolute inset-x-3 top-3 border border-app-border bg-black/80 p-3 backdrop-blur-sm">
+                        <div className="text-[9px] font-semibold uppercase tracking-[0.18em] text-text-primary">Fluxo capilar ativo</div>
+                        <div className="mt-1 text-[9px] leading-relaxed text-text-secondary">
+                            A perfusão repõe os recursos no tecido. A coleta transfere esses recursos para a reserva intracelular.
+                        </div>
+                    </div>
+                    <div className="absolute inset-x-3 bottom-3 grid grid-cols-3 gap-px border border-app-border bg-app-border text-center">
+                        <div className="bg-black/85 p-2"><span className="block text-[8px] uppercase text-text-secondary">Viabilidade</span><strong className="font-mono text-sm text-status-normal">{cellular.cell.viabilityPercent.toFixed(0)}%</strong></div>
+                        <div className="bg-black/85 p-2"><span className="block text-[8px] uppercase text-text-secondary">Energia celular</span><strong className="font-mono text-sm text-data-atp">{cellular.cell.atpMmolL.toFixed(2)}</strong></div>
+                        <div className="bg-black/85 p-2"><span className="block text-[8px] uppercase text-text-secondary">Perfusão</span><strong className="font-mono text-sm text-data-o2">{cellular.tissue.perfusionPercent.toFixed(0)}%</strong></div>
+                    </div>
+                </section>
 
-                    <rect x="30" y="34" width="155" height="362" rx="70" fill="#18181b" stroke="#ef4444" strokeWidth="2" />
-                    <path d="M108 72 L108 350" stroke="#ef4444" strokeWidth="1" strokeDasharray="5 8" opacity="0.7" />
-                    <text x="107" y="55" fill="#a1a1aa" fontSize="11" textAnchor="middle" letterSpacing="1.5">CAPILAR</text>
-                    <text x="107" y="379" fill="#52525b" fontSize="10" textAnchor="middle">PERFUSÃO {tissue.perfusionPercent.toFixed(0)}%</text>
-
-                    <rect x="215" y="34" width="220" height="362" fill="#121214" stroke="#27272a" strokeWidth="1" />
-                    <text x="325" y="55" fill="#a1a1aa" fontSize="11" textAnchor="middle" letterSpacing="1.5">LEC / INTERSTÍCIO</text>
-                    <text x="325" y="378" fill="#52525b" fontSize="10" textAnchor="middle">{tissue.osmolarity.toFixed(0)} mOsm/kg · pH {tissue.pH.toFixed(2)}</text>
-
-                    <circle cx="590" cy="215" r="152" fill="#121214" stroke="#8b5cf6" strokeWidth="3" />
-                    <circle cx="590" cy="215" r="132" fill="#09090b" stroke="#27272a" strokeWidth="1" strokeDasharray="4 5" />
-                    <ellipse cx="620" cy="225" rx="55" ry="29" fill="#18181b" stroke="#eab308" strokeWidth="2" />
-                    <path d="M575 225 C590 205 610 245 632 220 C642 209 651 212 662 225" fill="none" stroke="#eab308" strokeWidth="2" opacity="0.8" />
-                    <text x="590" y="92" fill="#a1a1aa" fontSize="11" textAnchor="middle" letterSpacing="1.5">CÉLULA / LIC</text>
-                    <text x="620" y="269" fill="#eab308" fontSize="10" textAnchor="middle">MITOCÔNDRIA</text>
-
-                    <path d="M165 128 C250 100 365 120 455 158" fill="none" stroke="#10b981" strokeWidth="2" markerEnd="url(#arrow-forward)" />
-                    <path d="M165 185 C270 172 370 180 455 195" fill="none" stroke="#ef4444" strokeWidth="2" markerEnd="url(#arrow-forward)" />
-                    <path d="M455 286 C350 320 260 315 165 286" fill="none" stroke="#f97316" strokeWidth="2" strokeDasharray="6 5" markerEnd="url(#arrow-waste)" />
-                    <text x="310" y="108" fill="#10b981" fontSize="10" textAnchor="middle">NUTRIENTES / O₂</text>
-                    <text x="310" y="337" fill="#f97316" fontSize="10" textAnchor="middle">CO₂ · LACTATO · RESÍDUOS</text>
-                </svg>
-
-                <TissueParticle kind="glucose" label="Glicose no interstício" className="left-[33%] top-[22%]" available={cellular.pools.available.glucose} onCapture={handleCapture} isFlashing={flashKind === 'glucose'} />
-                <TissueParticle kind="oxygen" label="Oxigênio no interstício" className="left-[44%] top-[38%]" available={cellular.pools.available.oxygen} onCapture={handleCapture} isFlashing={flashKind === 'oxygen'} />
-                <TissueParticle kind="fattyAcid" label="Ácido graxo no interstício" className="left-[29%] top-[55%]" available={cellular.pools.available.fattyAcid} onCapture={handleCapture} isFlashing={flashKind === 'fattyAcid'} />
-                <TissueParticle kind="aminoAcid" label="Aminoácido no interstício" className="left-[50%] top-[66%]" available={cellular.pools.available.aminoAcid} onCapture={handleCapture} isFlashing={flashKind === 'aminoAcid'} />
-
-                <div className="absolute bottom-3 right-3 max-w-56 border border-app-border bg-app-surface/95 p-2 text-[10px] text-text-secondary">
-                    <span className="font-medium text-text-primary">Fluxo real:</span> perfusão entrega ao LEC; gradientes e transportadores controlam a entrada no LIC.
-                </div>
+                <section className="bg-app-surface p-3 xl:col-span-7" aria-label="Coletores manuais">
+                    <div className="mb-3 flex items-end justify-between gap-3">
+                        <div>
+                            <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-text-primary">Coletores de membrana</div>
+                            <div className="mt-1 text-[9px] text-text-secondary">Colete, processe na maquinaria e volte para buscar mais.</div>
+                        </div>
+                        <span className="text-right text-[8px] uppercase tracking-wider text-text-dim">Limites impedem armazenamento infinito</span>
+                    </div>
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                        {(Object.keys(RESOURCE_META) as SubstrateKind[]).map(kind => (
+                            <ManualResourceCard
+                                key={kind}
+                                kind={kind}
+                                cellular={cellular}
+                                onCapture={onCapture}
+                                onFeedback={(message, succeeded) => setFeedback({ message, succeeded })}
+                            />
+                        ))}
+                    </div>
+                    <div className={`mt-3 border-l-2 px-3 py-2 text-[10px] ${feedback.succeeded ? 'border-status-optimal bg-status-optimal/5 text-status-optimal' : 'border-status-warning bg-status-warning/5 text-status-warning'}`} role="status" aria-live="polite">
+                        {feedback.message}
+                    </div>
+                </section>
             </div>
-
-            <CaptureDock cellular={cellular} onCapture={onCapture} />
-        </ClinicalPanel>
-    );
-}
-
-export function IntracellularView({ cellular, onCapture }: CellularViewProps) {
-    const cell = cellular.cell;
-    const [flashKind, setFlashKind] = useState<SubstrateKind | null>(null);
-
-    useEffect(() => {
-        if (!flashKind) return;
-        const timeout = window.setTimeout(() => setFlashKind(null), 320);
-        return () => window.clearTimeout(timeout);
-    }, [flashKind]);
-
-    const handleCapture = (kind: SubstrateKind) => {
-        const succeeded = onCapture(kind);
-        if (succeeded) setFlashKind(kind);
-        return succeeded;
-    };
-
-    return (
-        <ClinicalPanel className="flex min-h-[500px] flex-col xl:h-full xl:min-h-0" ariaLabel="Vista intracelular">
-            <PanelHeading
-                eyebrow="Compartimentos"
-                title="Membrana celular e citosol"
-                action={(
-                    <span className="font-mono text-[10px] text-text-secondary">
-                        ΔΨ {cell.membranePotentialMv.toFixed(0)} mV
-                    </span>
-                )}
-            />
-
-            <div className="relative min-h-[350px] flex-1 overflow-hidden bg-app-bg">
-                <svg
-                    viewBox="0 0 760 430"
-                    className="absolute inset-0 h-full w-full"
-                    role="img"
-                    aria-labelledby="cell-view-title cell-view-description"
-                    preserveAspectRatio="xMidYMid meet"
-                >
-                    <title id="cell-view-title">Célula e seus principais compartimentos</title>
-                    <desc id="cell-view-description">
-                        Corte esquemático mostrando membrana plasmática, citosol, núcleo e mitocôndrias, com gradientes de sódio, potássio e cálcio.
-                    </desc>
-                    <defs>
-                        <pattern id="cell-grid" width="20" height="20" patternUnits="userSpaceOnUse">
-                            <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#27272a" strokeWidth="1" />
-                        </pattern>
-                    </defs>
-                    <rect width="760" height="430" fill="url(#cell-grid)" opacity="0.55" />
-                    <circle cx="380" cy="218" r="188" fill="#121214" stroke="#8b5cf6" strokeWidth="5" />
-                    <circle cx="380" cy="218" r="174" fill="#09090b" stroke="#27272a" strokeWidth="1" strokeDasharray="5 6" />
-                    <circle cx="378" cy="207" r="70" fill="#18181b" stroke="#3b82f6" strokeWidth="2" />
-                    <circle cx="378" cy="207" r="24" fill="#121214" stroke="#52525b" strokeWidth="1" />
-                    <text x="378" y="202" fill="#a1a1aa" fontSize="11" textAnchor="middle">NÚCLEO</text>
-                    <text x="378" y="220" fill="#52525b" fontSize="9" textAnchor="middle">DNA {cell.viabilityPercent.toFixed(0)}% VIÁVEL</text>
-
-                    <ellipse cx="228" cy="215" rx="60" ry="31" fill="#18181b" stroke="#eab308" strokeWidth="2" />
-                    <path d="M180 215 C198 190 215 240 237 209 C250 193 268 200 277 218" fill="none" stroke="#eab308" strokeWidth="2" />
-                    <text x="228" y="260" fill="#eab308" fontSize="9" textAnchor="middle">MITOCÔNDRIA</text>
-
-                    <ellipse cx="548" cy="280" rx="58" ry="29" fill="#18181b" stroke="#eab308" strokeWidth="2" />
-                    <path d="M502 280 C520 255 538 305 557 275 C568 260 585 264 594 282" fill="none" stroke="#eab308" strokeWidth="2" />
-
-                    <path d="M190 94 L225 130" stroke="#10b981" strokeWidth="2" strokeDasharray="4 4" />
-                    <path d="M568 82 L536 128" stroke="#ef4444" strokeWidth="2" strokeDasharray="4 4" />
-                    <path d="M150 320 L210 295" stroke="#06b6d4" strokeWidth="2" strokeDasharray="4 4" />
-                    <text x="88" y="88" fill="#10b981" fontSize="10">GLICOSE</text>
-                    <text x="584" y="78" fill="#ef4444" fontSize="10">O₂</text>
-                    <text x="72" y="338" fill="#06b6d4" fontSize="10">AMINOÁCIDOS</text>
-
-                    <text x="380" y="402" fill="#a1a1aa" fontSize="10" textAnchor="middle">
-                        LIC {cell.osmolarity.toFixed(0)} mOsm/kg · pH {cell.pH.toFixed(2)} · VOLUME {cell.volumePercent.toFixed(0)}%
-                    </text>
-                </svg>
-
-                <div className="absolute left-3 top-3 w-44 space-y-2 border border-app-border bg-app-surface/95 p-2">
-                    <LevelBar label="ATP citosólico" value={cell.atpMmolL} max={8} valueLabel={`${cell.atpMmolL.toFixed(2)} mmol/L`} tone="atp" />
-                    <LevelBar label="NADH" value={cell.nadhPercent} tone="oxygen" />
-                </div>
-
-                <div className="absolute right-3 top-3 w-44 space-y-1 border border-app-border bg-app-surface/95 p-2 text-[10px]">
-                    <div className="flex justify-between"><span className="text-text-secondary">Na⁺ LIC</span><span className="font-mono text-text-primary">{cell.sodium.toFixed(1)} mmol/L</span></div>
-                    <div className="flex justify-between"><span className="text-text-secondary">K⁺ LIC</span><span className="font-mono text-text-primary">{cell.potassium.toFixed(0)} mmol/L</span></div>
-                    <div className="flex justify-between"><span className="text-text-secondary">Ca²⁺ LIC</span><span className="font-mono text-text-primary">{cell.calciumNm.toFixed(0)} nM</span></div>
-                </div>
-            </div>
-
-            <CaptureDock cellular={cellular} onCapture={handleCapture} />
         </ClinicalPanel>
     );
 }
@@ -359,217 +263,114 @@ interface MachineryViewProps {
     onAllocateAtp: (target: RepairTarget) => boolean;
 }
 
-function OxidationToken({
-    kind,
-    label,
-    amount,
-    selected,
-    onSelect,
-}: {
-    kind: OxidationSubstrate;
-    label: string;
-    amount: number;
-    selected: boolean;
-    onSelect: (kind: OxidationSubstrate) => void;
-}) {
-    const isPyruvate = kind === 'pyruvate';
-
-    const handleDragStart = (event: DragEvent<HTMLButtonElement>) => {
-        event.dataTransfer.setData('application/x-cellular-substrate', kind);
-        event.dataTransfer.effectAllowed = 'move';
-    };
-
+function Requirement({ label, value, enough }: { label: string; value: string; enough: boolean }) {
     return (
-        <button
-            type="button"
-            draggable={amount >= 1}
-            disabled={amount < 1}
-            onDragStart={handleDragStart}
-            onClick={() => onSelect(kind)}
-            className={selected
-                ? 'min-h-12 border border-data-atp bg-data-atp/10 p-2 text-left text-data-atp focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-status-optimal'
-                : isPyruvate
-                    ? 'min-h-12 border border-data-glucose bg-app-bg p-2 text-left text-data-glucose hover:bg-app-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-status-optimal disabled:cursor-not-allowed disabled:border-app-border disabled:text-text-disabled'
-                    : 'min-h-12 border border-data-lactate bg-app-bg p-2 text-left text-data-lactate hover:bg-app-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-status-optimal disabled:cursor-not-allowed disabled:border-app-border disabled:text-text-disabled'}
-            aria-pressed={selected}
-            aria-label={`${label}: ${amount.toFixed(0)} pacotes. Clique para selecionar ou arraste para a mitocôndria`}
-        >
-            <div className="flex justify-between gap-2 font-mono text-xs">
-                <span>{label}</span>
-                <span>{amount.toFixed(0)}</span>
+        <span className={enough ? 'border border-status-normal/30 px-2 py-1 text-[8px] text-status-normal' : 'border border-status-warning/40 px-2 py-1 text-[8px] text-status-warning'}>
+            {label} {value}
+        </span>
+    );
+}
+
+function RouteCard({
+    index,
+    title,
+    description,
+    requirements,
+    actionLabel,
+    disabled,
+    onAction,
+}: {
+    index: string;
+    title: string;
+    description: string;
+    requirements: React.ReactNode;
+    actionLabel: string;
+    disabled: boolean;
+    onAction: () => void;
+}) {
+    return (
+        <section className="flex min-h-56 flex-col border border-app-border bg-app-bg p-3">
+            <div className="flex items-center justify-between gap-3">
+                <span className="font-mono text-[9px] text-data-atp">ROTA {index}</span>
+                <Factory className="h-4 w-4 text-text-dim" aria-hidden="true" />
             </div>
-            <div className="mt-1 text-[9px] uppercase tracking-wider text-text-secondary">Selecionar / arrastar</div>
-        </button>
+            <h3 className="mt-3 text-xs font-semibold uppercase tracking-wider text-text-primary">{title}</h3>
+            <p className="mt-2 text-[10px] leading-relaxed text-text-secondary">{description}</p>
+            <div className="mt-3 flex flex-wrap gap-1">{requirements}</div>
+            <WireButton className="mt-auto w-full" onClick={onAction} disabled={disabled}>{actionLabel}</WireButton>
+        </section>
     );
 }
 
 export function MachineryView({ cellular, onGlycolysis, onOxidize, onAllocateAtp }: MachineryViewProps) {
-    const [selectedSubstrate, setSelectedSubstrate] = useState<OxidationSubstrate | null>(null);
-    const [interactionMessage, setInteractionMessage] = useState('Selecione ou arraste piruvato/ácido graxo para a mitocôndria.');
-    const mitochondria = cellular.mitochondria;
-
-    const oxidize = (kind: OxidationSubstrate) => {
-        const succeeded = onOxidize(kind);
-        if (succeeded) {
-            setSelectedSubstrate(null);
-            setInteractionMessage(`${kind === 'pyruvate' ? 'Piruvato' : 'Ácido graxo'} oxidado na mitocôndria.`);
-        } else {
-            setInteractionMessage('Oxidação bloqueada; confira O₂, ADP, reserva de ATP e saúde mitocondrial.');
-        }
+    const [message, setMessage] = useState('A maquinaria está pronta. Escolha uma rota de produção.');
+    const run = (action: () => boolean, success: string, failure: string) => {
+        setMessage(action() ? success : failure);
     };
-
-    const handleDrop = (event: DragEvent<HTMLButtonElement>) => {
-        event.preventDefault();
-        const kind = event.dataTransfer.getData('application/x-cellular-substrate');
-        if (kind === 'pyruvate' || kind === 'fattyAcid') oxidize(kind);
-    };
-
-    const handleMitochondriaClick = () => {
-        if (selectedSubstrate) oxidize(selectedSubstrate);
-        else setInteractionMessage('Primeiro selecione piruvato ou ácido graxo.');
-    };
+    const canGlycolysis = cellular.pools.captured.glucose >= 1 && cellular.cell.atpMmolL <= 5.72;
+    const canOxidizePyruvate = cellular.pools.pyruvate >= 1
+        && cellular.pools.captured.oxygen >= 3
+        && cellular.cell.adpMmolL >= 0.45;
+    const canOxidizeFat = cellular.pools.captured.fattyAcid >= 1
+        && cellular.pools.captured.oxygen >= 6
+        && cellular.cell.adpMmolL >= 0.85;
 
     return (
-        <ClinicalPanel className="flex min-h-[560px] flex-col xl:h-full xl:min-h-0" ariaLabel="Maquinaria celular">
+        <ClinicalPanel className="flex min-h-[620px] flex-col overflow-y-auto xl:h-full xl:min-h-0" ariaLabel="Maquinaria e rotas bioquímicas">
             <PanelHeading
-                eyebrow="Bioenergética"
-                title="Glicólise · cadeia respiratória · ATP sintase"
-                action={(
-                    <span className="font-mono text-[10px] text-data-atp">
-                        ATP TOTAL +{cellular.totalAtpProduced.toFixed(1)}
-                    </span>
-                )}
+                eyebrow="Produção celular"
+                title="Maquinaria · rotas bioquímicas"
+                action={<span className="font-mono text-[10px] text-data-atp">Energia {cellular.cell.atpMmolL.toFixed(2)} mmol/L</span>}
             />
 
-            <div className="grid min-h-0 flex-1 grid-cols-1 gap-px overflow-y-auto bg-app-border lg:grid-cols-12">
-                <section className="bg-app-surface p-3 lg:col-span-3" aria-label="Preparação de substratos">
-                    <div className="mb-3 text-[10px] font-medium uppercase tracking-wider text-text-secondary">
-                        01 · Preparação citosólica
-                    </div>
-                    <div className="border border-data-glucose bg-app-bg p-3">
-                        <div className="flex items-center justify-between gap-2">
-                            <span className="text-xs font-medium text-text-primary">GLICÓLISE</span>
-                            <span className="font-mono text-[10px] text-data-glucose">
-                                GLC {cellular.pools.captured.glucose.toFixed(0)}
-                            </span>
-                        </div>
-                        <p className="mt-2 text-[10px] leading-relaxed text-text-secondary">
-                            Glicose → piruvato + ATP citosólico + NADH. Não exige mitocôndria.
-                        </p>
-                        <WireButton
-                            className="mt-3 w-full"
-                            onClick={() => {
-                                const succeeded = onGlycolysis();
-                                setInteractionMessage(succeeded
-                                    ? 'Glicólise concluída: ATP citosólico e piruvato gerados.'
-                                    : 'Glicólise bloqueada; capte glicose ou aloque o ATP acumulado.');
-                            }}
-                            disabled={cellular.pools.captured.glucose < 1 || cellular.cell.atpMmolL > 5.72}
-                        >
-                            Executar glicólise
-                        </WireButton>
-                    </div>
+            <div className="border-b border-app-border bg-app-bg p-3">
+                <div className="grid grid-cols-5 gap-px border border-app-border bg-app-border text-center">
+                    <div className="bg-app-surface p-2"><span className="block text-[8px] uppercase text-text-secondary">Glicose</span><strong className="font-mono text-data-glucose">{cellular.pools.captured.glucose.toFixed(1)}</strong></div>
+                    <div className="bg-app-surface p-2"><span className="block text-[8px] uppercase text-text-secondary">Oxigênio</span><strong className="font-mono text-data-o2">{cellular.pools.captured.oxygen.toFixed(1)}</strong></div>
+                    <div className="bg-app-surface p-2"><span className="block text-[8px] uppercase text-text-secondary">Ácido graxo</span><strong className="font-mono text-data-lactate">{cellular.pools.captured.fattyAcid.toFixed(1)}</strong></div>
+                    <div className="bg-app-surface p-2"><span className="block text-[8px] uppercase text-text-secondary">Aminoácido</span><strong className="font-mono text-status-optimal">{cellular.pools.captured.aminoAcid.toFixed(1)}</strong></div>
+                    <div className="bg-app-surface p-2"><span className="block text-[8px] uppercase text-text-secondary">Piruvato</span><strong className="font-mono text-text-primary">{cellular.pools.pyruvate.toFixed(1)}</strong></div>
+                </div>
+            </div>
 
-                    <div className="mt-3 grid grid-cols-2 gap-2 lg:grid-cols-1">
-                        <OxidationToken
-                            kind="pyruvate"
-                            label="PIRUVATO"
-                            amount={cellular.pools.pyruvate}
-                            selected={selectedSubstrate === 'pyruvate'}
-                            onSelect={setSelectedSubstrate}
-                        />
-                        <OxidationToken
-                            kind="fattyAcid"
-                            label="ÁCIDO GRAXO"
-                            amount={cellular.pools.captured.fattyAcid}
-                            selected={selectedSubstrate === 'fattyAcid'}
-                            onSelect={setSelectedSubstrate}
-                        />
+            <div className="grid flex-1 grid-cols-1 gap-2 bg-app-surface p-3 lg:grid-cols-[1fr_auto_1fr_auto_1fr] lg:items-stretch">
+                <RouteCard
+                    index="01"
+                    title="Glicólise"
+                    description="Converte glicose em dois piruvatos, adenosina trifosfato citosólica e nicotinamida adenina dinucleotídeo reduzida."
+                    requirements={<Requirement label="Glicose" value="1,0" enough={cellular.pools.captured.glucose >= 1} />}
+                    actionLabel="Processar glicose"
+                    disabled={!canGlycolysis}
+                    onAction={() => run(onGlycolysis, 'Glicólise concluída: dois piruvatos disponíveis.', 'Glicólise bloqueada: colete glicose ou consuma a energia acumulada.')}
+                />
+                <div className="hidden items-center justify-center lg:flex"><ArrowRight className="h-5 w-5 text-text-dim" aria-hidden="true" /></div>
+                <section className="flex min-h-56 flex-col gap-2 border border-app-border bg-app-bg p-3">
+                    <div className="font-mono text-[9px] text-data-atp">ROTA 02</div>
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-text-primary">Oxidação mitocondrial</h3>
+                    <div className="border border-data-glucose/40 p-2">
+                        <div className="text-[9px] text-text-secondary">Piruvato + 3 oxigênios</div>
+                        <WireButton className="mt-2 w-full" disabled={!canOxidizePyruvate} onClick={() => run(() => onOxidize('pyruvate'), 'Piruvato oxidado; energia mitocondrial produzida.', 'Oxidação bloqueada: confira piruvato, oxigênio e adenosina difosfato.')}>Oxidar piruvato</WireButton>
+                    </div>
+                    <div className="border border-data-lactate/40 p-2">
+                        <div className="text-[9px] text-text-secondary">Ácido graxo + 6 oxigênios</div>
+                        <WireButton className="mt-2 w-full" disabled={!canOxidizeFat} onClick={() => run(() => onOxidize('fattyAcid'), 'Beta-oxidação concluída; alto rendimento energético.', 'Beta-oxidação bloqueada: confira ácido graxo, oxigênio e adenosina difosfato.')}>Executar beta-oxidação</WireButton>
                     </div>
                 </section>
-
-                <section className="relative flex min-h-[390px] flex-col bg-app-bg p-3 lg:col-span-6" aria-label="Mitocôndria e cadeia respiratória">
-                    <div className="mb-2 flex items-center justify-between gap-3">
-                        <div className="text-[10px] font-medium uppercase tracking-wider text-text-secondary">
-                            02 · Oxidação mitocondrial
-                        </div>
-                        <div className="font-mono text-[10px] text-text-secondary">
-                            O₂ CAPTADO {cellular.pools.captured.oxygen.toFixed(0)}
-                        </div>
-                    </div>
-
-                    <button
-                        type="button"
-                        onClick={handleMitochondriaClick}
-                        onDragOver={event => {
-                            event.preventDefault();
-                            event.dataTransfer.dropEffect = 'move';
-                        }}
-                        onDrop={handleDrop}
-                        className={selectedSubstrate
-                            ? 'relative min-h-[250px] flex-1 overflow-hidden border-2 border-data-atp bg-data-atp/10 p-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-status-optimal'
-                            : 'relative min-h-[250px] flex-1 overflow-hidden border border-app-border bg-app-surface p-3 text-left hover:border-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-status-optimal'}
-                        aria-label="Mitocôndria. Zona de destino para piruvato ou ácido graxo. Não recebe ATP; ela produz ATP a partir de ADP e fosfato"
-                    >
-                        <svg viewBox="0 0 520 250" className="absolute inset-0 h-full w-full" role="img" aria-label="Esquema da cadeia transportadora de elétrons">
-                            <ellipse cx="260" cy="125" rx="232" ry="100" fill="#121214" stroke="#eab308" strokeWidth="3" />
-                            <path d="M56 126 C95 55 135 196 180 110 C222 30 260 208 307 103 C352 10 395 195 463 118" fill="none" stroke="#52525b" strokeWidth="3" />
-                            <rect x="112" y="95" width="42" height="58" fill="#18181b" stroke="#3b82f6" />
-                            <rect x="196" y="95" width="42" height="58" fill="#18181b" stroke="#3b82f6" />
-                            <rect x="280" y="95" width="42" height="58" fill="#18181b" stroke="#3b82f6" />
-                            <rect x="364" y="95" width="42" height="58" fill="#18181b" stroke="#ef4444" />
-                            <text x="133" y="128" fill="#e4e4e7" fontSize="10" textAnchor="middle">I</text>
-                            <text x="217" y="128" fill="#e4e4e7" fontSize="10" textAnchor="middle">II</text>
-                            <text x="301" y="128" fill="#e4e4e7" fontSize="10" textAnchor="middle">III</text>
-                            <text x="385" y="128" fill="#e4e4e7" fontSize="10" textAnchor="middle">IV</text>
-                            <path d="M134 87 L134 56 M301 87 L301 56 M385 87 L385 56" stroke="#8b5cf6" strokeWidth="2" />
-                            <text x="260" y="48" fill="#8b5cf6" fontSize="10" textAnchor="middle">GRADIENTE DE H⁺</text>
-                            <circle cx="448" cy="73" r="24" fill="#18181b" stroke="#eab308" strokeWidth="2" />
-                            <text x="448" y="70" fill="#eab308" fontSize="9" textAnchor="middle">ATP</text>
-                            <text x="448" y="82" fill="#eab308" fontSize="8" textAnchor="middle">SINTASE</text>
-                            <text x="260" y="208" fill="#a1a1aa" fontSize="10" textAnchor="middle">ADP + Pi + gradiente de H⁺ → ATP</text>
-                        </svg>
-
-                        <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between gap-2 border border-app-border bg-app-bg/95 px-3 py-2">
-                            <span className="text-[10px] text-text-secondary">SOLTE AQUI OU CLIQUE APÓS SELECIONAR</span>
-                            <span className="font-mono text-[10px] text-data-atp">ΔΨm {mitochondria.membranePotentialMv.toFixed(0)} mV</span>
-                        </div>
-                    </button>
-
-                    <div className="mt-2 text-[10px] text-text-secondary" role="status" aria-live="polite">
-                        {interactionMessage}
+                <div className="hidden items-center justify-center lg:flex"><ArrowRight className="h-5 w-5 text-text-dim" aria-hidden="true" /></div>
+                <section className="flex min-h-56 flex-col border border-app-border bg-app-bg p-3">
+                    <div className="font-mono text-[9px] text-data-atp">ROTA 03</div>
+                    <h3 className="mt-2 text-xs font-semibold uppercase tracking-wider text-text-primary">Alocação e reparo</h3>
+                    <p className="mt-2 text-[10px] leading-relaxed text-text-secondary">Consome energia produzida para estabilizar a célula.</p>
+                    <div className="mt-3 space-y-2">
+                        <WireButton className="w-full" onClick={() => run(() => onAllocateAtp('membrane'), 'Membrana e bombas iônicas reparadas.', 'Não há dano suficiente ou falta energia.')} disabled={cellular.cell.atpMmolL < 1.25 || cellular.damage.membrane <= 0.1}>Reparar membrana</WireButton>
+                        <WireButton className="w-full" onClick={() => run(() => onAllocateAtp('proteins'), 'Proteínas celulares reparadas.', 'Não há dano suficiente ou falta energia.')} disabled={cellular.cell.atpMmolL < 1.3 || cellular.damage.proteins <= 0.1}>Reparar proteínas</WireButton>
+                        <WireButton className="w-full" onClick={() => run(() => onAllocateAtp('antioxidants'), 'Defesas antioxidantes restauradas.', 'Defesas completas ou falta energia.')} disabled={cellular.cell.atpMmolL < 1.15 || (cellular.damage.antioxidantCapacity >= 98 && cellular.damage.oxidativeStress <= 5)}>Restaurar antioxidantes</WireButton>
                     </div>
                 </section>
+            </div>
 
-                <section className="bg-app-surface p-3 lg:col-span-3" aria-label="Destinos do ATP">
-                    <div className="mb-3 text-[10px] font-medium uppercase tracking-wider text-text-secondary">
-                        03 · Alocação de ATP
-                    </div>
-                    <div className="space-y-2">
-                        <LevelBar label="Fluxo ETC" value={mitochondria.etcFluxPercent} tone="oxygen" />
-                        <LevelBar label="Saúde mitocondrial" value={mitochondria.healthPercent} tone={mitochondria.healthPercent < 45 ? 'critical' : 'normal'} />
-                        <LevelBar label="ATP sintase" value={mitochondria.atpSynthaseFlux} max={100} tone="atp" />
-                    </div>
-
-                    <div className="mt-4 space-y-2">
-                        <WireButton className="w-full text-left" onClick={() => onAllocateAtp('membrane')} disabled={cellular.cell.atpMmolL < 1.25 || cellular.damage.membrane <= 0.1}>
-                            Membrana + bombas · {cellular.atpAllocation.ionPumps.toFixed(1)}
-                        </WireButton>
-                        <WireButton className="w-full text-left" onClick={() => onAllocateAtp('proteins')} disabled={cellular.cell.atpMmolL < 1.3 || cellular.damage.proteins <= 0.1}>
-                            Reparo proteico · dano {cellular.damage.proteins.toFixed(0)}%
-                        </WireButton>
-                        <WireButton className="w-full text-left" onClick={() => onAllocateAtp('dna')} disabled={cellular.cell.atpMmolL < 1.5 || cellular.damage.dna <= 0.1}>
-                            Reparo de DNA · dano {cellular.damage.dna.toFixed(0)}%
-                        </WireButton>
-                        <WireButton className="w-full text-left" onClick={() => onAllocateAtp('antioxidants')} disabled={cellular.cell.atpMmolL < 1.15 || (cellular.damage.antioxidantCapacity >= 98 && cellular.damage.oxidativeStress <= 5)}>
-                            Antioxidantes · {cellular.damage.antioxidantCapacity.toFixed(0)}%
-                        </WireButton>
-                    </div>
-
-                    <p className="mt-4 border-l-2 border-data-atp pl-2 text-[10px] leading-relaxed text-text-secondary">
-                        ATP sai da mitocôndria para os consumidores celulares. Ele não é transportado para dentro dela por vesículas.
-                    </p>
-                </section>
+            <div className="border-t border-app-border bg-app-bg px-3 py-2 text-[10px] text-text-secondary" role="status" aria-live="polite">
+                {message}
             </div>
         </ClinicalPanel>
     );

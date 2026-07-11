@@ -61,6 +61,14 @@ export interface CellularDamage {
     antioxidantCapacity: number;
 }
 
+export interface CellularCollectionProgress {
+    score: number;
+    chain: number;
+    lastCaptureAt: number;
+    lastKind: SubstrateKind | null;
+    priorityCaptures: number;
+}
+
 export interface CellularRoutineEvent {
     id: string;
     title: string;
@@ -75,6 +83,7 @@ export interface CellularState {
     mitochondria: MitochondrialState;
     pools: CellularPools;
     damage: CellularDamage;
+    collection: CellularCollectionProgress;
     automation: Record<AutomationKind, number>;
     atpAllocation: Record<AtpAllocationTarget, number>;
     routine: CellularRoutineEvent | null;
@@ -108,4 +117,9 @@ export interface CellularActionResult {
     ok: boolean;
     reason?: string;
     event?: CellularEvent;
+}
+
+export interface AutomationRecipe {
+    atp: number;
+    substrates: Partial<SubstratePool>;
 }

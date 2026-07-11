@@ -11,7 +11,7 @@ interface ClinicalPanelProps {
 export function ClinicalPanel({ children, className = '', ariaLabel }: ClinicalPanelProps) {
     return (
         <section
-            className={`border border-app-border bg-app-surface ${className}`}
+            className={`border border-app-border/80 bg-app-surface/90 ${className}`}
             aria-label={ariaLabel}
         >
             {children}
@@ -27,14 +27,14 @@ interface PanelHeadingProps {
 
 export function PanelHeading({ title, eyebrow, action }: PanelHeadingProps) {
     return (
-        <header className="flex min-h-11 items-center justify-between gap-3 border-b border-app-border px-3 py-2">
+        <header className="flex min-h-10 items-center justify-between gap-3 border-b border-app-border/80 px-3 py-2">
             <div className="min-w-0">
                 {eyebrow && (
-                    <div className="text-[10px] font-medium uppercase tracking-wider text-text-secondary">
+                    <div className="text-[9px] font-medium uppercase tracking-[0.2em] text-text-dim">
                         {eyebrow}
                     </div>
                 )}
-                <h2 className="truncate text-xs font-semibold uppercase tracking-wider text-text-primary">
+                <h2 className="text-[11px] font-semibold uppercase leading-snug tracking-[0.18em] text-text-primary">
                     {title}
                 </h2>
             </div>
@@ -73,19 +73,19 @@ export function MetricCard({
 
     return (
         <div
-            className="min-w-0 border border-app-border bg-app-bg p-2"
+            className="min-w-0 border-b border-app-border/70 bg-transparent px-0 pb-2 pt-1"
             aria-label={`${label}: ${formattedValue}${unit ? ` ${unit}` : ''}${hint ? `. ${hint}` : ''}`}
         >
-            <div className="truncate text-[10px] font-medium uppercase tracking-wider text-text-secondary">
+            <div className="min-h-6 text-[9px] font-medium uppercase leading-snug tracking-[0.18em] text-text-dim">
                 {label}
             </div>
-            <div className="mt-1 flex min-w-0 items-baseline gap-1">
-                <output className={`truncate font-mono text-lg tabular-nums leading-none ${metricToneClass(tone)}`}>
+            <div className="mt-0.5 flex min-w-0 items-baseline gap-1">
+                <output className={`truncate font-mono text-base tabular-nums leading-none ${metricToneClass(tone)}`}>
                     {formattedValue}
                 </output>
                 {unit && <span className="truncate text-[10px] text-text-secondary">{unit}</span>}
             </div>
-            {hint && <div className="mt-1 truncate text-[10px] text-text-secondary">{hint}</div>}
+            {hint && <div className="mt-0.5 text-[10px] leading-snug text-text-dim">{hint}</div>}
         </div>
     );
 }
@@ -111,14 +111,14 @@ export function LevelBar({ label, value, max = 100, valueLabel, tone = 'normal' 
 
     return (
         <div>
-            <div className="mb-1 flex items-center justify-between gap-2 text-[10px]">
-                <span className="uppercase tracking-wider text-text-secondary">{label}</span>
+            <div className="mb-1 flex items-center justify-between gap-2 text-[9px] uppercase tracking-[0.18em] text-text-dim">
+                <span>{label}</span>
                 <span className="font-mono tabular-nums text-text-primary">
                     {valueLabel ?? `${value.toFixed(0)}%`}
                 </span>
             </div>
             <div
-                className="h-1.5 overflow-hidden bg-app-border"
+                className="h-1 overflow-hidden bg-app-border/80"
                 role="progressbar"
                 aria-label={label}
                 aria-valuemin={0}
@@ -161,4 +161,3 @@ export function WireButton({
         />
     );
 }
-

@@ -1,6 +1,7 @@
 import type { PhysiologyState } from './types';
 import type {
     AutomationKind,
+    AutomationRecipe,
     CellularActionResult,
     CellularControls,
     CellularEvent,
@@ -19,6 +20,29 @@ const FIXED_STEP = 0.25;
 const GLYCOLYSIS_ATP_YIELD = 0.08;
 const PYRUVATE_ATP_YIELD = 0.45;
 const FATTY_ACID_ATP_YIELD = 0.85;
+
+export const AUTOMATION_MAX_LEVEL = 4;
+export const CELLULAR_OPTIMIZATION_BUDGET = 8;
+
+export function getAutomationRecipe(kind: AutomationKind, level: number): AutomationRecipe {
+    const tier = clamp(level, 0, AUTOMATION_MAX_LEVEL - 1);
+    if (kind === 'transporters') {
+        return {
+            atp: 0.55 + tier * 0.20,
+            substrates: { glucose: 0.5 + tier * 0.25, aminoAcid: 0.5 + tier * 0.25 },
+        };
+    }
+    if (kind === 'mitochondrialShuttle') {
+        return {
+            atp: 0.70 + tier * 0.22,
+            substrates: { fattyAcid: 0.5 + tier * 0.25, aminoAcid: 0.5 + tier * 0.25 },
+        };
+    }
+    return {
+        atp: 0.80 + tier * 0.24,
+        substrates: { glucose: 0.5 + tier * 0.25, aminoAcid: 1 + tier * 0.30 },
+    };
+}
 
 const clamp = (value: number, min: number, max: number) =>
     Math.max(min, Math.min(max, value));
@@ -41,6 +65,14 @@ const createPool = (glucose: number, oxygen: number, fattyAcid: number, aminoAci
 });
 
 const CAPTURED_POOL_CAPS = createPool(6, 20, 4, 4);
+
+const createInitialCollectionProgress = () => ({
+    score: 0,
+    chain: 0,
+    lastCaptureAt: -10,
+    lastKind: null as SubstrateKind | null,
+    priorityCaptures: 0,
+});
 
 export function initializeCellularState(): CellularState {
     return {
@@ -88,6 +120,7 @@ export function initializeCellularState(): CellularState {
             dna: 0,
             antioxidantCapacity: 80,
         },
+        collection: createInitialCollectionProgress(),
         automation: {
             transporters: 0,
             mitochondrialShuttle: 0,
@@ -119,6 +152,7 @@ function cloneState(state: CellularState): CellularState {
             captured: { ...state.pools.captured },
         },
         damage: { ...state.damage },
+        collection: { ...(state.collection ?? createInitialCollectionProgress()) },
         automation: { ...state.automation },
         atpAllocation: { ...state.atpAllocation },
         routine: state.routine ? { ...state.routine } : null,
@@ -310,6 +344,10 @@ function advanceStep(
 ): CellularState {
     const state = cloneState(previous);
     state.simulationTime += dt;
+
+    if (state.collection.chain > 0 && state.simulationTime - state.collection.lastCaptureAt > 3.2) {
+        state.collection.chain = 0;
+    }
 
     if (state.routine) {
         state.routine.remainingSeconds -= dt;
@@ -579,6 +617,7 @@ function actionFailure(state: CellularState, reason: string): CellularActionResu
 
 export function captureSubstrate(state: CellularState, kind: SubstrateKind): CellularActionResult {
     const next = cloneState(state);
+    const previousCollection = state.collection ?? createInitialCollectionProgress();
     const amounts: SubstratePool = createPool(1, 3, 0.5, 0.5);
     const amount = amounts[kind];
     if (next.pools.available[kind] < amount) {
@@ -590,13 +629,21 @@ export function captureSubstrate(state: CellularState, kind: SubstrateKind): Cel
 
     next.pools.available[kind] -= amount;
     next.pools.captured[kind] += amount;
+    const priorityThresholds: SubstratePool = createPool(2, 6, 1, 1);
+    const wasPriority = state.pools.captured[kind] < priorityThresholds[kind];
+    const chained = state.simulationTime - previousCollection.lastCaptureAt <= 2.5;
+    next.collection.chain = chained ? Math.min(9, previousCollection.chain + 1) : 1;
+    next.collection.lastCaptureAt = state.simulationTime;
+    next.collection.lastKind = kind;
+    next.collection.priorityCaptures = previousCollection.priorityCaptures + (wasPriority ? 1 : 0);
+    next.collection.score = previousCollection.score + 10 + Math.max(0, next.collection.chain - 1) * 2 + (wasPriority ? 8 : 0);
     const labels: Record<SubstrateKind, string> = {
         glucose: 'Glicose captada por transportador',
         oxygen: 'O₂ difundido para o LIC',
         fattyAcid: 'Ácido graxo captado',
         aminoAcid: 'Aminoácido captado por cotransporte',
     };
-    next.lastEvent = labels[kind];
+    next.lastEvent = `${labels[kind]} · cadeia ${next.collection.chain} · +${10 + Math.max(0, next.collection.chain - 1) * 2 + (wasPriority ? 8 : 0)} pontos`;
     return {
         state: next,
         ok: true,
@@ -741,22 +788,40 @@ export function allocateAtp(state: CellularState, target: RepairTarget): Cellula
 
 export function purchaseAutomation(state: CellularState, kind: AutomationKind): CellularActionResult {
     const level = state.automation[kind];
-    if (level >= 3) return actionFailure(state, 'Este sistema já está no nível máximo.');
+    if (level >= AUTOMATION_MAX_LEVEL) {
+        return actionFailure(state, 'Esta rota celular já atingiu o limite de otimização de quatro níveis.');
+    }
+    const usedBudget = Object.values(state.automation).reduce((sum, value) => sum + value, 0);
+    if (usedBudget >= CELLULAR_OPTIMIZATION_BUDGET) {
+        return actionFailure(state, 'Limite de especialização atingido: esta célula já alocou oito melhorias.');
+    }
 
-    const baseCosts: Record<AutomationKind, number> = {
-        transporters: 0.8,
-        mitochondrialShuttle: 1.1,
-        repair: 1.35,
-    };
-    const cost = baseCosts[kind] + level * 0.55;
-    if (state.cell.atpMmolL - cost < 1) {
-        return actionFailure(state, `São necessários ${cost.toFixed(2)} mmol/L de ATP sem comprometer a reserva vital.`);
+    const recipe = getAutomationRecipe(kind, level);
+    if (state.cell.atpMmolL - recipe.atp < 1) {
+        return actionFailure(state, `São necessários ${recipe.atp.toFixed(2)} mmol/L de ATP mantendo a reserva vital.`);
+    }
+    const missingSubstrate = (Object.entries(recipe.substrates) as Array<[SubstrateKind, number]>)
+        .find(([substrate, amount]) => state.pools.captured[substrate] < amount);
+    if (missingSubstrate) {
+        const names: Record<SubstrateKind, string> = {
+            glucose: 'glicose',
+            oxygen: 'oxigênio',
+            fattyAcid: 'ácido graxo',
+            aminoAcid: 'aminoácido',
+        };
+        return actionFailure(
+            state,
+            `Receita incompleta: são necessários ${missingSubstrate[1].toFixed(2)} pacotes de ${names[missingSubstrate[0]]}.`,
+        );
     }
 
     const next = cloneState(state);
-    next.cell.atpMmolL -= cost;
+    next.cell.atpMmolL -= recipe.atp;
     syncAdenylates(next);
-    next.totalAtpSpent += cost;
+    next.totalAtpSpent += recipe.atp;
+    (Object.entries(recipe.substrates) as Array<[SubstrateKind, number]>).forEach(([substrate, amount]) => {
+        next.pools.captured[substrate] -= amount;
+    });
     next.automation[kind] += 1;
     const labels: Record<AutomationKind, string> = {
         transporters: 'Transportadores de membrana',

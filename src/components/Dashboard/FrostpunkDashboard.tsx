@@ -8,6 +8,7 @@ import { Zap, Droplets, Wind, AlertTriangle, TrendingUp, Microscope } from 'luci
 import { useSimulationStore, selectors } from '../../game/simulationStore';
 import { CellularWorkbench } from '../Cellular/CellularWorkbench';
 import { HeartBpmCard } from './HeartBpmCard';
+import { ClinicalEcgMonitor } from './ClinicalEcgMonitor';
 
 export const FrostpunkDashboard: React.FC = () => {
     const physiology = useSimulationStore(state => state.physiology);
@@ -177,7 +178,7 @@ const TopStatusBar: React.FC<TopStatusBarProps> = ({
 
             {/* ATP Pool */}
             <StatusMetric
-                label="ATP"
+                label="ADENOSINA TRIFOSFATO (ATP)"
                 value={energy.atpPool}
                 max={energy.maxATP}
                 unit="mmol"
@@ -187,7 +188,7 @@ const TopStatusBar: React.FC<TopStatusBarProps> = ({
 
             {/* PCr Store */}
             <StatusMetric
-                label="PCr"
+                label="FOSFOCREATINA (PCr)"
                 value={energy.pCrStore}
                 max={energy.maxPCr}
                 unit="mmol"
@@ -207,7 +208,7 @@ const TopStatusBar: React.FC<TopStatusBarProps> = ({
 
             {/* pH Blood */}
             <div className="flex flex-none items-center gap-2">
-                <div className="text-text-dim text-[10px] uppercase tracking-wider">pH</div>
+                <div className="text-text-dim text-[10px] uppercase tracking-wider">pH SANGUÍNEO</div>
                 <div className="font-mono text-lg tabular-nums">{acidBase.pH.toFixed(2)}</div>
                 <div className={`text-[10px] ${getPhStatus(acidBase.pH)}`}>
                     {acidBase.state.toUpperCase()}
@@ -226,7 +227,7 @@ const TopStatusBar: React.FC<TopStatusBarProps> = ({
                 title={isCellularViewOpen ? 'Voltar ao painel sistêmico' : 'Abrir microscopia celular'}
             >
                 <Microscope className="w-4 h-4" strokeWidth={1.5} aria-hidden="true" />
-                <span className="hidden sm:inline">MICROVISTA</span>
+                <span className="hidden sm:inline">MICROSCOPIA CELULAR</span>
             </button>
 
             {/* Time Elapsed */}
@@ -341,6 +342,22 @@ const VitalSignsPanel: React.FC<{ physiology: any }> = ({ physiology }) => {
                 color="data-lactate"
             />
 
+            <div className="panel p-3">
+                <div className="metric-label mb-2">HEMODINÂMICA E TROCA GASOSA</div>
+                <div className="grid grid-cols-2 gap-x-3 gap-y-2">
+                    <MicroMetric label="Pressão arterial média" value={cardio.meanArterialPressure} unit="mmHg" />
+                    <MicroMetric label="Débito cardíaco" value={cardio.cardiacOutput} unit="L/min" />
+                    <MicroMetric label="Volume sistólico" value={cardio.strokeVolume} unit="mL" />
+                    <MicroMetric label="Fração de ejeção" value={cardio.ejectionFraction} unit="%" />
+                    <MicroMetric label="Variabilidade cardíaca" value={cardio.heartRateVariability} unit="ms" />
+                    <MicroMetric label="Índice de perfusão" value={cardio.perfusionIndex} unit="%" />
+                    <MicroMetric label="Pressão arterial de oxigênio" value={resp.pao2} unit="mmHg" />
+                    <MicroMetric label="Pressão arterial de dióxido de carbono" value={resp.paco2} unit="mmHg" />
+                    <MicroMetric label="Volume corrente" value={resp.tidalVolume} unit="mL" />
+                    <MicroMetric label="Ventilação por minuto" value={resp.minuteVentilation} unit="L/min" />
+                </div>
+            </div>
+
         </div>
     );
 };
@@ -446,26 +463,19 @@ const CenterPanel: React.FC<{ physiology: any; history: any }> = ({ physiology, 
             <div className="panel p-4 flex-1">
                 <div className="metric-label mb-2">MONITORAMENTO EM TEMPO REAL</div>
                 <div className="grid grid-cols-1 gap-2 h-full">
-                    <WaveformDisplay
-                        label="ECG"
-                        subtitle="Derivação cardíaca sintética"
-                        color="data-o2"
-                        samples={history.heartRate}
-                        physiologicalValue={physiology.cardiovascular.heartRate}
-                        min={45}
-                        max={180}
-                        kind="ecg"
-                        time={physiology.timeElapsed}
+                    <ClinicalEcgMonitor
+                        bpm={physiology.cardiovascular.heartRate}
+                        rhythm={physiology.cardiovascular.rhythm}
+                        heartRateVariabilityMs={physiology.cardiovascular.heartRateVariability}
                     />
                     <WaveformDisplay
-                        label="PLETISMO SpO₂"
-                        subtitle="Sinal periférico de perfusão"
+                        label="PLETISMOGRAFIA DE OXIGÊNIO"
+                        subtitle="Sinal periférico da saturação de oxigênio"
                         color="data-co2"
                         samples={history.spo2}
                         physiologicalValue={physiology.respiratory.spo2}
                         min={70}
                         max={100}
-                        kind="pleth"
                         time={physiology.timeElapsed}
                     />
                 </div>
@@ -503,7 +513,7 @@ const EnergyMatrix: React.FC<{ energy: any }> = ({ energy }) => {
                 current={energy.aerobicContribution}
                 max={100}
                 color="data-glucose"
-                info={`Aeróbio | VO₂: ${energy.vo2Current.toFixed(1)} mL/kg/min`}
+                info={`Aeróbio | consumo de oxigênio: ${energy.vo2Current.toFixed(1)} mL/kg/min`}
             />
         </div>
     );
@@ -550,7 +560,6 @@ interface WaveformDisplayProps {
     physiologicalValue: number;
     min: number;
     max: number;
-    kind: 'ecg' | 'pleth';
     time: number;
 }
 
@@ -562,11 +571,10 @@ const WaveformDisplay: React.FC<WaveformDisplayProps> = ({
     physiologicalValue,
     min,
     max,
-    kind,
     time,
 }) => {
     const colorClasses = DATA_COLOR_CLASSES[color];
-    const displaySamples = createDisplaySamples(kind, samples, physiologicalValue, time);
+    const displaySamples = createDisplaySamples(samples, physiologicalValue, time);
     const path = buildWaveformPath(displaySamples, 420, 110, 10);
     const fillPath = `${path} L 410 100 L 10 100 Z`;
     const latest = displaySamples[displaySamples.length - 1] ?? physiologicalValue;
@@ -581,8 +589,8 @@ const WaveformDisplay: React.FC<WaveformDisplayProps> = ({
                 <span className="text-[9px] text-text-dim">{subtitle}</span>
             </div>
             <div className="absolute top-2 right-2 z-10 text-right">
-                <div className={`font-mono text-sm tabular-nums ${colorClasses.text}`}>{latest.toFixed(kind === 'ecg' ? 0 : 1)}</div>
-                <div className="text-[9px] text-text-dim">faixa {min}–{max}</div>
+                <div className={`font-mono text-sm tabular-nums ${colorClasses.text}`}>{latest.toFixed(1)}</div>
+                <div className="text-[9px] text-text-dim">faixa {min}–{max}%</div>
             </div>
 
             <svg viewBox="0 0 420 110" className="absolute inset-0 h-full w-full">
@@ -597,18 +605,22 @@ const WaveformDisplay: React.FC<WaveformDisplayProps> = ({
                 </defs>
                 <rect width="420" height="110" fill={`url(#${gridId})`} opacity="0.2" />
                 <path d={fillPath} className={colorClasses.text} fill={`url(#${waveId})`} opacity="0.45" />
-                <path d={path} fill="none" className={colorClasses.text} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                <path d={path} fill="none" className={colorClasses.text} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
             </svg>
 
             <div className="absolute inset-x-0 bottom-0 h-7 border-t border-app-border bg-black/30 px-2 text-[9px] text-text-dim flex items-center justify-between">
-                <span>{kind === 'ecg' ? 'Ritmo cardíaco em tempo real' : 'Perfusão periférica em tempo real'}</span>
+                <span>Perfusão periférica em tempo real</span>
                 <span>{samples.length > 0 ? `${samples.length} amostras` : 'Coletando'}</span>
             </div>
         </div>
     );
 };
 
-function createDisplaySamples(kind: 'ecg' | 'pleth', samples: number[], physiologicalValue: number, time: number): number[] {
+function createDisplaySamples(
+    samples: number[],
+    physiologicalValue: number,
+    time: number,
+): number[] {
     const windowSize = 72;
     const source = samples.slice(-windowSize);
 
@@ -621,15 +633,9 @@ function createDisplaySamples(kind: 'ecg' | 'pleth', samples: number[], physiolo
         const phase = (index / windowSize) * Math.PI * 2;
         const bpmPhase = time * (physiologicalValue / 60) * Math.PI * 2;
 
-        if (kind === 'ecg') {
-            const beat = Math.pow(Math.max(0, Math.sin(phase * 4 + bpmPhase)), 24);
-            const qrs = Math.pow(Math.max(0, Math.sin(phase * 8 + bpmPhase * 1.1 + 1.2)), 6);
-            generated.push(0.12 + beat * 0.62 + qrs * 0.26 + Math.sin(phase * 2 + bpmPhase) * 0.03);
-        } else {
-            const pulse = 0.55 + Math.sin(phase * 2.1 + bpmPhase) * 0.18 + Math.sin(phase * 6 + bpmPhase * 1.4) * 0.06;
-            const perfusionBoost = clamp((physiologicalValue - 82) / 18, 0, 1) * 0.12;
-            generated.push(clamp(pulse + perfusionBoost, 0.08, 1.2));
-        }
+        const pulse = 0.55 + Math.sin(phase * 2.1 + bpmPhase) * 0.18 + Math.sin(phase * 6 + bpmPhase * 1.4) * 0.06;
+        const perfusionBoost = clamp((physiologicalValue - 82) / 18, 0, 1) * 0.12;
+        generated.push(clamp(pulse + perfusionBoost, 0.08, 1.2));
     }
 
     return generated;
@@ -660,10 +666,10 @@ const MetabolicGrid: React.FC<{ physiology: any }> = ({ physiology }) => {
 
     return (
         <div className="grid grid-cols-4 gap-2">
-            <MicroMetric label="GLICOSE" value={nutrients.bloodGlucose} unit="mg/dL" />
-            <MicroMetric label="pH" value={acidBase.pH} unit="" decimals={2} />
-            <MicroMetric label="HCO₃⁻" value={acidBase.bicarbonate} unit="mmol/L" />
-            <MicroMetric label="PCO₂" value={acidBase.pco2} unit="mmHg" />
+            <MicroMetric label="GLICOSE SANGUÍNEA" value={nutrients.bloodGlucose} unit="mg/dL" />
+            <MicroMetric label="pH SANGUÍNEO" value={acidBase.pH} unit="" decimals={2} />
+            <MicroMetric label="BICARBONATO (HCO₃⁻)" value={acidBase.bicarbonate} unit="mmol/L" />
+            <MicroMetric label="PRESSÃO PARCIAL DE CO₂" value={acidBase.pco2} unit="mmHg" />
         </div>
     );
 };
@@ -704,12 +710,15 @@ const HormonalRack: React.FC = () => {
         amount: number;
         cooldown: number;
         category: string;
+        unit: string;
+        effect: string;
+        cost: number;
     }> = [
-        { id: 'insulin', name: 'INSULINA', amount: 20, cooldown: 120, category: 'ANABÓLICO' },
-        { id: 'glucagon', name: 'GLUCAGON', amount: 100, cooldown: 180, category: 'CATABÓLICO' },
-        { id: 'adrenaline', name: 'ADRENALINA', amount: 200, cooldown: 300, category: 'EMERGÊNCIA' },
-        { id: 'cortisol', name: 'CORTISOL', amount: 30, cooldown: 600, category: 'ESTRESSE' },
-        { id: 'gh', name: 'HORMÔNIO DO CRESCIMENTO', amount: 5, cooldown: 3600, category: 'CRESCIMENTO' },
+        { id: 'insulin', name: 'INSULINA', amount: 20, cooldown: 30, category: 'ANABÓLICO', unit: 'μIU/mL', effect: 'Aumenta captação de glicose e síntese de glicogênio.', cost: 0.5 },
+        { id: 'glucagon', name: 'GLUCAGON', amount: 100, cooldown: 35, category: 'CATABÓLICO', unit: 'pg/mL', effect: 'Mobiliza glicogênio hepático e eleva a glicemia.', cost: 0.35 },
+        { id: 'adrenaline', name: 'ADRENALINA', amount: 200, cooldown: 45, category: 'EMERGÊNCIA', unit: 'pg/mL', effect: 'Eleva frequência cardíaca, perfusão e oferta energética.', cost: 0.65 },
+        { id: 'cortisol', name: 'CORTISOL', amount: 30, cooldown: 60, category: 'ESTRESSE', unit: 'μg/dL', effect: 'Sustenta gliconeogênese e mobilização energética.', cost: 0.7 },
+        { id: 'gh', name: 'HORMÔNIO DO CRESCIMENTO', amount: 5, cooldown: 75, category: 'CRESCIMENTO', unit: 'ng/mL', effect: 'Estimula síntese proteica e sinalização de crescimento.', cost: 0.8 },
     ];
 
     return (
@@ -733,6 +742,10 @@ const HormonalRack: React.FC = () => {
                             onCooldown={onCooldown}
                             cooldownRemaining={remaining}
                             cooldownTotal={hormone.cooldown}
+                            amount={hormone.amount}
+                            unit={hormone.unit}
+                            effect={hormone.effect}
+                            cost={hormone.cost}
                             onClick={() => releaseHormone(hormone.id, hormone.amount)}
                         />
                     );
@@ -742,11 +755,19 @@ const HormonalRack: React.FC = () => {
             {/* Hormonal Levels Display */}
             <div className="border-t border-app-border pt-3 mt-2">
                 <div className="text-[9px] text-text-dim uppercase tracking-wider mb-2">NÍVEIS ATUAIS</div>
-                <div className="grid grid-cols-2 gap-2 text-[10px]">
+                <div className="grid grid-cols-1 gap-1.5 text-[10px]">
                     <HormoneLevel label="Insulina" value={physiology.hormones.insulin} unit="μIU/mL" />
                     <HormoneLevel label="Glucagon" value={physiology.hormones.glucagon} unit="pg/mL" />
                     <HormoneLevel label="Adrenalina" value={physiology.hormones.adrenaline} unit="pg/mL" />
+                    <HormoneLevel label="Noradrenalina" value={physiology.hormones.noradrenaline} unit="pg/mL" />
                     <HormoneLevel label="Cortisol" value={physiology.hormones.cortisol} unit="μg/dL" />
+                    <HormoneLevel label="Hormônio do crescimento" value={physiology.hormones.gh} unit="ng/mL" />
+                    <HormoneLevel label="Testosterona" value={physiology.hormones.testosterone} unit="ng/dL" />
+                    <HormoneLevel label="Fator de crescimento semelhante à insulina 1 (IGF-1)" value={physiology.hormones.igf1} unit="ng/mL" />
+                    <HormoneLevel label="Triiodotironina (T3)" value={physiology.hormones.t3} unit="ng/dL" />
+                    <HormoneLevel label="Tiroxina (T4)" value={physiology.hormones.t4} unit="μg/dL" />
+                    <HormoneLevel label="Hormônio estimulante da tireoide (TSH)" value={physiology.hormones.tsh} unit="μIU/mL" />
+                    <HormoneLevel label="Atividade da via mTOR" value={physiology.hormones.mTORActivity} unit="%" />
                 </div>
             </div>
         </div>
@@ -759,6 +780,10 @@ interface HormonalButtonProps {
     onCooldown: boolean;
     cooldownRemaining: number;
     cooldownTotal: number;
+    amount: number;
+    unit: string;
+    effect: string;
+    cost: number;
     onClick: () => void;
 }
 
@@ -768,6 +793,10 @@ const HormonalButton: React.FC<HormonalButtonProps> = ({
     onCooldown,
     cooldownRemaining,
     cooldownTotal,
+    amount,
+    unit,
+    effect,
+    cost,
     onClick
 }) => {
     return (
@@ -782,6 +811,11 @@ const HormonalButton: React.FC<HormonalButtonProps> = ({
             <div className="flex items-start justify-between mb-1">
                 <span className="text-[11px] font-medium tracking-wider">{label}</span>
                 <span className="text-[9px] text-text-dim">{category}</span>
+            </div>
+            <div className="mb-2 text-[9px] normal-case leading-relaxed tracking-normal text-text-secondary">{effect}</div>
+            <div className="mb-2 flex items-center justify-between gap-2 font-mono text-[9px] text-text-dim">
+                <span>Dose {amount} {unit}</span>
+                <span>Custo {cost.toFixed(2)} mmol de ATP</span>
             </div>
             {onCooldown ? (
                 <div className="flex items-center gap-2">
@@ -804,9 +838,9 @@ const HormonalButton: React.FC<HormonalButtonProps> = ({
 
 const HormoneLevel: React.FC<{ label: string; value: number; unit: string }> = ({ label, value, unit }) => {
     return (
-        <div className="flex justify-between items-baseline">
-            <span className="text-text-dim">{label}</span>
-            <span className="font-mono text-text-primary tabular-nums">{value.toFixed(1)} <span className="text-text-dim">{unit}</span></span>
+        <div className="flex items-start justify-between gap-3">
+            <span className="min-w-0 leading-snug text-text-dim">{label}</span>
+            <span className="flex-none whitespace-nowrap font-mono text-text-primary tabular-nums">{value.toFixed(1)} <span className="text-text-dim">{unit}</span></span>
         </div>
     );
 };
@@ -850,6 +884,18 @@ const BottomStatusBar: React.FC<{ physiology: any }> = ({ physiology }) => {
                 <div className="flex items-center gap-1">
                     <span className="text-text-dim">INFLAMAÇÃO</span>
                     <span className="font-mono text-text-primary">{allostaticLoad.inflammationLevel.toFixed(0)}</span>
+                </div>
+                <div className="flex items-center gap-1">
+                    <span className="text-text-dim">CARDIOVASCULAR</span>
+                    <span className="font-mono text-text-primary">{allostaticLoad.cardiovascularStress.toFixed(0)}</span>
+                </div>
+                <div className="flex items-center gap-1">
+                    <span className="text-text-dim">FADIGA</span>
+                    <span className="font-mono text-text-primary">{allostaticLoad.fatigueLevel.toFixed(0)}</span>
+                </div>
+                <div className="flex items-center gap-1">
+                    <span className="text-text-dim">CAPACIDADE DE ADAPTAÇÃO</span>
+                    <span className="font-mono text-text-primary">{allostaticLoad.adaptationCapacity.toFixed(0)}</span>
                 </div>
             </div>
 
