@@ -356,7 +356,7 @@ export function detectActiveCombos(
     hormonalProfile: Record<string, number>
 ): HormonalCombo[] {
     const activeHormones = Object.entries(hormonalProfile)
-        .filter(([_, value]) => value > 0)
+        .filter(([, value]) => value > 0)
         .map(([hormone]) => hormone);
 
     return HORMONAL_COMBOS.filter(combo =>

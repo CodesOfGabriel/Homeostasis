@@ -243,8 +243,8 @@ O jogo comprime esses rendimentos para preservar legibilidade e evitar que uma �
 | Captar ácido graxo | até 0,5 pacote | +0,5 pacote no LIC |
 | Captar aminoácido | até 0,5 pacote | +0,5 pacote no LIC |
 | Glicólise | 1 glicose captada | 2 piruvatos e +0,18 ATP de jogo |
-| Oxidar piruvato | 1 piruvato + 3 O₂ | até +1,4 ATP; +1,2 pressão ROS |
-| Oxidar ácido graxo | 1 ácido graxo + 6 O₂ | até +2,65 ATP; +2,8 pressão ROS |
+| Oxidar piruvato | 1 piruvato + 3 O₂ | até +0,45 ATP de jogo; +1,2 pressão ROS |
+| Oxidar ácido graxo | 1 ácido graxo + 6 O₂ | até +0,85 ATP de jogo, modulado por adaptação; +2,8 pressão ROS |
 
 A oxidação exige ADP disponível e espaço no pool de ATP. O ADP é aproximado por:
 
@@ -272,6 +272,8 @@ As taxas são efetivamente mmol/L normalizados por segundo. O fator de O₂ deri
 | Saúde mitocondrial | 100% | penalizada por ROS e dano proteico |
 
 O ATP é produzido pela ATP sintase a partir de ADP + Pi usando o gradiente de prótons. A “navette mitocondrial” automatizada representa encaminhamento de equivalentes redutores, ADP e substratos; não representa vesículas transportando ATP para dentro da mitocôndria.
+
+A interface da cadeia respiratória recebe do motor taxas normalizadas de piruvato, ácido graxo, NADH, FADH₂, O₂, H⁺, ADP + Pi, ATP e H₂O. Uma oxidação manual cria um pulso de processamento que decai suavemente para o fluxo automático; por isso os contadores e elétrons animados aumentam sem reiniciar a trajetória já em curso. NADH/FADH₂ e prótons são equivalentes estequiométricos de gameplay derivados do substrato oxidado, não medições clínicas.
 
 ## 7. Gases, ventilação e ácido-base
 
@@ -381,28 +383,52 @@ Cada ação preserva no mínimo 0,8 mmol/L de ATP para funções vitais.
 
 ### 10.4 Automação
 
-Existem três sistemas, limitados ao nível 3:
+Existem três sistemas, limitados ao nível 4 e a oito melhorias totais por célula:
 
 - **transportadores:** captação automática limitada pela oferta no LEC;
 - **navette mitocondrial:** oxidação automática limitada por piruvato/ácido graxo, O₂, ADP e capacidade do pool;
 - **reparo:** usa ATP acima da reserva para priorizar o maior dano entre membrana, proteínas e DNA.
 
-Os custos iniciais são 0,80, 1,10 e 1,35 ATP, respectivamente, acrescidos de 0,55 por nível já adquirido. A compra preserva pelo menos 1,0 ATP.
+Os custos iniciais são 0,55, 0,70 e 0,80 ATP para transportadores, navette e reparo. Cada nível encarece sua própria receita e também exige glicose, aminoácidos ou ácidos graxos conforme a maquinaria construída. A compra preserva pelo menos 1,0 ATP.
 
 ## 11. Eventos de rotina
 
-O primeiro evento celular surge por volta de 30 s; após cada ativação, o próximo é agendado 55 s depois. A sequência é determinística:
+O primeiro cenário celular surge por volta de 15 s; após cada ativação, o próximo é agendado 48 s depois. Cada cenário oferece duas respostas com custos e compensações diferentes. Se o cronômetro terminar, uma consequência fisiológica adicional é aplicada.
 
-| Evento | Duração | Consequência principal |
-|---|---:|---|
-| Contração muscular local | 22 s | maior consumo de ATP e lactato |
-| Renovação proteica | 24 s | consumo de ATP e aminoácidos |
-| Sinal inflamatório transitório | 18 s | aumento de ROS |
-| Carga osmótica | 20 s | maior custo das bombas iônicas |
+| Cenário | Duração | Decisão principal | Consequência sem resposta |
+|---|---:|---|---|
+| Subida rápida de escadas | 28 s | via aeróbia ou glicólise rápida | queda de ATP e aumento de lactato |
+| Pico após uma refeição | 30 s | processar glicose ou regular transportadores | aumento de estresse oxidativo |
+| Jejum prolongado pela manhã | 26 s | oxidar gordura ou conservar energia | queda de ATP |
+| Microlesão após esforço | 28 s | reparar agora ou adiar | aumento de dano proteico |
+| Contato com um patógeno | 24 s | conter ROS ou intensificar a resposta | ROS e dano proteico |
+| Calor e desidratação leve | 26 s | ativar bombas ou adaptar osmoticamente | alteração de volume e dano de membrana |
+
+Os cenários também aplicam uma perturbação inicial coerente: oferta de glicose no período pós-prandial, redução de glicose no jejum, dano proteico na microlesão, ROS no desafio imune e mudança de osmolaridade/volume no calor.
 
 O motor sistêmico gera uma avaliação periódica a cada 30 s. Eventos celulares cruzando viabilidade de 70% ou 35% geram avisos adicionais na timeline.
 
-## 12. Warnings e falência
+## 12. Recompensa variável e adaptações
+
+A recompensa celular é semi-determinística: uma oportunidade só existe depois que o estado sustentou uma condição fisiológica concreta. A qualidade do estado (viabilidade, ATP, O₂ e ROS) aumenta a chance, mas não garante que toda janela resulte em recompensa. O evento gerado sempre informa a condição que justificou o ganho.
+
+| Adaptação | Condição observada | Efeito por nível |
+|---|---|---|
+| Eficiência enzimática | homeostase global prolongada | reduz discretamente o custo basal de ATP |
+| Defesa antioxidante | ROS baixo e reserva antioxidante adequada | aumenta a depuração de ROS |
+| Flexibilidade metabólica | glicose e ácido graxo disponíveis com ATP estável | melhora entrega e rendimento de ácidos graxos |
+| Buffer intracelular | pH estável com lactato controlado | reduz o impacto ácido do lactato |
+| Tolerância à hipóxia | ATP preservado com O₂ tecidual reduzido | amplia a faixa funcional do metabolismo oxidativo |
+
+Cada adaptação tem quatro níveis. As janelas perdem progresso quando o parâmetro sai da faixa, impedindo recompensa por mera passagem de tempo. Uma decisão expirada também bloqueia recompensa no mesmo ciclo.
+
+## 13. Leitura clínica da interface
+
+A aba sistêmica apresenta os dados por prioridade de decisão: primeiro frequência e ritmo cardíacos, pressão/PAM, SpO₂, frequência respiratória, perfusão e débito cardíaco; em seguida gasometria/ácido-base, lactato, glicemia, eletrólitos, água corporal e déficit energético. O modelo cardíaco, o ECG e o único valor de BPM pertencem ao mesmo bloco de frequência cardíaca, e a sinalização hormonal é uma seção dessa mesma tela — não uma aba duplicada.
+
+O ECG é sintético e educacional. A velocidade do traçado é proporcional à frequência cardíaca do modelo; irregularidade e fibrilação alteram a forma do traçado sem representar um dispositivo diagnóstico.
+
+## 14. Warnings e falência
 
 Warnings sistêmicos são gerados para:
 
@@ -427,7 +453,7 @@ Condições terminais implementadas:
 
 Esses limites são regras do simulador e não substituem prognóstico clínico, no qual duração, temperatura, comorbidades e suporte modificam desfechos.
 
-## 13. Limitações conhecidas
+## 15. Limitações conhecidas
 
 - Um único adulto padrão de 70 kg; idade, sexo, composição corporal e doença não parametrizam todo o modelo.
 - Um único voxel genérico de tecido metabolicamente ativo, sem especialização muscular, neural, hepática ou renal.
@@ -440,10 +466,10 @@ Esses limites são regras do simulador e não substituem prognóstico clínico, 
 - Troca gasosa usa equação alveolar e curva de Hill simplificadas, sem shunt, V/Q regional ou hemoglobina variável.
 - Pressão arterial e perfusão são relações normalizadas, não um sistema hemodinâmico fechado.
 - ROS, dano, reparo e viabilidade são índices normalizados sem correspondência direta com biomarcadores laboratoriais.
-- Eventos são determinísticos e não representam incidência epidemiológica.
+- A ordem dos cenários é determinística e não representa incidência epidemiológica; apenas as oportunidades de adaptação têm variação contextual.
 - O comando de FC representa drive autonômico/pacing simulado; não sugere controle voluntário direto da frequência cardíaca.
 
-## 14. Uso educacional responsável
+## 16. Uso educacional responsável
 
 O modelo é útil para explorar relações causais:
 

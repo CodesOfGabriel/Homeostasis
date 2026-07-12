@@ -22,6 +22,7 @@ import {
     initializeCellularState,
     oxidizeSubstrate,
     purchaseAutomation,
+    resolveRoutineDecision,
     runGlycolysis,
 } from './cellularSimulation';
 import type {
@@ -77,11 +78,29 @@ interface SimulationStore {
     history: {
         time: number[];
         heartRate: number[];
+        systolicBP: number[];
+        diastolicBP: number[];
+        meanArterialPressure: number[];
         spo2: number[];
+        respiratoryRate: number[];
+        perfusionIndex: number[];
         glucose: number[];
         pH: number[];
+        pao2: number[];
+        paco2: number[];
+        bicarbonate: number[];
+        baseExcess: number[];
         lactate: number[];
         cardiacOutput: number[];
+        sodium: number[];
+        potassium: number[];
+        hydration: number[];
+        anionGap: number[];
+        energyDeficit: number[];
+        tissueOxygen: number[];
+        cellularAtp: number[];
+        oxidativeStress: number[];
+        membranePotential: number[];
         maxDataPoints: number;
     };
 
@@ -114,6 +133,7 @@ interface SimulationStore {
     oxidizeCellularSubstrate: (substrate: OxidationSubstrate) => boolean;
     allocateCellularAtp: (target: RepairTarget) => boolean;
     purchaseCellularAutomation: (kind: AutomationKind) => boolean;
+    resolveCellularRoutine: (choiceId: string) => boolean;
 
     // Utilitários
     selectOrgan: (organName: string | null) => void;
@@ -128,11 +148,29 @@ interface SimulationStore {
 const createInitialHistory = () => ({
     time: [],
     heartRate: [],
+    systolicBP: [],
+    diastolicBP: [],
+    meanArterialPressure: [],
     spo2: [],
+    respiratoryRate: [],
+    perfusionIndex: [],
     glucose: [],
     pH: [],
+    pao2: [],
+    paco2: [],
+    bicarbonate: [],
+    baseExcess: [],
     lactate: [],
     cardiacOutput: [],
+    sodium: [],
+    potassium: [],
+    hydration: [],
+    anionGap: [],
+    energyDeficit: [],
+    tissueOxygen: [],
+    cellularAtp: [],
+    oxidativeStress: [],
+    membranePotential: [],
     maxDataPoints: 200, // Últimos 200 pontos
 });
 
@@ -310,19 +348,55 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
                 ...state.history,
                 time: [...state.history.time],
                 heartRate: [...state.history.heartRate],
+                systolicBP: [...state.history.systolicBP],
+                diastolicBP: [...state.history.diastolicBP],
+                meanArterialPressure: [...state.history.meanArterialPressure],
                 spo2: [...state.history.spo2],
+                respiratoryRate: [...state.history.respiratoryRate],
+                perfusionIndex: [...state.history.perfusionIndex],
                 glucose: [...state.history.glucose],
                 pH: [...state.history.pH],
+                pao2: [...state.history.pao2],
+                paco2: [...state.history.paco2],
+                bicarbonate: [...state.history.bicarbonate],
+                baseExcess: [...state.history.baseExcess],
                 lactate: [...state.history.lactate],
                 cardiacOutput: [...state.history.cardiacOutput],
+                sodium: [...state.history.sodium],
+                potassium: [...state.history.potassium],
+                hydration: [...state.history.hydration],
+                anionGap: [...state.history.anionGap],
+                energyDeficit: [...state.history.energyDeficit],
+                tissueOxygen: [...state.history.tissueOxygen],
+                cellularAtp: [...state.history.cellularAtp],
+                oxidativeStress: [...state.history.oxidativeStress],
+                membranePotential: [...state.history.membranePotential],
             };
             newHistory.time.push(output.newState.timeElapsed);
             newHistory.heartRate.push(output.newState.cardiovascular.heartRate);
+            newHistory.systolicBP.push(output.newState.cardiovascular.systolicBP);
+            newHistory.diastolicBP.push(output.newState.cardiovascular.diastolicBP);
+            newHistory.meanArterialPressure.push(output.newState.cardiovascular.meanArterialPressure);
             newHistory.spo2.push(output.newState.respiratory.spo2);
+            newHistory.respiratoryRate.push(output.newState.respiratory.respiratoryRate);
+            newHistory.perfusionIndex.push(output.newState.cardiovascular.perfusionIndex);
             newHistory.glucose.push(output.newState.nutrients.bloodGlucose);
             newHistory.pH.push(output.newState.acidBase.pH);
+            newHistory.pao2.push(output.newState.respiratory.pao2);
+            newHistory.paco2.push(output.newState.respiratory.paco2);
+            newHistory.bicarbonate.push(output.newState.acidBase.bicarbonate);
+            newHistory.baseExcess.push(output.newState.acidBase.baseExcess);
             newHistory.lactate.push(output.newState.energy.lactateLevel);
             newHistory.cardiacOutput.push(output.newState.cardiovascular.cardiacOutput);
+            newHistory.sodium.push(output.newState.nutrients.sodium);
+            newHistory.potassium.push(output.newState.nutrients.potassium);
+            newHistory.hydration.push(output.newState.nutrients.hydration);
+            newHistory.anionGap.push(output.newState.acidBase.anionGap);
+            newHistory.energyDeficit.push(output.newState.energy.energyDeficit);
+            newHistory.tissueOxygen.push(cellularOutput.state.tissue.oxygenMmHg);
+            newHistory.cellularAtp.push(cellularOutput.state.cell.atpMmolL);
+            newHistory.oxidativeStress.push(cellularOutput.state.damage.oxidativeStress);
+            newHistory.membranePotential.push(cellularOutput.state.cell.membranePotentialMv);
 
             // Manter apenas maxDataPoints
             Object.keys(newHistory).forEach(key => {
@@ -633,6 +707,13 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
     purchaseCellularAutomation: (kind: AutomationKind) => {
         const state = get();
         const result = purchaseAutomation(state.cellular, kind);
+        set(cellularActionUpdate(state, result));
+        return result.ok;
+    },
+
+    resolveCellularRoutine: (choiceId: string) => {
+        const state = get();
+        const result = resolveRoutineDecision(state.cellular, choiceId);
         set(cellularActionUpdate(state, result));
         return result.ok;
     },

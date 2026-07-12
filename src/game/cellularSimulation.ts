@@ -3,6 +3,7 @@ import type {
     AutomationKind,
     AutomationRecipe,
     CellularActionResult,
+    CellularAdaptationKind,
     CellularControls,
     CellularEvent,
     CellularState,
@@ -74,6 +75,23 @@ const createInitialCollectionProgress = () => ({
     priorityCaptures: 0,
 });
 
+const createInitialAdaptations = () => ({
+    enzymaticEfficiency: 0,
+    antioxidantDefense: 0,
+    metabolicFlexibility: 0,
+    bufferCapacity: 0,
+    hypoxiaTolerance: 0,
+});
+
+const createInitialRewardProgress = () => ({
+    homeostasisSeconds: 0,
+    rosControlSeconds: 0,
+    balancedFuelSeconds: 0,
+    phStableSeconds: 0,
+    hypoxiaStableSeconds: 0,
+    lastOpportunityAt: 0,
+});
+
 export function initializeCellularState(): CellularState {
     return {
         tissue: {
@@ -107,6 +125,17 @@ export function initializeCellularState(): CellularState {
             atpSynthaseFlux: 24,
             oxygenConsumption: 2.5,
             healthPercent: 100,
+            processing: {
+                pyruvatePerMin: 0,
+                fattyAcidPerMin: 0,
+                nadhPerMin: 0,
+                fadh2PerMin: 0,
+                oxygenPerMin: 0,
+                protonsPerMin: 0,
+                adpPerMin: 0,
+                atpPerMin: 0,
+                waterPerMin: 0,
+            },
         },
         pools: {
             available: createPool(4, 10, 2, 2),
@@ -121,6 +150,8 @@ export function initializeCellularState(): CellularState {
             antioxidantCapacity: 80,
         },
         collection: createInitialCollectionProgress(),
+        adaptations: createInitialAdaptations(),
+        rewards: createInitialRewardProgress(),
         automation: {
             transporters: 0,
             mitochondrialShuttle: 0,
@@ -135,7 +166,7 @@ export function initializeCellularState(): CellularState {
         totalAtpProduced: 0,
         totalAtpSpent: 0,
         lastEvent: 'Microambiente em homeostase basal',
-        nextRoutineAt: 30,
+        nextRoutineAt: 15,
         simulationTime: 0,
     };
 }
@@ -145,7 +176,7 @@ function cloneState(state: CellularState): CellularState {
         ...state,
         tissue: { ...state.tissue },
         cell: { ...state.cell },
-        mitochondria: { ...state.mitochondria },
+        mitochondria: { ...state.mitochondria, processing: { ...state.mitochondria.processing } },
         pools: {
             ...state.pools,
             available: { ...state.pools.available },
@@ -153,6 +184,8 @@ function cloneState(state: CellularState): CellularState {
         },
         damage: { ...state.damage },
         collection: { ...(state.collection ?? createInitialCollectionProgress()) },
+        adaptations: { ...(state.adaptations ?? createInitialAdaptations()) },
+        rewards: { ...(state.rewards ?? createInitialRewardProgress()) },
         automation: { ...state.automation },
         atpAllocation: { ...state.atpAllocation },
         routine: state.routine ? { ...state.routine } : null,
@@ -163,52 +196,251 @@ function routineDemand(state: CellularState) {
     if (!state.routine) return { atp: 0, ros: 0, lactate: 0, aminoAcid: 0 };
 
     switch (state.routine.id) {
-        case 'contraction':
-            return { atp: 0.008, ros: 0.0006, lactate: 0.018, aminoAcid: 0 };
-        case 'protein-turnover':
-            return { atp: 0.004, ros: 0.0002, lactate: 0, aminoAcid: 0.004 };
-        case 'immune-pulse':
-            return { atp: 0.003, ros: 0.0012, lactate: 0.004, aminoAcid: 0 };
-        case 'osmotic-load':
-            return { atp: 0.005, ros: 0.0003, lactate: 0, aminoAcid: 0 };
+        case 'stair-climb':
+            return { atp: 0.012, ros: 0.0008, lactate: 0.022, aminoAcid: 0 };
+        case 'meal-surge':
+            return { atp: 0.004, ros: 0.0007, lactate: 0.004, aminoAcid: 0 };
+        case 'morning-fast':
+            return { atp: 0.007, ros: 0.0005, lactate: 0, aminoAcid: 0 };
+        case 'micro-injury':
+            return { atp: 0.006, ros: 0.0005, lactate: 0, aminoAcid: 0.006 };
+        case 'immune-challenge':
+            return { atp: 0.005, ros: 0.0017, lactate: 0.005, aminoAcid: 0 };
+        case 'heat-dehydration':
+            return { atp: 0.009, ros: 0.0006, lactate: 0, aminoAcid: 0 };
         default:
             return { atp: 0, ros: 0, lactate: 0, aminoAcid: 0 };
     }
 }
 
 function createRoutine(state: CellularState) {
-    const index = Math.floor(Math.max(0, state.nextRoutineAt - 30) / 55) % 4;
+    const index = Math.floor(Math.max(0, state.nextRoutineAt - 15) / 48) % 6;
     const routines = [
         {
-            id: 'contraction',
-            title: 'Contração muscular local',
-            description: 'A demanda por ATP e a produção de lactato aumentaram temporariamente.',
-            remainingSeconds: 22,
+            id: 'stair-climb',
+            title: 'Subida rápida de escadas',
+            description: 'A contração muscular elevou abruptamente a demanda por ATP e O₂.',
+            explanation: 'Músculos ativos consomem ATP em segundos. A via aeróbia é eficiente, enquanto a glicólise responde rápido ao custo de mais lactato.',
+            category: 'organ' as const,
+            choices: [
+                { id: 'stair-aerobic', label: 'Priorizar via aeróbia', description: 'Usa piruvato e O₂ na mitocôndria.', tradeoff: 'Requer 1 piruvato + 3 O₂; gera mais ATP e pouco lactato.' },
+                { id: 'stair-glycolytic', label: 'Glicólise rápida', description: 'Mobiliza glicose imediatamente.', tradeoff: 'Requer 1 glicose; resolve rápido, mas aumenta lactato.' },
+            ],
+            remainingSeconds: 28,
             severity: 'warning' as const,
         },
         {
-            id: 'protein-turnover',
-            title: 'Renovação proteica',
-            description: 'A célula precisa de aminoácidos e ATP para substituir proteínas.',
-            remainingSeconds: 24,
+            id: 'meal-surge',
+            title: 'Pico após uma refeição',
+            description: 'A oferta de glicose aumentou e pressiona o equilíbrio redox celular.',
+            explanation: 'Após uma refeição rica em carboidratos, a célula precisa decidir entre processar a glicose ou limitar sua entrada para evitar excesso de ROS.',
+            category: 'molecule' as const,
+            choices: [
+                { id: 'meal-process', label: 'Captar e processar', description: 'Converte glicose em piruvato e NADH.', tradeoff: 'Requer 1 glicose no tecido; aumenta a produção energética.' },
+                { id: 'meal-buffer', label: 'Regular transportadores', description: 'Reduz temporariamente a entrada de glicose.', tradeoff: 'Custa 0,25 ATP; reduz a pressão oxidativa.' },
+            ],
+            remainingSeconds: 30,
             severity: 'info' as const,
         },
         {
-            id: 'immune-pulse',
-            title: 'Sinal inflamatório transitório',
-            description: 'A produção de espécies reativas de oxigênio aumentou.',
-            remainingSeconds: 18,
+            id: 'morning-fast',
+            title: 'Jejum prolongado pela manhã',
+            description: 'A glicose ficou menos disponível e a célula precisa mudar de combustível.',
+            explanation: 'No jejum, a oxidação de ácidos graxos preserva glicose, mas exige bastante O₂ e pode elevar espécies reativas.',
+            category: 'molecule' as const,
+            choices: [
+                { id: 'fast-fat', label: 'Oxidar ácido graxo', description: 'Muda o combustível mitocondrial.', tradeoff: 'Requer 1 ácido graxo + 6 O₂; alto rendimento, mais ROS.' },
+                { id: 'fast-conserve', label: 'Conservar energia', description: 'Reduz processos não essenciais.', tradeoff: 'Custa pouco ATP agora; evita consumir a glicose restante.' },
+            ],
+            remainingSeconds: 26,
             severity: 'warning' as const,
         },
         {
-            id: 'osmotic-load',
-            title: 'Carga osmótica',
-            description: 'Bombas iônicas exigem mais ATP para preservar o volume celular.',
-            remainingSeconds: 20,
+            id: 'micro-injury',
+            title: 'Microlesão após esforço',
+            description: 'Proteínas estruturais foram danificadas e precisam de reposição.',
+            explanation: 'O reparo precoce consome aminoácidos e ATP, mas impede que proteínas alteradas comprometam a função celular.',
+            category: 'cell' as const,
+            choices: [
+                { id: 'injury-repair', label: 'Reparar agora', description: 'Ativa síntese e renovação proteica.', tradeoff: 'Requer 1 aminoácido + 0,55 ATP; reduz dano proteico.' },
+                { id: 'injury-defer', label: 'Adiar reparo', description: 'Preserva energia para funções vitais.', tradeoff: 'Economiza recursos, mas acumula dano proteico.' },
+            ],
+            remainingSeconds: 28,
+            severity: 'warning' as const,
+        },
+        {
+            id: 'immune-challenge',
+            title: 'Contato com um patógeno',
+            description: 'A resposta imune local elevou ROS e demanda metabólica.',
+            explanation: 'A célula pode conter o estresse com antioxidantes ou sustentar uma resposta intensa que controla a ameaça ao custo de dano oxidativo.',
+            category: 'cell' as const,
+            choices: [
+                { id: 'immune-control', label: 'Conter com antioxidantes', description: 'Amortece o pico de espécies reativas.', tradeoff: 'Custa 0,40 ATP; preserva membranas e proteínas.' },
+                { id: 'immune-attack', label: 'Resposta intensa', description: 'Prioriza o ataque celular.', tradeoff: 'Requer 1 glicose; elimina a pressão, mas gera mais ROS.' },
+            ],
+            remainingSeconds: 24,
+            severity: 'critical' as const,
+        },
+        {
+            id: 'heat-dehydration',
+            title: 'Calor e desidratação leve',
+            description: 'A osmolaridade aumentou e a célula começou a perder volume.',
+            explanation: 'Alterações osmóticas deslocam água pela membrana. Bombas iônicas gastam ATP para recuperar gradientes e proteger o volume celular.',
+            category: 'organ' as const,
+            choices: [
+                { id: 'heat-pumps', label: 'Ativar bombas iônicas', description: 'Restaura gradientes e volume.', tradeoff: 'Custa 0,45 ATP; protege a membrana.' },
+                { id: 'heat-adapt', label: 'Adaptação osmótica', description: 'Aceita uma variação transitória de volume.', tradeoff: 'Custa 0,5 aminoácido; poupa ATP, mas gera leve estresse.' },
+            ],
+            remainingSeconds: 26,
             severity: 'warning' as const,
         },
     ];
     return routines[index];
+}
+
+function applyRoutineTimeout(state: CellularState) {
+    if (!state.routine) return;
+    switch (state.routine.id) {
+        case 'stair-climb':
+            state.cell.atpMmolL -= 0.35;
+            state.tissue.lactateMmolL += 1.1;
+            break;
+        case 'meal-surge':
+            state.damage.oxidativeStress += 6;
+            break;
+        case 'morning-fast':
+            state.cell.atpMmolL -= 0.45;
+            break;
+        case 'micro-injury':
+            state.damage.proteins += 6;
+            break;
+        case 'immune-challenge':
+            state.damage.oxidativeStress += 9;
+            state.damage.proteins += 2;
+            break;
+        case 'heat-dehydration':
+            state.cell.volumePercent += 7;
+            state.damage.membrane += 5;
+            break;
+    }
+    state.lastEvent = `Decisão não tomada: ${state.routine.title}`;
+    state.cell.atpMmolL = clamp(state.cell.atpMmolL, 0.2, MAX_ATP);
+    state.tissue.lactateMmolL = clamp(state.tissue.lactateMmolL, 0, 20);
+    state.damage.oxidativeStress = clamp(state.damage.oxidativeStress, 0, 100);
+    state.damage.proteins = clamp(state.damage.proteins, 0, 100);
+    state.damage.membrane = clamp(state.damage.membrane, 0, 100);
+    state.cell.volumePercent = clamp(state.cell.volumePercent, 70, 140);
+    syncAdenylates(state);
+}
+
+function applyRoutineOnset(state: CellularState) {
+    if (!state.routine) return;
+    switch (state.routine.id) {
+        case 'meal-surge':
+            state.pools.available.glucose = clamp(state.pools.available.glucose + 2, 0, 8);
+            state.tissue.glucoseMmolL = clamp(state.tissue.glucoseMmolL + 0.8, 1, 20);
+            break;
+        case 'morning-fast':
+            state.pools.available.glucose = Math.max(0, state.pools.available.glucose - 1.5);
+            state.tissue.glucoseMmolL = clamp(state.tissue.glucoseMmolL - 0.65, 1, 20);
+            break;
+        case 'micro-injury':
+            state.damage.proteins = clamp(state.damage.proteins + 4, 0, 100);
+            break;
+        case 'immune-challenge':
+            state.damage.oxidativeStress = clamp(state.damage.oxidativeStress + 4, 0, 100);
+            break;
+        case 'heat-dehydration':
+            state.tissue.osmolarity = clamp(state.tissue.osmolarity + 5, 260, 340);
+            state.cell.volumePercent = clamp(state.cell.volumePercent - 4, 70, 140);
+            break;
+    }
+}
+
+export function resolveRoutineDecision(state: CellularState, choiceId: string): CellularActionResult {
+    if (!state.routine || !state.routine.choices.some(choice => choice.id === choiceId)) {
+        return actionFailure(state, 'Esta decisão não está disponível no cenário atual.');
+    }
+
+    const next = cloneState(state);
+    let message = '';
+    switch (choiceId) {
+        case 'stair-aerobic':
+            if (next.pools.pyruvate < 0.85 || next.pools.captured.oxygen < 2.8) return actionFailure(state, 'Faltam 1 piruvato e 3 pacotes de O₂.');
+            next.pools.pyruvate -= Math.min(1, next.pools.pyruvate); next.pools.captured.oxygen -= Math.min(3, next.pools.captured.oxygen); next.cell.atpMmolL += 0.55; next.cell.nadhPercent -= 5;
+            message = 'Esforço sustentado pela via aeróbia';
+            break;
+        case 'stair-glycolytic':
+            if (next.pools.captured.glucose < 0.85) return actionFailure(state, 'Capte 1 pacote de glicose antes de escolher glicólise rápida.');
+            next.pools.captured.glucose -= Math.min(1, next.pools.captured.glucose); next.pools.pyruvate += 1; next.cell.atpMmolL += 0.12; next.tissue.lactateMmolL += 0.75;
+            message = 'Esforço sustentado por glicólise rápida';
+            break;
+        case 'meal-process':
+            if (next.pools.available.glucose < 1) return actionFailure(state, 'A glicose no tecido ainda é insuficiente para esta resposta.');
+            next.pools.available.glucose -= 1; next.pools.pyruvate += 2; next.cell.atpMmolL += 0.08; next.cell.nadhPercent += 4;
+            message = 'Pico pós-prandial processado em piruvato';
+            break;
+        case 'meal-buffer':
+            if (next.cell.atpMmolL < 1.25) return actionFailure(state, 'ATP insuficiente para regular os transportadores.');
+            next.cell.atpMmolL -= 0.25; next.damage.oxidativeStress -= 3; next.tissue.glucoseMmolL -= 0.35;
+            message = 'Entrada de glicose regulada para proteger o equilíbrio redox';
+            break;
+        case 'fast-fat':
+            if (next.pools.captured.fattyAcid < 0.85 || next.pools.captured.oxygen < 5.7) return actionFailure(state, 'Faltam 1 ácido graxo e 6 pacotes de O₂.');
+            next.pools.captured.fattyAcid -= Math.min(1, next.pools.captured.fattyAcid); next.pools.captured.oxygen -= Math.min(6, next.pools.captured.oxygen); next.cell.atpMmolL += 0.75; next.damage.oxidativeStress += 2.5;
+            message = 'Jejum compensado por oxidação de ácido graxo';
+            break;
+        case 'fast-conserve':
+            if (next.cell.atpMmolL < 0.4) return actionFailure(state, 'Reserva energética crítica; produza ATP antes de conservar processos.');
+            next.cell.atpMmolL -= 0.12; next.damage.oxidativeStress -= 1;
+            message = 'Processos não essenciais reduzidos durante o jejum';
+            break;
+        case 'injury-repair':
+            if (next.pools.captured.aminoAcid < 0.85 || next.cell.atpMmolL < 1.55) return actionFailure(state, 'Faltam 1 aminoácido e 0,55 ATP acima da reserva vital.');
+            next.pools.captured.aminoAcid -= Math.min(1, next.pools.captured.aminoAcid); next.cell.atpMmolL -= 0.55; next.damage.proteins -= 7;
+            message = 'Microlesão reparada com renovação proteica';
+            break;
+        case 'injury-defer':
+            next.damage.proteins += 3.5;
+            message = 'Reparo adiado; dano proteico aumentou';
+            break;
+        case 'immune-control':
+            if (next.cell.atpMmolL < 1.4) return actionFailure(state, 'ATP insuficiente para reforçar as defesas antioxidantes.');
+            next.cell.atpMmolL -= 0.4; next.damage.oxidativeStress -= 7; next.damage.antioxidantCapacity += 5;
+            message = 'Resposta imune contida com suporte antioxidante';
+            break;
+        case 'immune-attack':
+            if (next.pools.captured.glucose < 0.85) return actionFailure(state, 'Capte 1 pacote de glicose para sustentar a resposta intensa.');
+            next.pools.captured.glucose -= Math.min(1, next.pools.captured.glucose); next.damage.oxidativeStress += 5; next.cell.atpMmolL -= 0.18;
+            message = 'Resposta imune intensa concluída com custo oxidativo';
+            break;
+        case 'heat-pumps':
+            if (next.cell.atpMmolL < 1.45) return actionFailure(state, 'ATP insuficiente para ativar as bombas sem cruzar a reserva vital.');
+            next.cell.atpMmolL -= 0.45; next.cell.volumePercent = approach(next.cell.volumePercent, 100, 1, 1); next.damage.membrane -= 2;
+            message = 'Gradientes iônicos restaurados pelas bombas de membrana';
+            break;
+        case 'heat-adapt':
+            if (next.pools.captured.aminoAcid < 0.5) return actionFailure(state, 'Falta 0,5 pacote de aminoácido para a adaptação osmótica.');
+            next.pools.captured.aminoAcid -= 0.5; next.cell.volumePercent += 2; next.damage.oxidativeStress += 1.5;
+            message = 'Adaptação osmótica adotada com estresse leve';
+            break;
+        default:
+            return actionFailure(state, 'Resposta ainda não implementada.');
+    }
+
+    next.routine = null;
+    next.lastEvent = message;
+    next.cell.atpMmolL = clamp(next.cell.atpMmolL, 0.2, MAX_ATP);
+    next.cell.nadhPercent = clamp(next.cell.nadhPercent, 0, 100);
+    next.tissue.glucoseMmolL = clamp(next.tissue.glucoseMmolL, 1, 20);
+    next.tissue.lactateMmolL = clamp(next.tissue.lactateMmolL, 0, 20);
+    next.damage.oxidativeStress = clamp(next.damage.oxidativeStress, 0, 100);
+    next.damage.antioxidantCapacity = clamp(next.damage.antioxidantCapacity, 0, 100);
+    next.damage.proteins = clamp(next.damage.proteins, 0, 100);
+    next.damage.membrane = clamp(next.damage.membrane, 0, 100);
+    next.cell.volumePercent = clamp(next.cell.volumePercent, 70, 140);
+    syncAdenylates(next);
+    return { state: next, ok: true, event: { message, severity: 'info', affectedSystems: ['cellular', 'decision'] } };
 }
 
 function autoCapture(state: CellularState, dt: number) {
@@ -233,6 +465,8 @@ interface AutomaticMetabolismResult {
     atpProduced: number;
     oxygenUsed: number;
     glycolyticAtp: number;
+    pyruvateUsed: number;
+    fattyAcidUsed: number;
 }
 
 function automaticMetabolism(
@@ -246,7 +480,7 @@ function automaticMetabolism(
     const headroom = Math.max(0, MAX_ATP - state.cell.atpMmolL);
     const availableAdp = Math.max(0, state.cell.adpMmolL - 0.2);
     const productionTarget = Math.min(requestedAtp, headroom, availableAdp);
-    if (productionTarget <= 0) return { atpProduced: 0, oxygenUsed: 0, glycolyticAtp: 0 };
+    if (productionTarget <= 0) return { atpProduced: 0, oxygenUsed: 0, glycolyticAtp: 0, pyruvateUsed: 0, fattyAcidUsed: 0 };
 
     // Glicólise constitutiva fornece piruvato e um pequeno rendimento direto.
     const pyruvateNeeded = productionTarget / PYRUVATE_ATP_YIELD;
@@ -317,6 +551,8 @@ function automaticMetabolism(
         atpProduced: Math.min(productionTarget, glycolyticAtp + oxidativeAtp + anaerobicAtp),
         oxygenUsed,
         glycolyticAtp: glycolyticAtp + anaerobicAtp,
+        pyruvateUsed: pyruvateFlux,
+        fattyAcidUsed: fattyFlux,
     };
 }
 
@@ -351,7 +587,10 @@ function advanceStep(
 
     if (state.routine) {
         state.routine.remainingSeconds -= dt;
-        if (state.routine.remainingSeconds <= 0) state.routine = null;
+        if (state.routine.remainingSeconds <= 0) {
+            applyRoutineTimeout(state);
+            state.routine = null;
+        }
     }
 
     const cardiacFlow = macro.cardiovascular.cardiacOutput / 4.9;
@@ -394,7 +633,7 @@ function advanceStep(
     const lactateTarget = clamp(macro.energy.lactateLevel + routine.lactate * 8, 0.6, 16);
     state.tissue.lactateMmolL = approach(state.tissue.lactateMmolL, lactateTarget, 12, dt);
     const tissuePhTarget = clamp(
-        macro.acidBase.pH - 0.02 - Math.max(0, state.tissue.lactateMmolL - 1) * 0.018,
+        macro.acidBase.pH - 0.02 - Math.max(0, state.tissue.lactateMmolL - 1) * 0.018 * (1 - state.adaptations.bufferCapacity * 0.06),
         6.65,
         7.55,
     );
@@ -405,7 +644,7 @@ function advanceStep(
     const deliveryAvailability: SubstratePool = createPool(
         clamp(state.tissue.glucoseMmolL / 5, 0.05, 2.5),
         clamp(state.tissue.oxygenMmHg / 40, 0.02, 1.6),
-        clamp(macro.nutrients.fattyAcids / 0.4, 0.05, 3),
+        clamp(macro.nutrients.fattyAcids / 0.4, 0.05, 3) * (1 + state.adaptations.metabolicFlexibility * 0.05),
         clamp(macro.nutrients.aminoAcids / 40, 0.05, 2.5),
     );
     (Object.keys(deliveryRates) as SubstrateKind[]).forEach(kind => {
@@ -421,10 +660,12 @@ function advanceStep(
         state.tissue.lactateMmolL += lactateFlux * 0.12;
     }
 
-    const oxygenFactor = clamp((state.tissue.oxygenMmHg - 5) / 35, 0, 1.3);
-    const atpConsumptionRate = 0.0098 * metabolicDemand
+    const hypoxiaFloor = 5 - state.adaptations.hypoxiaTolerance * 0.55;
+    const oxygenFactor = clamp((state.tissue.oxygenMmHg - hypoxiaFloor) / (40 - hypoxiaFloor), 0, 1.3);
+    const efficiencyFactor = 1 - state.adaptations.enzymaticEfficiency * 0.015;
+    const atpConsumptionRate = (0.0098 * metabolicDemand
         + routine.atp
-        + Math.max(0, 7.2 - state.cell.pH) * 0.02;
+        + Math.max(0, 7.2 - state.cell.pH) * 0.02) * efficiencyFactor;
     const recoveryDrive = clamp((5 - state.cell.atpMmolL) * 0.002, -0.0015, 0.012);
     const metabolism = automaticMetabolism(
         state,
@@ -440,6 +681,23 @@ function advanceStep(
     syncAdenylates(state);
     state.totalAtpProduced += atpProduced;
     state.totalAtpSpent += atpSpent;
+
+    const oxidativeAtpProduced = Math.max(0, atpProduced - metabolism.glycolyticAtp);
+    const rateScale = 60 / Math.max(dt, .001);
+    const processingTargets = {
+        pyruvatePerMin: metabolism.pyruvateUsed * rateScale,
+        fattyAcidPerMin: metabolism.fattyAcidUsed * rateScale,
+        nadhPerMin: (metabolism.pyruvateUsed * 4 + metabolism.fattyAcidUsed * 31) * rateScale,
+        fadh2PerMin: (metabolism.pyruvateUsed + metabolism.fattyAcidUsed * 15) * rateScale,
+        oxygenPerMin: metabolism.oxygenUsed * rateScale,
+        protonsPerMin: (metabolism.pyruvateUsed * 46 + metabolism.fattyAcidUsed * 400) * rateScale,
+        adpPerMin: oxidativeAtpProduced * rateScale,
+        atpPerMin: oxidativeAtpProduced * rateScale,
+        waterPerMin: metabolism.oxygenUsed * 2 * rateScale,
+    };
+    (Object.keys(processingTargets) as Array<keyof typeof processingTargets>).forEach(key => {
+        state.mitochondria.processing[key] = approach(state.mitochondria.processing[key], processingTargets[key], 2.4, dt);
+    });
 
     const automatedRepairCost = autoRepair(state, dt);
     state.totalAtpSpent += automatedRepairCost;
@@ -513,7 +771,8 @@ function advanceStep(
     const hypoxia = Math.max(0, 25 - state.tissue.oxygenMmHg) * 0.0012;
     const rosGeneration = 0.011 + state.mitochondria.etcFluxPercent * 0.00004 +
         hyperglycemia + hypoxia + routine.ros + redoxPressure * 0.004;
-    const rosClearance = 0.0115 * clamp(state.damage.antioxidantCapacity / 80, 0.15, 1.2);
+    const rosClearance = 0.0115 * clamp(state.damage.antioxidantCapacity / 80, 0.15, 1.2)
+        * (1 + state.adaptations.antioxidantDefense * 0.07);
     state.damage.oxidativeStress = clamp(
         state.damage.oxidativeStress + (rosGeneration - rosClearance) * dt * 10,
         0,
@@ -559,7 +818,69 @@ function advanceStep(
         state.damage.oxidativeStress = clamp(state.damage.oxidativeStress + 0.001 * dt, 0, 100);
     }
 
+    const accumulate = (current: number, condition: boolean) => condition ? current + dt : Math.max(0, current - dt * 0.6);
+    const stableAtp = state.cell.atpMmolL >= 1.5 && state.cell.atpMmolL <= 5.5;
+    const stablePh = state.tissue.pH >= 7.30 && state.tissue.pH <= 7.45;
+    const stableRos = state.damage.oxidativeStress <= 28;
+    const globallyStable = stableAtp && stablePh && stableRos && state.tissue.oxygenMmHg >= 32 && state.cell.viabilityPercent >= 70;
+    state.rewards.homeostasisSeconds = accumulate(state.rewards.homeostasisSeconds, globallyStable);
+    state.rewards.rosControlSeconds = accumulate(state.rewards.rosControlSeconds, stableRos && state.damage.antioxidantCapacity >= 55);
+    state.rewards.phStableSeconds = accumulate(state.rewards.phStableSeconds, stablePh && state.tissue.lactateMmolL <= 3);
+    state.rewards.balancedFuelSeconds = accumulate(
+        state.rewards.balancedFuelSeconds,
+        stableAtp && state.pools.captured.glucose >= .35 && state.pools.captured.fattyAcid >= .15,
+    );
+    state.rewards.hypoxiaStableSeconds = accumulate(
+        state.rewards.hypoxiaStableSeconds,
+        state.tissue.oxygenMmHg >= 15 && state.tissue.oxygenMmHg < 32 && stableAtp,
+    );
+
     return state;
+}
+
+type RewardTimer = 'homeostasisSeconds' | 'rosControlSeconds' | 'balancedFuelSeconds' | 'phStableSeconds' | 'hypoxiaStableSeconds';
+
+function maybeAwardAdaptation(state: CellularState): CellularEvent | null {
+    if (state.lastEvent.startsWith('Decisão não tomada:')) return null;
+    if (state.simulationTime - state.rewards.lastOpportunityAt < 6) return null;
+    const opportunities: Array<{ kind: CellularAdaptationKind; timer: RewardTimer; threshold: number; label: string; reason: string }> = [
+        { kind: 'enzymaticEfficiency', timer: 'homeostasisSeconds', threshold: 30, label: 'Eficiência enzimática', reason: 'ATP, O₂, pH e viabilidade permaneceram em faixa funcional' },
+        { kind: 'antioxidantDefense', timer: 'rosControlSeconds', threshold: 24, label: 'Defesa antioxidante', reason: 'ROS ficou controlado com reserva antioxidante disponível' },
+        { kind: 'metabolicFlexibility', timer: 'balancedFuelSeconds', threshold: 28, label: 'Flexibilidade metabólica', reason: 'glicose e ácidos graxos foram mantidos disponíveis sem colapso energético' },
+        { kind: 'bufferCapacity', timer: 'phStableSeconds', threshold: 26, label: 'Buffer intracelular', reason: 'o pH foi preservado apesar da produção metabólica' },
+        { kind: 'hypoxiaTolerance', timer: 'hypoxiaStableSeconds', threshold: 18, label: 'Tolerância à hipóxia', reason: 'o ATP foi sustentado com tensão de O₂ reduzida' },
+    ];
+    const eligibleOpportunities = opportunities.filter(opportunity => state.rewards[opportunity.timer] >= opportunity.threshold && state.adaptations[opportunity.kind] < 4);
+    if (eligibleOpportunities.length === 0) return null;
+
+    const quality = clamp(
+        state.cell.viabilityPercent / 100 * .28
+        + clamp(state.cell.atpMmolL / 5, 0, 1) * .24
+        + clamp(state.tissue.oxygenMmHg / 40, 0, 1) * .18
+        + clamp((45 - state.damage.oxidativeStress) / 45, 0, 1) * .30,
+        0,
+        1,
+    );
+    const stateSeed = Math.sin(state.simulationTime * 12.9898 + state.collection.score * .37 + quality * 19.19) * 43758.5453;
+    const opportunityRoll = stateSeed - Math.floor(stateSeed);
+    const chosen = eligibleOpportunities[Math.floor(opportunityRoll * eligibleOpportunities.length) % eligibleOpportunities.length];
+    const rewardSeed = Math.sin(state.simulationTime * 7.13 + quality * 31.7 + chosen.threshold) * 24634.6345;
+    const rewardRoll = rewardSeed - Math.floor(rewardSeed);
+    state.rewards.lastOpportunityAt = state.simulationTime;
+    if (rewardRoll > .35 + quality * .45) return null;
+
+    state.adaptations[chosen.kind] += 1;
+    state.rewards[chosen.timer] = chosen.threshold * .2;
+    if (chosen.kind === 'enzymaticEfficiency') state.cell.atpMmolL = clamp(state.cell.atpMmolL + .12, .2, MAX_ATP);
+    if (chosen.kind === 'antioxidantDefense') state.damage.oxidativeStress = clamp(state.damage.oxidativeStress - 2.5, 0, 100);
+    if (chosen.kind === 'bufferCapacity') state.cell.pH = approach(state.cell.pH, 7.2, 1, .5);
+    syncAdenylates(state);
+    state.lastEvent = `${chosen.label} +1: ${chosen.reason}`;
+    return {
+        message: `Adaptação desbloqueada — ${chosen.label}: ${chosen.reason}.`,
+        severity: 'info',
+        affectedSystems: ['cellular-adaptation', 'reward'],
+    };
 }
 
 export function advanceCellularSimulation(
@@ -576,7 +897,8 @@ export function advanceCellularSimulation(
     const startRoutineIfDue = () => {
         if (state.routine || state.simulationTime < state.nextRoutineAt) return;
         state.routine = createRoutine(state);
-        state.nextRoutineAt += 55;
+        applyRoutineOnset(state);
+        state.nextRoutineAt += 48;
         state.lastEvent = state.routine.title;
         events.push({
             message: state.routine.title,
@@ -592,6 +914,17 @@ export function advanceCellularSimulation(
         remaining -= dt;
     }
     startRoutineIfDue();
+
+    const adaptationEvent = maybeAwardAdaptation(state);
+    if (adaptationEvent) events.push(adaptationEvent);
+
+    if (previous.routine && !state.routine && state.lastEvent.startsWith('Decisão não tomada:')) {
+        events.push({
+            message: state.lastEvent,
+            severity: previous.routine.severity === 'info' ? 'warning' : 'critical',
+            affectedSystems: ['cellular', 'decision'],
+        });
+    }
 
     if (previous.cell.viabilityPercent >= 70 && state.cell.viabilityPercent < 70) {
         events.push({
@@ -705,7 +1038,9 @@ export function oxidizeSubstrate(
         return actionFailure(state, 'A CTE está limitada por hipóxia tecidual ou dano mitocondrial grave.');
     }
 
-    const baseYield = isPyruvate ? PYRUVATE_ATP_YIELD : FATTY_ACID_ATP_YIELD;
+    const baseYield = isPyruvate
+        ? PYRUVATE_ATP_YIELD
+        : FATTY_ACID_ATP_YIELD * (1 + state.adaptations.metabolicFlexibility * .03);
     const couplingEfficiency = clamp(state.mitochondria.healthPercent / 100, 0.3, 1)
         * clamp(state.tissue.oxygenMmHg / 40, 0.35, 1);
     const yieldAtp = baseYield * couplingEfficiency;
@@ -728,6 +1063,24 @@ export function oxidizeSubstrate(
         100,
     );
     next.mitochondria.etcFluxPercent = Math.max(next.mitochondria.etcFluxPercent, isPyruvate ? 65 : 82);
+    const pulseRate = 6;
+    const nadhRate = (isPyruvate ? 4 : 31) * pulseRate;
+    const fadh2Rate = (isPyruvate ? 1 : 15) * pulseRate;
+    const oxygenRate = oxygenCost * pulseRate;
+    const protonRate = (isPyruvate ? 46 : 400) * pulseRate;
+    next.mitochondria.processing = {
+        ...next.mitochondria.processing,
+        pyruvatePerMin: Math.max(next.mitochondria.processing.pyruvatePerMin, isPyruvate ? pulseRate : 0),
+        fattyAcidPerMin: Math.max(next.mitochondria.processing.fattyAcidPerMin, isPyruvate ? 0 : pulseRate),
+        nadhPerMin: Math.max(next.mitochondria.processing.nadhPerMin, nadhRate),
+        fadh2PerMin: Math.max(next.mitochondria.processing.fadh2PerMin, fadh2Rate),
+        oxygenPerMin: Math.max(next.mitochondria.processing.oxygenPerMin, oxygenRate),
+        protonsPerMin: Math.max(next.mitochondria.processing.protonsPerMin, protonRate),
+        adpPerMin: Math.max(next.mitochondria.processing.adpPerMin, yieldAtp * pulseRate),
+        atpPerMin: Math.max(next.mitochondria.processing.atpPerMin, yieldAtp * pulseRate),
+        waterPerMin: Math.max(next.mitochondria.processing.waterPerMin, oxygenRate * 2),
+    };
+    next.mitochondria.oxygenConsumption = Math.max(next.mitochondria.oxygenConsumption, oxygenRate);
     next.lastEvent = isPyruvate
         ? 'Piruvato oxidado: Krebs + CTE + ATP sintase'
         : 'Beta-oxidação concluída: alto rendimento, maior pressão redox';

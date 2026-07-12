@@ -9,6 +9,7 @@ export type OxidationSubstrate = 'pyruvate' | 'fattyAcid';
 export type RepairTarget = 'membrane' | 'proteins' | 'dna' | 'antioxidants';
 export type AutomationKind = 'transporters' | 'mitochondrialShuttle' | 'repair';
 export type AtpAllocationTarget = 'ionPumps' | 'repair' | 'biosynthesis';
+export type CellularAdaptationKind = 'enzymaticEfficiency' | 'antioxidantDefense' | 'metabolicFlexibility' | 'bufferCapacity' | 'hypoxiaTolerance';
 
 export interface TissueEnvironment {
     perfusionPercent: number;
@@ -43,6 +44,19 @@ export interface MitochondrialState {
     atpSynthaseFlux: number;
     oxygenConsumption: number;
     healthPercent: number;
+    processing: MitochondrialProcessing;
+}
+
+export interface MitochondrialProcessing {
+    pyruvatePerMin: number;
+    fattyAcidPerMin: number;
+    nadhPerMin: number;
+    fadh2PerMin: number;
+    oxygenPerMin: number;
+    protonsPerMin: number;
+    adpPerMin: number;
+    atpPerMin: number;
+    waterPerMin: number;
 }
 
 export type SubstratePool = Record<SubstrateKind, number>;
@@ -69,12 +83,33 @@ export interface CellularCollectionProgress {
     priorityCaptures: number;
 }
 
+export type CellularAdaptations = Record<CellularAdaptationKind, number>;
+
+export interface CellularRewardProgress {
+    homeostasisSeconds: number;
+    rosControlSeconds: number;
+    balancedFuelSeconds: number;
+    phStableSeconds: number;
+    hypoxiaStableSeconds: number;
+    lastOpportunityAt: number;
+}
+
 export interface CellularRoutineEvent {
     id: string;
     title: string;
     description: string;
+    explanation: string;
+    category: 'organ' | 'cell' | 'molecule';
+    choices: CellularRoutineChoice[];
     remainingSeconds: number;
     severity: 'info' | 'warning' | 'critical';
+}
+
+export interface CellularRoutineChoice {
+    id: string;
+    label: string;
+    description: string;
+    tradeoff: string;
 }
 
 export interface CellularState {
@@ -84,6 +119,8 @@ export interface CellularState {
     pools: CellularPools;
     damage: CellularDamage;
     collection: CellularCollectionProgress;
+    adaptations: CellularAdaptations;
+    rewards: CellularRewardProgress;
     automation: Record<AutomationKind, number>;
     atpAllocation: Record<AtpAllocationTarget, number>;
     routine: CellularRoutineEvent | null;
