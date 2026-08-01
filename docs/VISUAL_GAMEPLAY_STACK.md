@@ -27,7 +27,9 @@ As cenas são transparentes e preservam `cell-background.png` como contexto anat
 - **Navegação:** o stepper inferior é um overlay com fade transparente; apenas os círculos recebem brilho e o conteúdo das demais abas rola por trás da faixa.
 - **Sistema:** sinais vitais e sinalização hormonal são uma única escala de observação; a barra inferior mantém apenas uma entrada para ela. Gasometria, perfusão, metabolismo e eletrólitos ficam como marcadores complementares.
 - **Ritmo cardíaco:** `human_heart.glb`, ECG e o único valor de BPM ficam integrados à frequência cardíaca. O coração pulsa com a FC, pode ser rotacionado diretamente com o cursor e sobrepõe de forma controlada o canto do bloco de sinais vitais; a faixa P–QRS–T muda de velocidade sem reiniciar sua fase.
-- **Monitorização clínica:** sinais vitais, gasometria, eletrólitos e metabolismo usam rótulos completos, faixas de referência, histórico e indicadores explícitos de aumento, redução ou estabilidade. Os controles combinam slider com botões de incremento e mostram a resposta fisiológica observada.
+- **Monitorização clínica:** sinais vitais, gasometria, eletrólitos e metabolismo usam rótulos completos, faixas de referência, histórico e indicadores explícitos de aumento, redução ou estabilidade. FC, ventilação e retenção renal são apenas respostas observadas; o jogador atua pelos modos Hormônios e Hipotálamo da mesma central flutuante.
+- **Economia das decisões:** o modal obrigatório mostra ATP, pools captados, ocupação dos transportadores, ações de preparação e requisitos `atual / mínimo`; caminhos sem recursos ficam bloqueados sem avançar a timeline.
+- **Destino celular:** Defesa e Genoma são uma única etapa, com compromisso apoptótico, suscetibilidade à infecção e transições de homeostase, estresse, apoptose ou necrose.
 - **Transportadores:** `adrenergic_receptor.glb` substitui a coluna procedural da bancada, permanece rigidamente ancorado no centro da base escura, sem flutuação ou rotação automática, e recebe progressivamente a cor ciano conforme o nível de automação.
 
 ## Próximas ferramentas com maior retorno

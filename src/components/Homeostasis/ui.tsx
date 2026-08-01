@@ -1,5 +1,5 @@
-import { useId, type ButtonHTMLAttributes, type HTMLAttributes, type ReactNode } from 'react';
-import { HelpCircle, Minus, Plus } from 'lucide-react';
+import { forwardRef, useId, type ButtonHTMLAttributes, type HTMLAttributes, type ReactNode } from 'react';
+import { HelpCircle } from 'lucide-react';
 
 export function cn(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(' ');
@@ -11,13 +11,13 @@ interface GlassPanelProps extends HTMLAttributes<HTMLDivElement> {
   hover?: boolean;
 }
 
-export function GlassPanel({ children, soft, hover, className, ...props }: GlassPanelProps) {
+export const GlassPanel = forwardRef<HTMLDivElement, GlassPanelProps>(function GlassPanel({ children, soft, hover, className, ...props }, ref) {
   return (
-    <div className={cn(soft ? 'glass-soft' : 'glass', hover && 'glass-hover', 'rounded-xl', className)} {...props}>
+    <div ref={ref} className={cn(soft ? 'glass-soft' : 'glass', hover && 'glass-hover', 'rounded-xl', className)} {...props}>
       {children}
     </div>
   );
-}
+});
 
 export function PanelLabel({ children, icon, className }: { children: ReactNode; icon?: ReactNode; className?: string }) {
   return <div className={cn('panel-label', className)}>{icon}<span>{children}</span></div>;
@@ -81,27 +81,4 @@ export function MetricCard({ label, value, unit, detail, history, color = 'var(-
 
 export function ProgressBar({ value, color = 'var(--primary)' }: { value: number; color?: string }) {
   return <div className="h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full transition-[width] duration-300" style={{ width: `${Math.max(0, Math.min(100, value))}%`, background: color }} /></div>;
-}
-
-export function RangeControl({ label, value, min, max, step = 1, unit, measured, description, onChange }: {
-  label: string; value: number; min: number; max: number; step?: number; unit: string; measured?: string; description?: string; onChange: (value: number) => void;
-}) {
-  const id = useId();
-  const precision = step < 1 ? 1 : 0;
-  const update = (next: number) => onChange(Math.max(min, Math.min(max, Number(next.toFixed(Math.max(0, precision))))));
-  return (
-    <div className="rounded-xl border border-white/10 bg-black/15 p-3.5">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0"><label htmlFor={id} className="block text-[11px] font-medium text-foreground">{label}</label>{description && <p className="mt-1 text-[9px] leading-relaxed text-muted-foreground">{description}</p>}</div>
-        <strong className="shrink-0 rounded-md border border-primary/20 bg-primary/5 px-2 py-1 font-mono text-[11px] font-medium text-primary">{value.toFixed(precision)} {unit}</strong>
-      </div>
-      <div className="mt-3 grid grid-cols-[30px_minmax(0,1fr)_30px] items-center gap-2">
-        <button type="button" className="grid size-[30px] place-items-center rounded-md border border-white/10 bg-white/[.03] text-muted-foreground transition hover:border-primary/40 hover:text-primary disabled:cursor-not-allowed disabled:opacity-30" onClick={() => update(value - step)} disabled={value <= min} aria-label={`Diminuir ${label}`}><Minus className="size-3.5"/></button>
-        <input id={id} className="range-control" type="range" min={min} max={max} step={step} value={value} onChange={event => update(Number(event.target.value))} aria-valuetext={`${value.toFixed(precision)} ${unit}`}/>
-        <button type="button" className="grid size-[30px] place-items-center rounded-md border border-white/10 bg-white/[.03] text-muted-foreground transition hover:border-primary/40 hover:text-primary disabled:cursor-not-allowed disabled:opacity-30" onClick={() => update(value + step)} disabled={value >= max} aria-label={`Aumentar ${label}`}><Plus className="size-3.5"/></button>
-      </div>
-      <div className="mt-2 flex items-center justify-between font-mono text-[8px] text-muted-foreground/70"><span>{min.toFixed(precision)} {unit}</span><span>{max.toFixed(precision)} {unit}</span></div>
-      {measured && <div className="mt-2 rounded-md border border-white/5 bg-black/15 px-2.5 py-2 text-[9px] text-muted-foreground">Resposta observada: <strong className="font-mono font-medium text-foreground">{measured}</strong></div>}
-    </div>
-  );
 }

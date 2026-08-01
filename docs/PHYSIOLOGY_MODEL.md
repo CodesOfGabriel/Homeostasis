@@ -34,7 +34,7 @@ O acoplamento fisiológico é predominantemente:
 estado sistêmico → tecido/LEC → LIC → mitocôndria e dano
 ```
 
-Ações celulares geram feedback visual e eventos na timeline, mas o ATP, lactato e dano do voxel ainda não alteram diretamente os pools macroscópicos do organismo. Esse retorno micro → macro é uma extensão futura importante.
+O voxel devolve uma contribuição ponderada de lactato, CO₂, demanda de O₂, inflamação e viabilidade. O peso tecidual é deliberadamente pequeno (`0,002`) para não transformar um único voxel em todo o organismo. Os pacotes manuais continuam sendo recursos normalizados e não representam conservação molecular de corpo inteiro.
 
 ## 2. Estado basal
 
@@ -52,7 +52,7 @@ O estado inicial representa um adulto saudável de 70 kg em repouso.
 | Respiratório | SpO₂ | 98% |
 | Respiratório | PaO₂ / PaCO₂ | 95 / 40 mmHg |
 | Ácido-base | pH arterial | 7,40 |
-| Ácido-base | HCO₃⁻ | 26 mmol/L |
+| Ácido-base | HCO₃⁻ | 24 mmol/L |
 | Metabólico | Glicemia | 90 mg/dL |
 | Metabólico | Lactato | 0,8 mmol/L |
 | Hídrico | Água corporal | 42 L |
@@ -147,20 +147,21 @@ Essa relação representa deslocamento de água, mas não resolve separadamente 
 Os botões da interface adicionam 250 ou 500 mL ao reservatório gastrointestinal. O reservatório aceita no máximo 2.000 mL pendentes.
 
 ```text
-absorção gastrointestinal = min(16, água pendente × 0,08) mL/min
+absorção gastrointestinal = min(300, água pendente × 0,9) mL/min
 ```
 
-A água não entra instantaneamente na água corporal total.
+A água não entra instantaneamente na água corporal total; toda a dose entra primeiro no reservatório gastrointestinal. O tempo é comprimido para feedback de gameplay em dezenas de segundos.
 
 ### 4.2 GFR e reabsorção
 
-O motor usa uma taxa de filtração glomerular fixa de 125 mL/min:
+O basal usa 125 mL/min, mas a GFR agora depende de capacidade renal, PAM, débito e sepse:
 
 ```text
-fluxo urinário = 125 × (1 - reabsorção/100) mL/min
+GFR alvo = 125 × capacidade renal × fator de perfusão × penalidade séptica
+fluxo urinário = GFR × (1 - reabsorção efetiva/100)
 ```
 
-A interface limita a reabsorção a 98,5–99,8%; o clamp defensivo interno é 95–99,9%. O basal da interface é 99,2%.
+Não há controle direto de reabsorção na interface. O modo **Hipotálamo** da central flutuante permite recrutar ou suprimir o circuito osmorreceptor/ADH; esse sinal gera internamente um comando de 98,6–99,78%, que ainda é combinado com ADH endógeno, cortisol e o clamp defensivo de 95–99,9%. RAAS, aldosterona, osmolaridade e perfusão têm estados explícitos.
 
 ### 4.3 Balanço de água
 
@@ -214,7 +215,7 @@ O pool de ATP procura 82% da capacidade com constante de recuperação de 20 s. 
 Há uma produção basal contínua e produção adicional quando o fluxo glicolítico supera 4% da demanda. O clearance aumenta com a concentração e com a disponibilidade de O₂.
 
 ```text
-produção ≈ 0,012 + 0,018 × excesso glicolítico
+produção ≈ 0,012 + 0,018 × excesso glicolítico + 0,070 × gravidade infecciosa
 clearance ≈ (0,012 + 0,12 × max(lactato - 0,8, 0)) × fator de O₂
 ```
 
@@ -224,7 +225,7 @@ Essas taxas são calibrações do simulador em mmol/L/min, não um modelo explí
 
 ### 6.1 Distinção entre grandezas e pacotes
 
-O ATP citosólico é apresentado em mmol/L normalizados, com capacidade máxima de 8. Os pools `available` e `captured` usam pacotes de interação. Um pacote representa uma oportunidade de fluxo, não uma quantidade molecular absoluta.
+O ATP citosólico é apresentado em mmol/L normalizados, com capacidade máxima de 5,8. Os pools `available` e `captured` usam pacotes de interação. Um pacote representa uma oportunidade de fluxo, não uma quantidade molecular absoluta.
 
 Na bioquímica real:
 
@@ -242,7 +243,7 @@ O jogo comprime esses rendimentos para preservar legibilidade e evitar que uma �
 | Captar O₂ | até 3 pacotes do LEC | +3 pacotes de O₂ no LIC |
 | Captar ácido graxo | até 0,5 pacote | +0,5 pacote no LIC |
 | Captar aminoácido | até 0,5 pacote | +0,5 pacote no LIC |
-| Glicólise | 1 glicose captada | 2 piruvatos e +0,18 ATP de jogo |
+| Glicólise | 1 glicose captada | 2 piruvatos e +0,08 ATP de jogo |
 | Oxidar piruvato | 1 piruvato + 3 O₂ | até +0,45 ATP de jogo; +1,2 pressão ROS |
 | Oxidar ácido graxo | 1 ácido graxo + 6 O₂ | até +0,85 ATP de jogo, modulado por adaptação; +2,8 pressão ROS |
 
@@ -251,6 +252,15 @@ A oxidação exige ADP disponível e espaço no pool de ATP. O ADP é aproximado
 ```text
 ADP = clamp(6 - ATP, 0,35, 5,5)
 ```
+
+Cada pool captado tem capacidade explícita (glicose 6, O₂ 20, ácido graxo 4 e aminoácido 4 pacotes). A interface mostra sua ocupação e bloqueia a próxima captação quando a operação inteira não cabe. Acima de 75% começa a pressão de saturação; a partir de 80%, a própria captação aplica consequências imediatas:
+
+- glicose: ROS e glicotoxicidade;
+- O₂: pressão redox e ROS;
+- ácido graxo: lipotoxicidade, ROS e dano de membrana;
+- aminoácido: carga nitrogenada, resíduos e estresse proteico.
+
+Assim, captar não é uma ação sempre positiva: deve preparar uma rota ou requisito próximo, enquanto glicólise e oxidação liberam espaço do pool.
 
 ### 6.3 Fluxo basal
 
@@ -267,7 +277,7 @@ As taxas são efetivamente mmol/L normalizados por segundo. O fator de O₂ deri
 |---|---:|---|
 | ΔΨ mitocondrial | -155 mV | potencial da membrana interna |
 | Fluxo da ETC | 24% | fluxo normalizado da cadeia respiratória |
-| Fluxo da ATP sintase | 0,55 u | produção normalizada |
+| Fluxo da ATP sintase | 24 u | produção normalizada |
 | Consumo de O₂ | 2,5 u/min | índice normalizado |
 | Saúde mitocondrial | 100% | penalizada por ROS e dano proteico |
 
@@ -279,7 +289,7 @@ A interface da cadeia respiratória recebe do motor taxas normalizadas de piruva
 
 ### 7.1 Ventilação
 
-O drive ventilatório da interface varia de 50–180%. O alvo respiratório também recebe feedback de PaCO₂, pH e exercício.
+Não existe slider ventilatório. Circuitos quimiorreflexos do modo **Hipotálamo** da central flutuante geram um drive central transitório de 65–175%; o alvo respiratório também recebe feedback automático de PaCO₂, pH e exercício.
 
 ```text
 FR alvo ≈ 14 × drive + exercício + feedback de CO₂ + feedback de pH
@@ -310,7 +320,7 @@ HCO₃⁻ é limitado a 8–45 mmol/L e responde lentamente a lactato, déficit 
 
 ## 8. Controle cardiovascular
 
-O alvo cronotrópico da interface é um comando, não a frequência observada. A FC final também incorpora exercício, estresse acima do basal, adrenalina, hipovolemia e déficit energético.
+Não existe meta de frequência cardíaca na interface. O equilíbrio simpático/parassimpático do modo **Hipotálamo** da central flutuante produz um comando cronotrópico interno; a FC observada também incorpora exercício, estresse acima do basal, adrenalina, hipovolemia e déficit energético.
 
 ```text
 FC observada → alvo por aproximação exponencial com τ de 6–12 s
@@ -319,9 +329,9 @@ débito cardíaco = FC × volume sistólico / 1000
 
 O volume sistólico depende de hidratação, exercício e tempo de enchimento. A resistência vascular cai com exercício e sobe com estresse, catecolaminas e hipovolemia. A pressão usa débito e resistência normalizados em torno de PAM 93 mmHg.
 
-## 9. Hormônios e glicemia
+## 9. Hormônios, eixos e glicemia
 
-Cada hormônio relaxa para um valor basal usando meia-vida própria. Uma ação hormonal distribui `amount` durante `totalDuration`; ela não reaplica a dose inteira a cada frame.
+Parâmetros clínicos, unidade, dose, bolus, infusão, cooldown, custo, segurança e modelo efetor vêm do registro único [`config/hormones.ts`](../src/game/config/hormones.ts). Cada hormônio combina secreção endógena, feedback, meia-vida e ação exógena; uma ação distribui `amount` durante `totalDuration` e não reaplica a dose inteira a cada frame.
 
 Para uma concentração `C`, basal `C₀`, constante de eliminação `k` e infusão `r`, o motor usa a forma analítica equivalente a:
 
@@ -331,13 +341,29 @@ dC/dt = -k(C - C₀) + r
 
 A glicemia combina:
 
-- retorno passivo a 90 mg/dL em escala de 15 min;
+- retorno físico residual lento a 90 mg/dL (60 min saudável; 360 min em doença), sem mascarar falência de eixo;
 - oferta nutricional;
 - produção hepática estimulada por glucagon/adrenalina;
 - captação estimulada por insulina e exercício;
 - armazenamento e mobilização de glicogênio.
 
-O modelo não resolve receptores, GLUTs específicos por tecido, resistência insulínica ou farmacocinética individual.
+O estado endócrino resolve sensibilidade insulínica, adrenérgica, glucocorticoide e anabólica, além de exposição acumulada e downregulation simplificada. Glicose estimula insulina conforme a reserva beta; hipoglicemia/jejum estimulam glucagon e simpático; estresse/sono/inflamação modulam HPA; TSH–T4–T3 e GH–IGF-1 possuem feedback. Ainda não há receptores/GLUTs por tecido nem farmacocinética individual.
+
+### 9.1 Perfis fisiopatológicos internos
+
+Os perfis de doença usados pelo motor e pelos testes alteram capacidades latentes em vez de aplicar deltas isolados. Eles não ficam expostos como seletor ao jogador; a experiência normal progride para alterações patológicas pelas decisões e pela trajetória acumulada.
+
+| Perfil | Capacidade/mecanismo dominante |
+|---|---|
+| Diabetes tipo 1 | reserva beta quase ausente → insulina endógena baixa → cetogênese, diurese osmótica, perda de água e acidose |
+| Diabetes tipo 2 | sensibilidade insulínica reduzida com compensação beta parcial |
+| Falência respiratória | capacidade ventilatória, complacência e V/Q reduzidas com shunt aumentado |
+| Insuficiência renal | GFR e compensação de K⁺/água/HCO₃⁻ reduzidas |
+| Sepse | ativação imune, vasoplegia, leak capilar, lactato e capacidade mitocondrial reduzida |
+| Hipertireoidismo | capacidade tireoidiana, T3/T4, TMB, termogênese e sensibilidade adrenérgica aumentadas |
+| Insuficiência adrenal | baixa reserva de cortisol, menor suporte glicêmico e vascular sob estresse |
+
+`diseaseBurden` é consequência da trajetória. Por exemplo, no diabetes ele integra glicose, cetonas, ação efetiva da insulina e acidemia; não é um cronômetro de doença.
 
 ## 10. ROS, dano, reparo e viabilidade
 
@@ -391,20 +417,32 @@ Existem três sistemas, limitados ao nível 4 e a oito melhorias totais por cél
 
 Os custos iniciais são 0,55, 0,70 e 0,80 ATP para transportadores, navette e reparo. Cada nível encarece sua própria receita e também exige glicose, aminoácidos ou ácidos graxos conforme a maquinaria construída. A compra preserva pelo menos 1,0 ATP.
 
-## 11. Eventos de rotina
+### 10.5 Destino celular e infecção
 
-O primeiro cenário celular surge por volta de 15 s; após cada ativação, o próximo é agendado 48 s depois. Cada cenário oferece duas respostas com custos e compensações diferentes. Se o cronômetro terminar, uma consequência fisiológica adicional é aplicada.
+O dano de DNA/proteínas, ROS, ATP baixo, hiperglicemia e proteção anabólica alimentam um compromisso apoptótico acumulativo. O estado celular transita entre `homeostasis`, `stress`, `apoptosis` e `necrosis`. Apoptose reduz gradualmente viabilidade e ATP; falência energética grave com perda de viabilidade leva à necrose e dano acelerado de membrana.
 
-| Cenário | Duração | Decisão principal | Consequência sem resposta |
-|---|---:|---|---|
-| Subida rápida de escadas | 28 s | via aeróbia ou glicólise rápida | queda de ATP e aumento de lactato |
-| Pico após uma refeição | 30 s | processar glicose ou regular transportadores | aumento de estresse oxidativo |
-| Jejum prolongado pela manhã | 26 s | oxidar gordura ou conservar energia | queda de ATP |
-| Microlesão após esforço | 28 s | reparar agora ou adiar | aumento de dano proteico |
-| Contato com um patógeno | 24 s | conter ROS ou intensificar a resposta | ROS e dano proteico |
-| Calor e desidratação leve | 26 s | ativar bombas ou adaptar osmoticamente | alteração de volume e dano de membrana |
+A suscetibilidade à infecção cresce com perda de viabilidade, dano de membrana, hipercortisolismo e hiperglicemia. Esse sinal volta ao motor sistêmico: capacidade imune, imunossupressão hormonal e falha de barreira definem se uma infecção progride ou é depurada. Assim, o mesmo desafio pode melhorar, permanecer instável ou evoluir para inflamação, vasoplegia, lactato, dano orgânico e morte sistêmica.
 
-Os cenários também aplicam uma perturbação inicial coerente: oferta de glicose no período pós-prandial, redução de glicose no jejum, dano proteico na microlesão, ROS no desafio imune e mudança de osmolaridade/volume no calor.
+## 11. Eventos fisiológicos e decisão obrigatória
+
+A partir de 15 s o motor pode impor uma situação. Exercício, estresse, disponibilidade nutricional, sono e temperatura são entradas internas do evento: não existem sliders ou setters públicos para o jogador criar o contexto. Definições, contexto, cooldown, perturbação inicial e consequências ficam em [`scenarios.ts`](../src/game/scenarios.ts).
+
+Quando um evento começa, sua perturbação macro e celular é aplicada e o relógio congela. Um modal global, presente sobre qualquer aba, não pode ser fechado; a simulação só continua depois da escolha de um caminho. A decisão adaptativa remove a causa aguda e aproxima os marcadores da faixa homeostática. A decisão prejudicial soma lesão celular e desequilíbrio sistêmico. Não existe expiração que permita ignorar o evento.
+
+Enquanto o relógio está congelado, o jogador pode preparar o metabolismo dentro do próprio modal: captar substratos, executar glicólise e oxidar piruvato ou ácido graxo. Essa preparação altera pools, mas não avança o tempo nem cria outro evento. Cada escolha declara requisitos mínimos e custos de ATP, O₂, glicose, ácido graxo, aminoácido, piruvato ou antioxidantes. Se faltar qualquer recurso, o caminho fica visivelmente bloqueado e informa `atual / mínimo`; um caminho prejudicial sem custo permanece disponível para que a decisão obrigatória nunca se transforme em deadlock.
+
+| Evento imposto | Contexto embutido | Caminho adaptativo | Caminho prejudicial |
+|---|---|---|---|
+| Subida inesperada de escadas | exercício 78%, estresse 42% | coordenar ventilação e oxidação aeróbia | forçar descarga adrenérgica/glicólise |
+| Sobrecarga pós-prandial | refeição recente, nutrição 100% | favorecer insulina e armazenamento | liberar glucagon com glicose elevada |
+| Jejum prolongado | 12 h sem refeição, nutrição 15% | mobilizar glucagon e oxidar gordura | liberar insulina sem aporte |
+| Microlesão muscular | esforço excêntrico 72% | priorizar reparo proteico | continuar esforço e adiar reparo |
+| Desafio imune agudo | infecção, estresse 76%, sono ruim | defesa proporcional com antioxidantes | imunossupressão intensa precoce |
+| Onda de calor | ambiente 39 °C e perda hídrica | conservar água e dissipar calor | aumentar atividade e adrenalina |
+
+Cada opção possui efeitos celulares e sistêmicos explícitos. Antes de aplicá-los, [`scenarioResolution.ts`](../src/game/scenarioResolution.ts) soma a pressão do evento a catecolaminas, cortisol, T3, ação efetiva de insulina/glucagon, drive anabólico, eixo hipotalâmico, carga alostática, doença, reservas, viabilidade e compromisso apoptótico. O resultado produz um multiplicador de efeito e classifica a trajetória como reversível, instável ou catastrófica. A escolha ainda define a direção; o estado do organismo define sua intensidade e a possibilidade real de recuperação.
+
+O desfecho é registrado na timeline como `adaptive` ou `harmful`, permitindo testar separadamente retorno à homeostase, progressão do dano e cascatas que podem culminar em apoptose, necrose, infecção, falência orgânica ou morte.
 
 O motor sistêmico gera uma avaliação periódica a cada 30 s. Eventos celulares cruzando viabilidade de 70% ou 35% geram avisos adicionais na timeline.
 
@@ -420,11 +458,11 @@ A recompensa celular é semi-determinística: uma oportunidade só existe depois
 | Buffer intracelular | pH estável com lactato controlado | reduz o impacto ácido do lactato |
 | Tolerância à hipóxia | ATP preservado com O₂ tecidual reduzido | amplia a faixa funcional do metabolismo oxidativo |
 
-Cada adaptação tem quatro níveis. As janelas perdem progresso quando o parâmetro sai da faixa, impedindo recompensa por mera passagem de tempo. Uma decisão expirada também bloqueia recompensa no mesmo ciclo.
+Cada adaptação tem quatro níveis. As janelas perdem progresso quando o parâmetro sai da faixa, impedindo recompensa por mera passagem de tempo.
 
 ## 13. Leitura clínica da interface
 
-A aba sistêmica apresenta os dados por prioridade de decisão: primeiro frequência e ritmo cardíacos, pressão/PAM, SpO₂, frequência respiratória, perfusão e débito cardíaco; em seguida gasometria/ácido-base, lactato, glicemia, eletrólitos, água corporal e déficit energético. O modelo cardíaco, o ECG e o único valor de BPM pertencem ao mesmo bloco de frequência cardíaca, e a sinalização hormonal é uma seção dessa mesma tela — não uma aba duplicada.
+A aba sistêmica apresenta os dados por prioridade de decisão: primeiro frequência e ritmo cardíacos, pressão/PAM, SpO₂, frequência respiratória, perfusão e débito cardíaco; em seguida gasometria/ácido-base, lactato, glicemia, cetonas, GFR, eletrólitos, temperatura, água corporal e déficit energético. O painel e os setters de contexto fisiológico, o seletor de doenças e os controles diretos de FC, ventilação e reabsorção foram removidos da interface. Hormônios e Hipotálamo agora ocupam dois modos da mesma central flutuante global, preservada em todas as quatro etapas. Defesa e Genoma formam uma única etapa de manutenção, sem aba duplicada.
 
 O ECG é sintético e educacional. A velocidade do traçado é proporcional à frequência cardíaca do modelo; irregularidade e fibrilação alteram a forma do traçado sem representar um dispositivo diagnóstico.
 
@@ -457,17 +495,16 @@ Esses limites são regras do simulador e não substituem prognóstico clínico, 
 
 - Um único adulto padrão de 70 kg; idade, sexo, composição corporal e doença não parametrizam todo o modelo.
 - Um único voxel genérico de tecido metabolicamente ativo, sem especialização muscular, neural, hepática ou renal.
-- Acoplamento micro → macro ainda restrito a eventos; os pools celulares não conservam massa com os pools sistêmicos.
+- O acoplamento micro → macro usa sinais agregados de lactato, CO₂, inflamação, falha de barreira, apoptose e viabilidade; os pools celulares ainda não conservam massa diretamente com os pools sistêmicos.
 - Pacotes de substrato e rendimentos de ATP são normalizados para gameplay.
 - Osmolaridade usa um proxy; ureia, proteínas e cloreto não têm balanço completo.
-- Rim reduzido a GFR fixa, reabsorção global de água e correção lenta de sódio.
-- Sem RAAS, ADH explícito, segmentos do néfron, excreção de solutos ou função glomerular variável.
+- Rim ainda não possui segmentos do néfron ou medula renal detalhada; GFR, RAAS, ADH, aldosterona e fluxo urinário são controladores agregados.
 - Ácido-base não resolve todos os tampões, eletroneutralidade completa ou compensações clínicas por fórmulas específicas.
 - Troca gasosa usa equação alveolar e curva de Hill simplificadas, sem shunt, V/Q regional ou hemoglobina variável.
 - Pressão arterial e perfusão são relações normalizadas, não um sistema hemodinâmico fechado.
 - ROS, dano, reparo e viabilidade são índices normalizados sem correspondência direta com biomarcadores laboratoriais.
-- A ordem dos cenários é determinística e não representa incidência epidemiológica; apenas as oportunidades de adaptação têm variação contextual.
-- O comando de FC representa drive autonômico/pacing simulado; não sugere controle voluntário direto da frequência cardíaca.
+- A seleção de cenários é contextual e determinística pelo maior peso elegível; não representa incidência epidemiológica.
+- Os comandos internos de FC, ventilação e reabsorção são derivados dos circuitos hipotalâmicos; nenhum deles é exposto como meta ou slider voluntário.
 
 ## 16. Uso educacional responsável
 

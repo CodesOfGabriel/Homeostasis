@@ -99,6 +99,7 @@ export interface CellularRoutineEvent {
     title: string;
     description: string;
     explanation: string;
+    triggerReason: string;
     category: 'organ' | 'cell' | 'molecule';
     choices: CellularRoutineChoice[];
     remainingSeconds: number;
@@ -110,6 +111,24 @@ export interface CellularRoutineChoice {
     label: string;
     description: string;
     tradeoff: string;
+    requirements: DecisionResourceRequirement[];
+}
+
+export type DecisionResource = 'atp' | 'glucose' | 'oxygen' | 'fattyAcid' | 'aminoAcid' | 'pyruvate' | 'antioxidants';
+
+export interface DecisionResourceRequirement {
+    resource: DecisionResource;
+    minimum: number;
+    cost: number;
+}
+
+export type RoutineDecisionOutcome = 'adaptive' | 'harmful';
+
+export interface CellularFateState {
+    status: 'homeostasis' | 'stress' | 'apoptosis' | 'necrosis';
+    apoptoticCommitment: number;
+    infectionSusceptibility: number;
+    lastTransition: string;
 }
 
 export interface CellularState {
@@ -117,7 +136,9 @@ export interface CellularState {
     cell: IntracellularEnvironment;
     mitochondria: MitochondrialState;
     pools: CellularPools;
+    transportSaturation: SubstratePool;
     damage: CellularDamage;
+    fate: CellularFateState;
     collection: CellularCollectionProgress;
     adaptations: CellularAdaptations;
     rewards: CellularRewardProgress;
@@ -128,6 +149,7 @@ export interface CellularState {
     totalAtpSpent: number;
     lastEvent: string;
     nextRoutineAt: number;
+    scenarioCooldowns: Record<string, number>;
     simulationTime: number;
 }
 
@@ -154,6 +176,8 @@ export interface CellularActionResult {
     ok: boolean;
     reason?: string;
     event?: CellularEvent;
+    decisionOutcome?: RoutineDecisionOutcome;
+    scenarioId?: string;
 }
 
 export interface AutomationRecipe {

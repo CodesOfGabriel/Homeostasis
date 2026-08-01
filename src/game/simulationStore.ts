@@ -12,6 +12,9 @@ import {
     PhysiologicalEvent,
     PhysiologicalWarning,
     OrganState,
+    CausalTrace,
+    DiseasePreset,
+    PhysiologicalContextFactors,
 } from './types';
 import { calculatePhysiologyTick } from './simulationLogic';
 import { initializePhysiologyState } from './physiology';
@@ -34,6 +37,26 @@ import type {
     RepairTarget,
     SubstrateKind,
 } from './cellularTypes';
+import { getActionDefinition, isActionSafe } from './actions';
+import { HORMONE_DEFINITIONS } from './config/hormones';
+import { applyDiseasePreset } from './pathology';
+import {
+    applyScenarioPhysiologyEffects,
+    getScenarioChoice,
+    getScenarioContext,
+    getScenarioDefinition,
+} from './scenarios';
+import {
+    advanceHypothalamicRegulation,
+    applyHypothalamicSignal,
+    createInitialHypothalamicState,
+    deriveRegulatoryCommands,
+    getHypothalamicSignal,
+    isHypothalamicSignalSafe,
+    type HypothalamicRegulationState,
+    type HypothalamicSignalId,
+} from './hypothalamus';
+import { evaluateScenarioResolution } from './scenarioResolution';
 
 // ============================================================================
 // STATE INTERFACE
@@ -47,7 +70,27 @@ export interface SystemicInterventions {
     cumulativeWaterMl: number;
 }
 
+export interface CommandResult {
+    ok: boolean;
+    reason?: string;
+}
+
+type SimulationCommand =
+    | { id: string; type: 'release-hormone'; actionId: string }
+    | { id: string; type: 'hypothalamic-signal'; signalId: HypothalamicSignalId }
+    | { id: string; type: 'ingest-water'; amountMl: number }
+    | { id: string; type: 'set-disease'; preset: DiseasePreset };
+
+export interface DecisionFeedback {
+    scenarioId: string;
+    title: string;
+    message: string;
+    outcome: 'adaptive' | 'harmful';
+    timestamp: number;
+}
+
 interface SimulationStore {
+    schemaVersion: 1;
     // Estado Fisiológico
     physiology: PhysiologyState;
     cellular: CellularState;
@@ -55,21 +98,16 @@ interface SimulationStore {
     // Controle de Simulação
     isRunning: boolean;
     timeSpeed: number;               // 0.5x, 1x, 2x, 5x
+    resumeAfterDecision: boolean;
     lastTickTime: number;
     lastHistoryRecordTime: number;
 
     // Ações Hormonais
     activeHormonalActions: HormonalAction[];
-    hormonalCooldowns: Map<string, number>; // hormone -> tempo restante
-
-    // Fatores Externos (Controlados pelo Jogador)
-    externalFactors: {
-        exercise: number;              // 0-100
-        nutrition: number;             // 0-100
-        stress: number;                // 0-100
-        sleep: number;                 // 0-100
-        temperature: number;           // °C
-    };
+    hormonalCooldowns: Record<string, number>; // actionId -> segundos restantes
+    hypothalamus: HypothalamicRegulationState;
+    hypothalamicCooldowns: Record<string, number>;
+    pendingCommands: SimulationCommand[];
 
     // Intervenções fisiológicas (o marcador observado continua sendo resultado)
     interventions: SystemicInterventions;
@@ -107,6 +145,9 @@ interface SimulationStore {
     // Eventos e Alertas
     recentEvents: PhysiologicalEvent[];
     activeWarnings: PhysiologicalWarning[];
+    lastCausalTrace: CausalTrace | null;
+    lastReinforcementAt: number;
+    lastDecision: DecisionFeedback | null;
 
     // UI State
     selectedOrgan: string | null;
@@ -119,15 +160,10 @@ interface SimulationStore {
     setTimeSpeed: (speed: number) => void;
 
     // Ações do Jogador
-    releaseHormone: (hormone: keyof PhysiologyState['hormones'], amount: number) => void;
-    setExerciseIntensity: (intensity: number) => void;
-    setStressLevel: (stress: number) => void;
-    setNutrition: (quality: number) => void;
-    setSleep: (quality: number) => void;
+    releaseHormone: (actionId: string) => CommandResult;
+    sendHypothalamicSignal: (signalId: HypothalamicSignalId) => CommandResult;
+    setDiseasePreset: (preset: DiseasePreset) => CommandResult;
     ingestWater: (amountMl: number) => void;
-    setHeartRateTarget: (heartRate: number) => void;
-    setVentilationDrive: (drive: number) => void;
-    setRenalWaterReabsorption: (reabsorption: number) => void;
     captureCellularSubstrate: (kind: SubstrateKind) => boolean;
     runCellularGlycolysis: () => boolean;
     oxidizeCellularSubstrate: (substrate: OxidationSubstrate) => boolean;
@@ -174,14 +210,6 @@ const createInitialHistory = () => ({
     maxDataPoints: 200, // Últimos 200 pontos
 });
 
-const initialExternalFactors = {
-    exercise: 0,
-    nutrition: 80,
-    stress: 20,
-    sleep: 80,
-    temperature: 22,
-};
-
 const createInitialInterventions = (): SystemicInterventions => ({
     heartRateTarget: 70,
     ventilationDrive: 100,
@@ -196,15 +224,19 @@ const createInitialInterventions = (): SystemicInterventions => ({
 
 export const useSimulationStore = create<SimulationStore>((set, get) => ({
     // Estado inicial
+    schemaVersion: 1,
     physiology: initializePhysiologyState(),
     cellular: initializeCellularState(),
     isRunning: false,
     timeSpeed: 1,
+    resumeAfterDecision: false,
     lastTickTime: Date.now(),
     lastHistoryRecordTime: 0,
     activeHormonalActions: [],
-    hormonalCooldowns: new Map(),
-    externalFactors: { ...initialExternalFactors },
+    hormonalCooldowns: {},
+    hypothalamus: createInitialHypothalamicState(),
+    hypothalamicCooldowns: {},
+    pendingCommands: [],
     interventions: createInitialInterventions(),
     history: createInitialHistory(),
     recentEvents: [{
@@ -215,6 +247,9 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
         affectedSystems: ['all'],
     }],
     activeWarnings: [],
+    lastCausalTrace: null,
+    lastReinforcementAt: -45,
+    lastDecision: null,
     selectedOrgan: null,
 
     // ============================================================================
@@ -222,6 +257,7 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
     // ============================================================================
 
     start: () => {
+        if (get().cellular.routine) return;
         set({ isRunning: true, lastTickTime: Date.now() });
     },
 
@@ -244,15 +280,21 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
             cellular: initializeCellularState(),
             isRunning: true,
             timeSpeed: 1,
+            resumeAfterDecision: false,
             lastTickTime: Date.now(),
             lastHistoryRecordTime: 0,
             activeHormonalActions: [],
-            hormonalCooldowns: new Map(),
-            externalFactors: { ...initialExternalFactors },
+            hormonalCooldowns: {},
+            hypothalamus: createInitialHypothalamicState(),
+            hypothalamicCooldowns: {},
+            pendingCommands: [],
             interventions: createInitialInterventions(),
             history: createInitialHistory(),
             recentEvents: [initEvent],
             activeWarnings: [],
+            lastCausalTrace: null,
+            lastReinforcementAt: -45,
+            lastDecision: null,
             selectedOrgan: null,
         });
     },
@@ -277,33 +319,51 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
         const realDeltaTime = (now - state.lastTickTime) / 1000; // em segundos
         // Evita saltos numéricos quando a aba volta do background.
         const adjustedDeltaTime = Math.min(2, realDeltaTime * state.timeSpeed);
+        const physiologicalContext = getScenarioContext(state.cellular.routine?.id);
+
+        const commandOutput = applySimulationCommands(
+            state.physiology,
+            state.interventions,
+            state.activeHormonalActions,
+            state.hormonalCooldowns,
+            state.hypothalamus,
+            state.hypothalamicCooldowns,
+            state.pendingCommands,
+            physiologicalContext,
+        );
+        const preparedPhysiology = commandOutput.physiology;
+        const preparedInterventions = commandOutput.interventions;
+        const nextHypothalamus = advanceHypothalamicRegulation(commandOutput.hypothalamus, adjustedDeltaTime);
+        const regulatoryCommands = deriveRegulatoryCommands(nextHypothalamus);
 
         // A água ingerida primeiro ocupa o trato gastrointestinal e é absorvida
         // gradualmente. A escala de jogo comprime a fase gastrointestinal para
         // que a intervenção gere feedback mensurável em dezenas de segundos.
-        const waterAbsorptionRate = Math.min(300, state.interventions.pendingWaterMl * 0.9);
+        const waterAbsorptionRate = Math.min(300, preparedInterventions.pendingWaterMl * 0.9);
         const absorbedWaterMl = waterAbsorptionRate * (adjustedDeltaTime / 60);
         const nextInterventions: SystemicInterventions = {
-            ...state.interventions,
-            pendingWaterMl: Math.max(0, state.interventions.pendingWaterMl - absorbedWaterMl),
+            ...preparedInterventions,
+            ...regulatoryCommands,
+            pendingWaterMl: Math.max(0, preparedInterventions.pendingWaterMl - absorbedWaterMl),
         };
 
         // Preparar input da simulação
         const input: SimulationInput = {
             deltaTime: adjustedDeltaTime,
-            hormonalActions: state.activeHormonalActions,
-            externalFactors: state.externalFactors,
+            hormonalActions: commandOutput.actions,
+            externalFactors: physiologicalContext,
             interventions: {
-                heartRateTarget: state.interventions.heartRateTarget,
-                ventilationDrive: state.interventions.ventilationDrive,
-                renalWaterReabsorption: state.interventions.renalWaterReabsorption,
+                heartRateTarget: nextInterventions.heartRateTarget,
+                ventilationDrive: nextInterventions.ventilationDrive,
+                renalWaterReabsorption: nextInterventions.renalWaterReabsorption,
                 waterAbsorptionRate,
             },
+            cellularFeedback: deriveCellularFeedback(state.cellular),
         };
 
         // Calcular próximo estado fisiológico
         const output: SimulationOutput = calculatePhysiologyTick(
-            state.physiology,
+            preparedPhysiology,
             input
         );
 
@@ -320,19 +380,28 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
             adjustedDeltaTime,
         );
 
+        const startedScenario = !state.cellular.routine && cellularOutput.state.routine
+            ? getScenarioDefinition(cellularOutput.state.routine.id)
+            : undefined;
+        let resultingPhysiology = output.newState;
+        if (startedScenario) {
+            resultingPhysiology = applyScenarioPhysiologyEffects(resultingPhysiology, startedScenario.onStartPhysiology);
+        }
+
         // Atualizar cooldowns hormonais
-        const newCooldowns = new Map(state.hormonalCooldowns);
-        newCooldowns.forEach((time, hormone) => {
-            const newTime = time - adjustedDeltaTime;
-            if (newTime <= 0) {
-                newCooldowns.delete(hormone);
-            } else {
-                newCooldowns.set(hormone, newTime);
-            }
-        });
+        const newCooldowns = Object.fromEntries(
+            Object.entries(commandOutput.cooldowns)
+                .map(([actionId, time]) => [actionId, time - adjustedDeltaTime] as const)
+                .filter(([, time]) => time > 0),
+        );
+        const newHypothalamicCooldowns = Object.fromEntries(
+            Object.entries(commandOutput.hypothalamicCooldowns)
+                .map(([signalId, time]) => [signalId, time - adjustedDeltaTime] as const)
+                .filter(([, time]) => time > 0),
+        );
 
         // Remover ações hormonais expiradas
-        const updatedHormonalActions = state.activeHormonalActions
+        const updatedHormonalActions = commandOutput.actions
             .map(action => ({
                 ...action,
                 duration: action.duration - adjustedDeltaTime * 1000,
@@ -413,18 +482,20 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
         const cellularEvents = cellularOutput.events.map(event =>
             cellularEventToPhysiological(event, output.newState.timeElapsed));
         const updatedEvents = [
-            ...[...cellularEvents, ...output.events].reverse(),
+            ...[...commandOutput.events, ...cellularEvents, ...output.events].reverse(),
             ...state.recentEvents,
         ].slice(0, 50);
 
         // Atualizar warnings (substituir)
         const updatedWarnings = output.warnings;
 
-        const reinforcementEvent = createPositiveReinforcementEvent(state.physiology, output.newState);
+        const reinforcementEvent = resultingPhysiology.timeElapsed - state.lastReinforcementAt >= 45
+            ? createPositiveReinforcementEvent(preparedPhysiology, resultingPhysiology)
+            : null;
         const reinforcementEvents = reinforcementEvent ? [reinforcementEvent] : [];
 
         set({
-            physiology: output.newState,
+            physiology: resultingPhysiology,
             cellular: cellularOutput.state,
             interventions: nextInterventions,
             lastTickTime: now,
@@ -433,9 +504,18 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
                 : state.lastHistoryRecordTime,
             activeHormonalActions: updatedHormonalActions,
             hormonalCooldowns: newCooldowns,
+            hypothalamus: nextHypothalamus,
+            hypothalamicCooldowns: newHypothalamicCooldowns,
+            pendingCommands: [],
             history: newHistory,
             recentEvents: [...reinforcementEvents, ...updatedEvents].slice(0, 50),
             activeWarnings: updatedWarnings,
+            lastCausalTrace: commandOutput.causalTrace ?? state.lastCausalTrace,
+            lastReinforcementAt: reinforcementEvent ? output.newState.timeElapsed : state.lastReinforcementAt,
+            // Toda situação exige uma decisão. A simulação congela no instante
+            // do evento e só retoma depois que um caminho é escolhido.
+            isRunning: startedScenario ? false : state.isRunning,
+            resumeAfterDecision: startedScenario ? state.isRunning : state.resumeAfterDecision,
         });
     },
 
@@ -443,236 +523,79 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
     // HORMONAL ACTIONS (INTERFACE DO JOGADOR)
     // ============================================================================
 
-    releaseHormone: (hormone, amount) => {
+    releaseHormone: (actionId) => {
         const state = get();
-
-        // Verificar cooldown
-        if (state.hormonalCooldowns.has(hormone)) {
-            const remainingTime = state.hormonalCooldowns.get(hormone)!;
-            const event: PhysiologicalEvent = {
-                type: 'hormonal',
-                severity: 'info',
-                message: `${hormone} em cooldown (${remainingTime.toFixed(1)}s restantes)`,
-                timestamp: state.physiology.timeElapsed,
-                affectedSystems: ['hormonal'],
-            };
-            set({
-                recentEvents: [event, ...state.recentEvents].slice(0, 50),
-            });
-            return;
+        const definition = getActionDefinition(actionId);
+        if (!definition) return { ok: false, reason: 'Ação hormonal não encontrada.' };
+        const remaining = state.hormonalCooldowns[actionId] ?? 0;
+        if (remaining > 0) return { ok: false, reason: `Disponível novamente em ${remaining.toFixed(0)} s.` };
+        if (state.pendingCommands.some(command => command.type === 'release-hormone' && command.actionId === actionId)) {
+            return { ok: false, reason: 'Sinal já está na fila do próximo passo fisiológico.' };
+        }
+        const safety = isActionSafe(actionId, createHormoneSafetyState(state.physiology));
+        if (!safety.safe) return { ok: false, reason: safety.reason };
+        if (state.physiology.energy.atpPool < definition.metabolicCost) {
+            return { ok: false, reason: `ATP insuficiente: são necessários ${definition.metabolicCost.toFixed(2)} mmol.` };
         }
 
-        // A concentração liberada não é uma medida de energia. Usar custos
-        // específicos evita bloquear glucagon/adrenalina por um falso custo.
-        const metabolicCost = getHormoneMetabolicCost(hormone);
-        if (state.physiology.energy.atpPool < metabolicCost) {
-            const event: PhysiologicalEvent = {
-                type: 'metabolic',
-                severity: 'warning',
-                message: `ATP insuficiente para sintetizar ${hormone}`,
-                timestamp: state.physiology.timeElapsed,
-                affectedSystems: ['energy', 'hormonal'],
-            };
-            set({
-                recentEvents: [event, ...state.recentEvents].slice(0, 50),
-            });
-            return;
-        }
-
-        // Criar ação hormonal
-        const cooldownTime = getHormoneCooldown(hormone);
-        const totalDuration = 18000;
-        const bolusFraction = hormone === 'adrenaline' ? 0.65 : 0.45;
-        const bolusAmount = amount * bolusFraction;
-        const sustainedAmount = amount - bolusAmount;
-        const action: HormonalAction = {
-            hormone,
-            amount: sustainedAmount,
-            duration: totalDuration,
-            totalDuration,
-            cooldown: cooldownTime,
-            metabolicCost,
+        const command: SimulationCommand = {
+            id: createCommandId(state.physiology.timeElapsed, actionId),
+            type: 'release-hormone',
+            actionId,
         };
-
-        // Adicionar cooldown
-        const newCooldowns = new Map(state.hormonalCooldowns);
-        newCooldowns.set(hormone, cooldownTime);
-
-        // Adicionar ação
-        const newActions = [...state.activeHormonalActions, action];
-
-        // Evento de feedback
-        const event: PhysiologicalEvent = {
-            type: 'hormonal',
-            severity: 'info',
-            message: `${getHormoneDisplayName(hormone)} liberado: resposta imediata e efeito sustentado por 18 segundos`,
-            timestamp: state.physiology.timeElapsed,
-            affectedSystems: ['hormonal'],
-        };
-
-        set({
-            physiology: {
-                ...state.physiology,
-                energy: {
-                    ...state.physiology.energy,
-                    atpPool: Math.max(0, state.physiology.energy.atpPool - metabolicCost),
-                },
-                hormones: {
-                    ...state.physiology.hormones,
-                    [hormone]: Math.min(
-                        getHormoneUpperLimit(hormone),
-                        state.physiology.hormones[hormone] + bolusAmount,
-                    ),
-                },
-            },
-            activeHormonalActions: newActions,
-            hormonalCooldowns: newCooldowns,
-            recentEvents: [event, ...state.recentEvents].slice(0, 50),
-        });
+        set({ pendingCommands: [...state.pendingCommands, command] });
+        return { ok: true };
     },
 
-    // ============================================================================
-    // EXTERNAL FACTORS CONTROL
-    // ============================================================================
-
-    setExerciseIntensity: (intensity: number) => {
+    sendHypothalamicSignal: (signalId) => {
         const state = get();
-        const clampedIntensity = Math.max(0, Math.min(100, intensity));
-
-        // Adicionar evento se mudança significativa (>10%)
-        if (Math.abs(clampedIntensity - state.externalFactors.exercise) > 10) {
-            const event: PhysiologicalEvent = {
-                type: 'environmental',
-                severity: clampedIntensity > 50 ? 'warning' : 'info',
-                message: `Intensidade de exercício alterada para ${clampedIntensity}%`,
-                timestamp: state.physiology.timeElapsed,
-                affectedSystems: ['cardiovascular', 'respiratory', 'energy'],
-            };
-            set({
-                recentEvents: [event, ...state.recentEvents].slice(0, 50),
-            });
+        const definition = getHypothalamicSignal(signalId);
+        if (!definition) return { ok: false, reason: 'Sinal hipotalâmico não encontrado.' };
+        const remaining = state.hypothalamicCooldowns[signalId] ?? 0;
+        if (remaining > 0) return { ok: false, reason: `Circuito disponível novamente em ${remaining.toFixed(0)} s.` };
+        if (state.pendingCommands.some(command => command.type === 'hypothalamic-signal' && command.signalId === signalId)) {
+            return { ok: false, reason: 'Este circuito já está na fila do próximo passo fisiológico.' };
         }
-
+        const safety = isHypothalamicSignalSafe(signalId, state.physiology);
+        if (!safety.safe) return { ok: false, reason: safety.reason };
+        if (state.physiology.energy.atpPool < definition.cost) {
+            return { ok: false, reason: `ATP insuficiente: são necessários ${definition.cost.toFixed(2)} mmol.` };
+        }
         set({
-            externalFactors: {
-                ...state.externalFactors,
-                exercise: clampedIntensity,
-            },
+            pendingCommands: [...state.pendingCommands, {
+                id: createCommandId(state.physiology.timeElapsed, signalId),
+                type: 'hypothalamic-signal',
+                signalId,
+            }],
         });
+        return { ok: true };
     },
 
-    setStressLevel: (stress: number) => {
+    setDiseasePreset: (preset) => {
         const state = get();
         set({
-            externalFactors: {
-                ...state.externalFactors,
-                stress: Math.max(0, Math.min(100, stress)),
-            },
+            pendingCommands: [
+                ...state.pendingCommands.filter(command => command.type !== 'set-disease'),
+                { id: createCommandId(state.physiology.timeElapsed, preset), type: 'set-disease', preset },
+            ],
         });
-    },
-
-    setNutrition: (quality: number) => {
-        const state = get();
-        set({
-            externalFactors: {
-                ...state.externalFactors,
-                nutrition: Math.max(0, Math.min(100, quality)),
-            },
-        });
-    },
-
-    setSleep: (quality: number) => {
-        const state = get();
-        set({
-            externalFactors: {
-                ...state.externalFactors,
-                sleep: Math.max(0, Math.min(100, quality)),
-            },
-        });
+        return { ok: true };
     },
 
     ingestWater: (amountMl: number) => {
         const state = get();
         const dose = Math.max(50, Math.min(1000, amountMl));
-        const accepted = Math.min(dose, Math.max(0, 2000 - state.interventions.pendingWaterMl));
+        const queuedWater = state.pendingCommands
+            .filter((command): command is Extract<SimulationCommand, { type: 'ingest-water' }> => command.type === 'ingest-water')
+            .reduce((sum, command) => sum + command.amountMl, 0);
+        const accepted = Math.min(dose, Math.max(0, 2000 - state.interventions.pendingWaterMl - queuedWater));
         if (accepted <= 0) return;
-
-        const rapidlyAbsorbedMl = accepted * 0.2;
-        const gastricVolumeMl = accepted - rapidlyAbsorbedMl;
-        const previousHydration = state.physiology.nutrients.hydration;
-        const nextHydration = Math.min(55, previousHydration + rapidlyAbsorbedMl / 1000);
-        const dilutedSodium = state.physiology.nutrients.sodium * previousHydration / nextHydration;
-
-        const event: PhysiologicalEvent = {
-            type: 'environmental',
-            severity: 'info',
-            message: `Ingestão de ${accepted.toFixed(0)} mL de água: ${rapidlyAbsorbedMl.toFixed(0)} mL absorvidos rapidamente e ${gastricVolumeMl.toFixed(0)} mL no estômago`,
-            timestamp: state.physiology.timeElapsed,
-            affectedSystems: ['gut', 'renal', 'tissue'],
-        };
-
         set({
-            interventions: {
-                ...state.interventions,
-                pendingWaterMl: state.interventions.pendingWaterMl + gastricVolumeMl,
-                cumulativeWaterMl: state.interventions.cumulativeWaterMl + accepted,
-            },
-            physiology: {
-                ...state.physiology,
-                nutrients: {
-                    ...state.physiology.nutrients,
-                    hydration: nextHydration,
-                    sodium: Math.max(115, Math.min(170, dilutedSodium)),
-                },
-            },
-            recentEvents: [event, ...state.recentEvents].slice(0, 50),
-        });
-    },
-
-    setHeartRateTarget: (heartRate: number) => {
-        const state = get();
-        set({
-            interventions: {
-                ...state.interventions,
-                heartRateTarget: Math.max(45, Math.min(180, heartRate)),
-            },
-        });
-    },
-
-    setVentilationDrive: (drive: number) => {
-        const state = get();
-        const clampedDrive = Math.max(50, Math.min(180, drive));
-        const currentRespiratory = state.physiology.respiratory;
-        const commandedRate = Math.max(5, Math.min(55, 14 * clampedDrive / 100));
-        const respiratoryRate = currentRespiratory.respiratoryRate
-            + (commandedRate - currentRespiratory.respiratoryRate) * 0.28;
-        const commandedTidalVolume = Math.max(280, Math.min(2200, 500 * Math.pow(clampedDrive / 100, 0.3)));
-        const tidalVolume = currentRespiratory.tidalVolume
-            + (commandedTidalVolume - currentRespiratory.tidalVolume) * 0.2;
-        set({
-            interventions: {
-                ...state.interventions,
-                ventilationDrive: clampedDrive,
-            },
-            physiology: {
-                ...state.physiology,
-                respiratory: {
-                    ...currentRespiratory,
-                    respiratoryRate,
-                    tidalVolume,
-                    minuteVentilation: respiratoryRate * tidalVolume / 1000,
-                },
-            },
-        });
-    },
-
-    setRenalWaterReabsorption: (reabsorption: number) => {
-        const state = get();
-        set({
-            interventions: {
-                ...state.interventions,
-                renalWaterReabsorption: Math.max(98.5, Math.min(99.8, reabsorption)),
-            },
+            pendingCommands: [...state.pendingCommands, {
+                id: createCommandId(state.physiology.timeElapsed, `water-${accepted}`),
+                type: 'ingest-water',
+                amountMl: accepted,
+            }],
         });
     },
 
@@ -713,8 +636,61 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
 
     resolveCellularRoutine: (choiceId: string) => {
         const state = get();
-        const result = resolveRoutineDecision(state.cellular, choiceId);
-        set(cellularActionUpdate(state, result));
+        const scenarioId = state.cellular.routine?.id;
+        const pendingChoice = scenarioId ? getScenarioChoice(scenarioId, choiceId) : undefined;
+        const resolution = scenarioId && pendingChoice
+            ? evaluateScenarioResolution(scenarioId, pendingChoice.outcome, state.physiology, state.cellular, state.hypothalamus)
+            : null;
+        const result = resolveRoutineDecision(state.cellular, choiceId, resolution?.effectMultiplier ?? 1);
+        if (!result.ok || !result.scenarioId || !result.decisionOutcome) {
+            set(cellularActionUpdate(state, result));
+            return false;
+        }
+
+        const definition = getScenarioDefinition(result.scenarioId);
+        const choice = getScenarioChoice(result.scenarioId, choiceId);
+        if (!definition || !choice) {
+            set(cellularActionUpdate(state, {
+                ...result,
+                ok: false,
+                reason: 'A consequência sistêmica desta decisão não está configurada.',
+            }));
+            return false;
+        }
+
+        const physiology = applyScenarioPhysiologyEffects(
+            state.physiology,
+            choice.physiologyEffects,
+            resolution?.effectMultiplier ?? 1,
+        );
+        const contextualMessage = `${choice.result}${resolution ? ` ${resolution.summary}.` : ''}`;
+        const event: CellularEvent = result.event ? { ...result.event, message: contextualMessage } : {
+            message: contextualMessage,
+            severity: result.decisionOutcome === 'adaptive' ? 'info' : 'critical',
+            affectedSystems: ['cellular', 'decision', result.decisionOutcome],
+        };
+        set({
+            physiology,
+            cellular: result.state,
+            recentEvents: [
+                cellularEventToPhysiological(event, physiology.timeElapsed),
+                ...state.recentEvents,
+            ].slice(0, 50),
+            lastDecision: {
+                scenarioId: definition.id,
+                title: resolution?.risk === 'catastrophic'
+                    ? 'Risco de cascata catastrófica'
+                    : result.decisionOutcome === 'adaptive'
+                        ? 'Homeostase em recuperação'
+                        : 'Decisão prejudicial',
+                message: contextualMessage,
+                outcome: result.decisionOutcome,
+                timestamp: physiology.timeElapsed,
+            },
+            isRunning: state.resumeAfterDecision,
+            resumeAfterDecision: false,
+            lastTickTime: Date.now(),
+        });
         return result.ok;
     },
 
@@ -771,82 +747,216 @@ function cellularActionUpdate(
         cellular: result.ok
             ? result.state
             : { ...result.state, lastEvent: event.message },
-        recentEvents: [
-            cellularEventToPhysiological(event, state.physiology.timeElapsed),
-            ...state.recentEvents,
-        ].slice(0, 50),
+        // Preparação metabólica durante uma decisão altera somente os pools.
+        // A timeline permanece congelada e nenhum "novo evento" é produzido.
+        recentEvents: state.cellular.routine
+            ? state.recentEvents
+            : [
+                cellularEventToPhysiological(event, state.physiology.timeElapsed),
+                ...state.recentEvents,
+            ].slice(0, 50),
     };
 }
 
-/**
- * Retorna o tempo de cooldown para cada hormônio (em segundos)
- */
-function getHormoneCooldown(hormone: string): number {
-    const cooldowns: Record<string, number> = {
-        insulin: 30,
-        glucagon: 35,
-        adrenaline: 45,
-        cortisol: 60,
-        gh: 75,
-        testosterone: 90,
-        t3: 120,
-        t4: 120,
-    };
-    return cooldowns[hormone] || 60;
+interface CommandApplicationResult {
+    physiology: PhysiologyState;
+    interventions: SystemicInterventions;
+    actions: HormonalAction[];
+    cooldowns: Record<string, number>;
+    hypothalamus: HypothalamicRegulationState;
+    hypothalamicCooldowns: Record<string, number>;
+    events: PhysiologicalEvent[];
+    causalTrace: CausalTrace | null;
 }
 
-function getHormoneMetabolicCost(hormone: keyof PhysiologyState['hormones']): number {
-    const costs: Record<keyof PhysiologyState['hormones'], number> = {
-        insulin: 0.5,
-        gh: 0.8,
-        testosterone: 1,
-        igf1: 0.8,
-        cortisol: 0.7,
-        glucagon: 0.35,
-        adrenaline: 0.65,
-        noradrenaline: 0.65,
-        t3: 0.9,
-        t4: 0.9,
-        tsh: 0.6,
-        mTORActivity: 0.6,
+function applySimulationCommands(
+    initialPhysiology: PhysiologyState,
+    initialInterventions: SystemicInterventions,
+    initialActions: HormonalAction[],
+    initialCooldowns: Record<string, number>,
+    initialHypothalamus: HypothalamicRegulationState,
+    initialHypothalamicCooldowns: Record<string, number>,
+    commands: SimulationCommand[],
+    externalFactors: PhysiologicalContextFactors,
+): CommandApplicationResult {
+    let physiology = initialPhysiology;
+    const interventions = { ...initialInterventions };
+    const actions = [...initialActions];
+    const cooldowns = { ...initialCooldowns };
+    let hypothalamus = { ...initialHypothalamus };
+    const hypothalamicCooldowns = { ...initialHypothalamicCooldowns };
+    const events: PhysiologicalEvent[] = [];
+    let causalTrace: CausalTrace | null = null;
+
+    for (const command of commands) {
+        if (command.type === 'hypothalamic-signal') {
+            const definition = getHypothalamicSignal(command.signalId);
+            if (!definition || (hypothalamicCooldowns[command.signalId] ?? 0) > 0) continue;
+            const safety = isHypothalamicSignalSafe(command.signalId, physiology);
+            if (!safety.safe || physiology.energy.atpPool < definition.cost) {
+                events.push({
+                    type: 'system', severity: 'warning',
+                    message: safety.reason ?? `ATP insuficiente para ${definition.shortLabel}.`,
+                    timestamp: physiology.timeElapsed, affectedSystems: ['hypothalamus', definition.axis, 'safety'],
+                });
+                continue;
+            }
+            hypothalamus = applyHypothalamicSignal(hypothalamus, definition);
+            hypothalamicCooldowns[definition.id] = definition.cooldownSeconds;
+            physiology = {
+                ...physiology,
+                energy: { ...physiology.energy, atpPool: Math.max(0, physiology.energy.atpPool - definition.cost) },
+            };
+            events.push({
+                type: 'system', severity: 'info',
+                message: `${definition.shortLabel}: circuito hipotalâmico recrutado. ${definition.mechanism}`,
+                timestamp: physiology.timeElapsed, affectedSystems: ['hypothalamus', definition.axis],
+            });
+            continue;
+        }
+
+        if (command.type === 'set-disease') {
+            physiology = applyDiseasePreset(physiology, command.preset);
+            events.push({
+                type: 'system',
+                severity: command.preset === 'healthy' ? 'info' : 'warning',
+                message: command.preset === 'healthy'
+                    ? 'Reservas fisiológicas restauradas para o perfil saudável.'
+                    : `Contexto fisiopatológico ativado: ${command.preset}. A progressão agora depende das capacidades alteradas.`,
+                timestamp: physiology.timeElapsed,
+                affectedSystems: ['pathophysiology', 'all'],
+            });
+            continue;
+        }
+
+        if (command.type === 'ingest-water') {
+            const accepted = Math.min(command.amountMl, Math.max(0, 2000 - interventions.pendingWaterMl));
+            if (accepted <= 0) continue;
+            interventions.pendingWaterMl += accepted;
+            interventions.cumulativeWaterMl += accepted;
+            events.push({
+                type: 'environmental', severity: 'info',
+                message: `${accepted.toFixed(0)} mL de água chegaram ao trato gastrointestinal; a absorção será gradual.`,
+                timestamp: physiology.timeElapsed, affectedSystems: ['gut', 'renal', 'tissue'],
+            });
+            continue;
+        }
+
+        const definition = getActionDefinition(command.actionId);
+        if (!definition || (cooldowns[command.actionId] ?? 0) > 0) continue;
+        const safety = isActionSafe(command.actionId, createHormoneSafetyState(physiology));
+        if (!safety.safe || physiology.energy.atpPool < definition.metabolicCost) {
+            events.push({
+                type: 'hormonal', severity: 'warning',
+                message: safety.reason ?? `ATP insuficiente para ${definition.shortName}.`,
+                timestamp: physiology.timeElapsed, affectedSystems: ['hormonal', 'safety'],
+            });
+            continue;
+        }
+
+        const bolus = definition.dose * definition.bolusFraction;
+        const sustained = definition.dose - bolus;
+        const totalDuration = definition.infusionSeconds * 1000;
+        actions.push({
+            actionId: definition.id,
+            hormone: definition.hormone,
+            amount: sustained,
+            duration: totalDuration,
+            totalDuration,
+            cooldown: definition.cooldownSeconds,
+            metabolicCost: definition.metabolicCost,
+        });
+        cooldowns[definition.id] = definition.cooldownSeconds;
+        physiology = {
+            ...physiology,
+            energy: { ...physiology.energy, atpPool: Math.max(0, physiology.energy.atpPool - definition.metabolicCost) },
+            hormones: {
+                ...physiology.hormones,
+                [definition.hormone]: Math.min(
+                    HORMONE_DEFINITIONS[definition.hormone].upperLimit,
+                    physiology.hormones[definition.hormone] + bolus,
+                ),
+            },
+        };
+        causalTrace = createHormoneCausalTrace(definition, physiology, externalFactors);
+        events.push({
+            type: 'hormonal', severity: causalTrace.severity,
+            message: `${definition.shortName}: bolus aplicado, infusão por ${definition.infusionSeconds} s e resposta dependente do contexto.`,
+            timestamp: physiology.timeElapsed,
+            affectedSystems: ['hormonal', definition.effectModel],
+            causalTrace,
+        });
+    }
+
+    return {
+        physiology,
+        interventions,
+        actions,
+        cooldowns,
+        hypothalamus,
+        hypothalamicCooldowns,
+        events,
+        causalTrace,
     };
-    return costs[hormone];
 }
 
-function getHormoneDisplayName(hormone: keyof PhysiologyState['hormones']): string {
-    const names: Record<keyof PhysiologyState['hormones'], string> = {
-        insulin: 'Insulina',
-        gh: 'Hormônio do crescimento',
-        testosterone: 'Testosterona',
-        igf1: 'Fator de crescimento semelhante à insulina 1',
-        cortisol: 'Cortisol',
-        glucagon: 'Glucagon',
-        adrenaline: 'Adrenalina',
-        noradrenaline: 'Noradrenalina',
-        t3: 'Triiodotironina',
-        t4: 'Tiroxina',
-        tsh: 'Hormônio estimulante da tireoide',
-        mTORActivity: 'Atividade da via mTOR',
+function createHormoneSafetyState(physiology: PhysiologyState) {
+    return {
+        glucose: physiology.nutrients.bloodGlucose,
+        pH: physiology.acidBase.pH,
+        heartRate: physiology.cardiovascular.heartRate,
+        energyDeficit: physiology.energy.energyDeficit,
+        aminoAcids: physiology.nutrients.aminoAcids,
+        atpPool: physiology.energy.atpPool,
     };
-    return names[hormone];
 }
 
-function getHormoneUpperLimit(hormone: keyof PhysiologyState['hormones']): number {
-    const limits: Record<keyof PhysiologyState['hormones'], number> = {
-        insulin: 300,
-        gh: 100,
-        testosterone: 3000,
-        igf1: 1000,
-        cortisol: 150,
-        glucagon: 1000,
-        adrenaline: 3000,
-        noradrenaline: 5000,
-        t3: 800,
-        t4: 60,
-        tsh: 100,
-        mTORActivity: 100,
+function createHormoneCausalTrace(
+    definition: NonNullable<ReturnType<typeof getActionDefinition>>,
+    physiology: PhysiologyState,
+    external: PhysiologicalContextFactors,
+): CausalTrace {
+    const stressContext = external.stress >= 60 ? `estresse ${external.stress.toFixed(0)}%` : `estresse ${external.stress.toFixed(0)}%`;
+    const context = `${stressContext} · exercício ${external.exercise.toFixed(0)}% · glicose ${physiology.nutrients.bloodGlucose.toFixed(0)} mg/dL`;
+    const cardiacRisk = definition.hormone === 'adrenaline' && physiology.cardiovascular.heartRate > 120;
+    const sensitivity = definition.effectModel === 'insulin'
+        ? physiology.endocrine.insulinReceptorSensitivity
+        : definition.effectModel === 'glucocorticoid'
+            ? physiology.endocrine.glucocorticoidSensitivity
+            : definition.effectModel === 'catecholamine' || definition.effectModel === 'thyroid'
+                ? physiology.endocrine.adrenergicReceptorSensitivity
+                : definition.effectModel === 'glucagon'
+                    ? physiology.capacities.hepaticGlucoseResponsiveness
+                    : physiology.endocrine.anabolicSensitivity;
+    return {
+        id: `${definition.id}-${Math.round(physiology.timeElapsed * 10)}`,
+        title: `${definition.shortName} + contexto atual`,
+        context,
+        steps: [
+            `receptor efetor: sensibilidade ${(sensitivity * 100).toFixed(0)}%`,
+            ...definition.expectedDirections.slice(0, 3),
+            `latência: ${definition.latency}`,
+        ],
+        timestamp: physiology.timeElapsed,
+        severity: cardiacRisk ? 'warning' : 'info',
     };
-    return limits[hormone];
+}
+
+function deriveCellularFeedback(cellular: CellularState): NonNullable<SimulationInput['cellularFeedback']> {
+    const tissueWeight = .002;
+    return {
+        lactateFlux: Math.max(0, cellular.tissue.lactateMmolL - 1) * .012 * tissueWeight,
+        carbonDioxideFlux: Math.max(0, cellular.tissue.carbonDioxideMmHg - 46) * .02 * tissueWeight,
+        inflammationSignal: (cellular.damage.oxidativeStress + cellular.damage.proteins) / 200 * tissueWeight,
+        oxygenDemand: cellular.mitochondria.oxygenConsumption / 10 * tissueWeight,
+        viabilitySignal: cellular.cell.viabilityPercent / 100,
+        barrierFailureSignal: cellular.fate.infectionSusceptibility / 100,
+        apoptoticSignal: cellular.fate.apoptoticCommitment / 100,
+    };
+}
+
+function createCommandId(time: number, label: string): string {
+    return `${Math.round(time * 1000)}-${label}`;
 }
 
 function createPositiveReinforcementEvent(

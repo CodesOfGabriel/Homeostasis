@@ -16,6 +16,13 @@ import {
     OrganSystem,
     OrganState,
 } from './types';
+import { HORMONE_DEFINITIONS } from './config/hormones';
+import {
+    createHealthyCapacities,
+    createInitialEndocrineState,
+    createInitialPathophysiology,
+    createInitialRenalState,
+} from './pathology';
 
 // ============================================================================
 // INITIALIZATION FUNCTIONS
@@ -30,6 +37,10 @@ export function initializePhysiologyState(): PhysiologyState {
         energy: initializeEnergyMatrix(),
         nutrients: initializeNutrientState(),
         hormones: initializeHormonalProfile(),
+        endocrine: createInitialEndocrineState(),
+        capacities: createHealthyCapacities(),
+        renal: createInitialRenalState(),
+        pathophysiology: createInitialPathophysiology(),
         cardiovascular: initializeCardiovascularState(),
         respiratory: initializeRespiratoryState(),
         organs: initializeOrganSystem(),
@@ -39,6 +50,7 @@ export function initializePhysiologyState(): PhysiologyState {
         basalMetabolicRate: 1800, // kcal/day para 70kg
         totalEnergyExpenditure: 1800,
         activityLevel: 0,
+        bodyTemperature: 36.8,
         timeElapsed: 0,
         cyclePhase: 'awake',
         isAlive: true,
@@ -98,6 +110,7 @@ function initializeNutrientState(): NutrientState {
         hydration: 42,           // L - 60% do peso corporal (70kg)
         sodium: 140,             // mmol/L - Normal
         potassium: 4.0,          // mmol/L - Normal
+        ketones: 0.2,            // mmol/L - Cetose basal ausente
 
         // Estado
         fedState: true,
@@ -112,24 +125,24 @@ function initializeNutrientState(): NutrientState {
 function initializeHormonalProfile(): HormonalProfile {
     return {
         // Anabólicos
-        insulin: 10,             // μIU/mL - Basal normal
-        gh: 1,                   // ng/mL - Basal baixo (pulsátil)
-        testosterone: 600,       // ng/dL - Homem adulto médio
-        igf1: 200,               // ng/mL - Normal
+        insulin: HORMONE_DEFINITIONS.insulin.baseline,
+        gh: HORMONE_DEFINITIONS.gh.baseline,
+        testosterone: HORMONE_DEFINITIONS.testosterone.baseline,
+        igf1: HORMONE_DEFINITIONS.igf1.baseline,
 
         // Catabólicos
-        cortisol: 12,            // μg/dL - Manhã normal
-        glucagon: 80,            // pg/mL - Basal
-        adrenaline: 30,          // pg/mL - Repouso
-        noradrenaline: 200,      // pg/mL - Tônus basal
+        cortisol: HORMONE_DEFINITIONS.cortisol.baseline,
+        glucagon: HORMONE_DEFINITIONS.glucagon.baseline,
+        adrenaline: HORMONE_DEFINITIONS.adrenaline.baseline,
+        noradrenaline: HORMONE_DEFINITIONS.noradrenaline.baseline,
 
         // Tireoidianos
-        t3: 120,                 // ng/dL - Normal
-        t4: 8,                   // μg/dL - Normal
-        tsh: 2.0,                // μIU/mL - Normal
+        t3: HORMONE_DEFINITIONS.t3.baseline,
+        t4: HORMONE_DEFINITIONS.t4.baseline,
+        tsh: HORMONE_DEFINITIONS.tsh.baseline,
 
         // Sinalização
-        mTORActivity: 50,        // % - Atividade moderada
+        mTORActivity: HORMONE_DEFINITIONS.mTORActivity.baseline,
     };
 }
 
@@ -181,6 +194,8 @@ function initializeRespiratoryState(): RespiratoryState {
         // Mecânica
         lungCompliance: 100,     // mL/cmH2O - Normal
         deadSpace: 150,          // mL - Anatômico normal
+        shuntFraction: 0.03,     // shunt fisiológico
+        vqEfficiency: 0.98,      // relação V/Q preservada
     };
 }
 

@@ -13,6 +13,14 @@ import type {
     SubstrateKind,
     SubstratePool,
 } from './cellularTypes';
+import {
+    createRoutineEvent,
+    getScenarioChoice,
+    getScenarioChoiceAvailability,
+    getScenarioDefinition,
+    selectEligibleScenario,
+    type ScenarioEffect,
+} from './scenarios';
 
 const BASE_OSMOLARITY = 290;
 const TOTAL_ADENYLATE = 6;
@@ -65,7 +73,8 @@ const createPool = (glucose: number, oxygen: number, fattyAcid: number, aminoAci
     aminoAcid,
 });
 
-const CAPTURED_POOL_CAPS = createPool(6, 20, 4, 4);
+export const CAPTURED_POOL_CAPS = createPool(6, 20, 4, 4);
+export const CAPTURE_AMOUNTS = createPool(1, 3, 0.5, 0.5);
 
 const createInitialCollectionProgress = () => ({
     score: 0,
@@ -142,12 +151,19 @@ export function initializeCellularState(): CellularState {
             captured: createPool(0, 0, 0, 0),
             pyruvate: 0,
         },
+        transportSaturation: createPool(0, 0, 0, 0),
         damage: {
             oxidativeStress: 10,
             membrane: 0,
             proteins: 0,
             dna: 0,
             antioxidantCapacity: 80,
+        },
+        fate: {
+            status: 'homeostasis',
+            apoptoticCommitment: 0,
+            infectionSusceptibility: 5,
+            lastTransition: 'Célula viável em homeostase',
         },
         collection: createInitialCollectionProgress(),
         adaptations: createInitialAdaptations(),
@@ -167,6 +183,7 @@ export function initializeCellularState(): CellularState {
         totalAtpSpent: 0,
         lastEvent: 'Microambiente em homeostase basal',
         nextRoutineAt: 15,
+        scenarioCooldowns: {},
         simulationTime: 0,
     };
 }
@@ -182,13 +199,16 @@ function cloneState(state: CellularState): CellularState {
             available: { ...state.pools.available },
             captured: { ...state.pools.captured },
         },
+        transportSaturation: { ...(state.transportSaturation ?? createPool(0, 0, 0, 0)) },
         damage: { ...state.damage },
+        fate: { ...(state.fate ?? { status: 'homeostasis', apoptoticCommitment: 0, infectionSusceptibility: 5, lastTransition: 'Célula viável em homeostase' }) },
         collection: { ...(state.collection ?? createInitialCollectionProgress()) },
         adaptations: { ...(state.adaptations ?? createInitialAdaptations()) },
         rewards: { ...(state.rewards ?? createInitialRewardProgress()) },
         automation: { ...state.automation },
         atpAllocation: { ...state.atpAllocation },
         routine: state.routine ? { ...state.routine } : null,
+        scenarioCooldowns: { ...(state.scenarioCooldowns ?? {}) },
     };
 }
 
@@ -213,223 +233,67 @@ function routineDemand(state: CellularState) {
     }
 }
 
-function createRoutine(state: CellularState) {
-    const index = Math.floor(Math.max(0, state.nextRoutineAt - 15) / 48) % 6;
-    const routines = [
-        {
-            id: 'stair-climb',
-            title: 'Subida rápida de escadas',
-            description: 'A contração muscular elevou abruptamente a demanda por ATP e O₂.',
-            explanation: 'Músculos ativos consomem ATP em segundos. A via aeróbia é eficiente, enquanto a glicólise responde rápido ao custo de mais lactato.',
-            category: 'organ' as const,
-            choices: [
-                { id: 'stair-aerobic', label: 'Priorizar via aeróbia', description: 'Usa piruvato e O₂ na mitocôndria.', tradeoff: 'Requer 1 piruvato + 3 O₂; gera mais ATP e pouco lactato.' },
-                { id: 'stair-glycolytic', label: 'Glicólise rápida', description: 'Mobiliza glicose imediatamente.', tradeoff: 'Requer 1 glicose; resolve rápido, mas aumenta lactato.' },
-            ],
-            remainingSeconds: 28,
-            severity: 'warning' as const,
-        },
-        {
-            id: 'meal-surge',
-            title: 'Pico após uma refeição',
-            description: 'A oferta de glicose aumentou e pressiona o equilíbrio redox celular.',
-            explanation: 'Após uma refeição rica em carboidratos, a célula precisa decidir entre processar a glicose ou limitar sua entrada para evitar excesso de ROS.',
-            category: 'molecule' as const,
-            choices: [
-                { id: 'meal-process', label: 'Captar e processar', description: 'Converte glicose em piruvato e NADH.', tradeoff: 'Requer 1 glicose no tecido; aumenta a produção energética.' },
-                { id: 'meal-buffer', label: 'Regular transportadores', description: 'Reduz temporariamente a entrada de glicose.', tradeoff: 'Custa 0,25 ATP; reduz a pressão oxidativa.' },
-            ],
-            remainingSeconds: 30,
-            severity: 'info' as const,
-        },
-        {
-            id: 'morning-fast',
-            title: 'Jejum prolongado pela manhã',
-            description: 'A glicose ficou menos disponível e a célula precisa mudar de combustível.',
-            explanation: 'No jejum, a oxidação de ácidos graxos preserva glicose, mas exige bastante O₂ e pode elevar espécies reativas.',
-            category: 'molecule' as const,
-            choices: [
-                { id: 'fast-fat', label: 'Oxidar ácido graxo', description: 'Muda o combustível mitocondrial.', tradeoff: 'Requer 1 ácido graxo + 6 O₂; alto rendimento, mais ROS.' },
-                { id: 'fast-conserve', label: 'Conservar energia', description: 'Reduz processos não essenciais.', tradeoff: 'Custa pouco ATP agora; evita consumir a glicose restante.' },
-            ],
-            remainingSeconds: 26,
-            severity: 'warning' as const,
-        },
-        {
-            id: 'micro-injury',
-            title: 'Microlesão após esforço',
-            description: 'Proteínas estruturais foram danificadas e precisam de reposição.',
-            explanation: 'O reparo precoce consome aminoácidos e ATP, mas impede que proteínas alteradas comprometam a função celular.',
-            category: 'cell' as const,
-            choices: [
-                { id: 'injury-repair', label: 'Reparar agora', description: 'Ativa síntese e renovação proteica.', tradeoff: 'Requer 1 aminoácido + 0,55 ATP; reduz dano proteico.' },
-                { id: 'injury-defer', label: 'Adiar reparo', description: 'Preserva energia para funções vitais.', tradeoff: 'Economiza recursos, mas acumula dano proteico.' },
-            ],
-            remainingSeconds: 28,
-            severity: 'warning' as const,
-        },
-        {
-            id: 'immune-challenge',
-            title: 'Contato com um patógeno',
-            description: 'A resposta imune local elevou ROS e demanda metabólica.',
-            explanation: 'A célula pode conter o estresse com antioxidantes ou sustentar uma resposta intensa que controla a ameaça ao custo de dano oxidativo.',
-            category: 'cell' as const,
-            choices: [
-                { id: 'immune-control', label: 'Conter com antioxidantes', description: 'Amortece o pico de espécies reativas.', tradeoff: 'Custa 0,40 ATP; preserva membranas e proteínas.' },
-                { id: 'immune-attack', label: 'Resposta intensa', description: 'Prioriza o ataque celular.', tradeoff: 'Requer 1 glicose; elimina a pressão, mas gera mais ROS.' },
-            ],
-            remainingSeconds: 24,
-            severity: 'critical' as const,
-        },
-        {
-            id: 'heat-dehydration',
-            title: 'Calor e desidratação leve',
-            description: 'A osmolaridade aumentou e a célula começou a perder volume.',
-            explanation: 'Alterações osmóticas deslocam água pela membrana. Bombas iônicas gastam ATP para recuperar gradientes e proteger o volume celular.',
-            category: 'organ' as const,
-            choices: [
-                { id: 'heat-pumps', label: 'Ativar bombas iônicas', description: 'Restaura gradientes e volume.', tradeoff: 'Custa 0,45 ATP; protege a membrana.' },
-                { id: 'heat-adapt', label: 'Adaptação osmótica', description: 'Aceita uma variação transitória de volume.', tradeoff: 'Custa 0,5 aminoácido; poupa ATP, mas gera leve estresse.' },
-            ],
-            remainingSeconds: 26,
-            severity: 'warning' as const,
-        },
-    ];
-    return routines[index];
+function applyRoutineOnset(state: CellularState) {
+    if (!state.routine) return;
+    const definition = getScenarioDefinition(state.routine.id);
+    if (definition) applyScenarioEffects(state, definition.onStart);
 }
 
-function applyRoutineTimeout(state: CellularState) {
-    if (!state.routine) return;
-    switch (state.routine.id) {
-        case 'stair-climb':
-            state.cell.atpMmolL -= 0.35;
-            state.tissue.lactateMmolL += 1.1;
-            break;
-        case 'meal-surge':
-            state.damage.oxidativeStress += 6;
-            break;
-        case 'morning-fast':
-            state.cell.atpMmolL -= 0.45;
-            break;
-        case 'micro-injury':
-            state.damage.proteins += 6;
-            break;
-        case 'immune-challenge':
-            state.damage.oxidativeStress += 9;
-            state.damage.proteins += 2;
-            break;
-        case 'heat-dehydration':
-            state.cell.volumePercent += 7;
-            state.damage.membrane += 5;
-            break;
+function applyScenarioEffects(state: CellularState, effects: ScenarioEffect[], multiplier = 1) {
+    for (const effect of effects) {
+        const delta = effect.delta * multiplier;
+        if (effect.target === 'cell.atp') state.cell.atpMmolL += delta;
+        else if (effect.target === 'cell.volume') state.cell.volumePercent += delta;
+        else if (effect.target === 'tissue.glucose') state.tissue.glucoseMmolL += delta;
+        else if (effect.target === 'tissue.lactate') state.tissue.lactateMmolL += delta;
+        else if (effect.target === 'tissue.osmolarity') state.tissue.osmolarity += delta;
+        else if (effect.target === 'available.glucose') state.pools.available.glucose += delta;
+        else if (effect.target === 'available.fattyAcid') state.pools.available.fattyAcid += delta;
+        else if (effect.target === 'damage.oxidative') state.damage.oxidativeStress += delta;
+        else if (effect.target === 'damage.membrane') state.damage.membrane += delta;
+        else if (effect.target === 'damage.proteins') state.damage.proteins += delta;
     }
-    state.lastEvent = `Decisão não tomada: ${state.routine.title}`;
-    state.cell.atpMmolL = clamp(state.cell.atpMmolL, 0.2, MAX_ATP);
-    state.tissue.lactateMmolL = clamp(state.tissue.lactateMmolL, 0, 20);
-    state.damage.oxidativeStress = clamp(state.damage.oxidativeStress, 0, 100);
-    state.damage.proteins = clamp(state.damage.proteins, 0, 100);
-    state.damage.membrane = clamp(state.damage.membrane, 0, 100);
+    state.cell.atpMmolL = clamp(state.cell.atpMmolL, .2, MAX_ATP);
     state.cell.volumePercent = clamp(state.cell.volumePercent, 70, 140);
+    state.tissue.glucoseMmolL = clamp(state.tissue.glucoseMmolL, 1, 20);
+    state.tissue.lactateMmolL = clamp(state.tissue.lactateMmolL, 0, 20);
+    state.tissue.osmolarity = clamp(state.tissue.osmolarity, 260, 340);
+    state.pools.available.glucose = clamp(state.pools.available.glucose, 0, 8);
+    state.pools.available.fattyAcid = clamp(state.pools.available.fattyAcid, 0, 5);
+    state.damage.oxidativeStress = clamp(state.damage.oxidativeStress, 0, 100);
+    state.damage.membrane = clamp(state.damage.membrane, 0, 100);
+    state.damage.proteins = clamp(state.damage.proteins, 0, 100);
     syncAdenylates(state);
 }
 
-function applyRoutineOnset(state: CellularState) {
-    if (!state.routine) return;
-    switch (state.routine.id) {
-        case 'meal-surge':
-            state.pools.available.glucose = clamp(state.pools.available.glucose + 2, 0, 8);
-            state.tissue.glucoseMmolL = clamp(state.tissue.glucoseMmolL + 0.8, 1, 20);
-            break;
-        case 'morning-fast':
-            state.pools.available.glucose = Math.max(0, state.pools.available.glucose - 1.5);
-            state.tissue.glucoseMmolL = clamp(state.tissue.glucoseMmolL - 0.65, 1, 20);
-            break;
-        case 'micro-injury':
-            state.damage.proteins = clamp(state.damage.proteins + 4, 0, 100);
-            break;
-        case 'immune-challenge':
-            state.damage.oxidativeStress = clamp(state.damage.oxidativeStress + 4, 0, 100);
-            break;
-        case 'heat-dehydration':
-            state.tissue.osmolarity = clamp(state.tissue.osmolarity + 5, 260, 340);
-            state.cell.volumePercent = clamp(state.cell.volumePercent - 4, 70, 140);
-            break;
-    }
-}
-
-export function resolveRoutineDecision(state: CellularState, choiceId: string): CellularActionResult {
+export function resolveRoutineDecision(state: CellularState, choiceId: string, effectMultiplier = 1): CellularActionResult {
     if (!state.routine || !state.routine.choices.some(choice => choice.id === choiceId)) {
         return actionFailure(state, 'Esta decisão não está disponível no cenário atual.');
     }
 
-    const next = cloneState(state);
-    let message = '';
-    switch (choiceId) {
-        case 'stair-aerobic':
-            if (next.pools.pyruvate < 0.85 || next.pools.captured.oxygen < 2.8) return actionFailure(state, 'Faltam 1 piruvato e 3 pacotes de O₂.');
-            next.pools.pyruvate -= Math.min(1, next.pools.pyruvate); next.pools.captured.oxygen -= Math.min(3, next.pools.captured.oxygen); next.cell.atpMmolL += 0.55; next.cell.nadhPercent -= 5;
-            message = 'Esforço sustentado pela via aeróbia';
-            break;
-        case 'stair-glycolytic':
-            if (next.pools.captured.glucose < 0.85) return actionFailure(state, 'Capte 1 pacote de glicose antes de escolher glicólise rápida.');
-            next.pools.captured.glucose -= Math.min(1, next.pools.captured.glucose); next.pools.pyruvate += 1; next.cell.atpMmolL += 0.12; next.tissue.lactateMmolL += 0.75;
-            message = 'Esforço sustentado por glicólise rápida';
-            break;
-        case 'meal-process':
-            if (next.pools.available.glucose < 1) return actionFailure(state, 'A glicose no tecido ainda é insuficiente para esta resposta.');
-            next.pools.available.glucose -= 1; next.pools.pyruvate += 2; next.cell.atpMmolL += 0.08; next.cell.nadhPercent += 4;
-            message = 'Pico pós-prandial processado em piruvato';
-            break;
-        case 'meal-buffer':
-            if (next.cell.atpMmolL < 1.25) return actionFailure(state, 'ATP insuficiente para regular os transportadores.');
-            next.cell.atpMmolL -= 0.25; next.damage.oxidativeStress -= 3; next.tissue.glucoseMmolL -= 0.35;
-            message = 'Entrada de glicose regulada para proteger o equilíbrio redox';
-            break;
-        case 'fast-fat':
-            if (next.pools.captured.fattyAcid < 0.85 || next.pools.captured.oxygen < 5.7) return actionFailure(state, 'Faltam 1 ácido graxo e 6 pacotes de O₂.');
-            next.pools.captured.fattyAcid -= Math.min(1, next.pools.captured.fattyAcid); next.pools.captured.oxygen -= Math.min(6, next.pools.captured.oxygen); next.cell.atpMmolL += 0.75; next.damage.oxidativeStress += 2.5;
-            message = 'Jejum compensado por oxidação de ácido graxo';
-            break;
-        case 'fast-conserve':
-            if (next.cell.atpMmolL < 0.4) return actionFailure(state, 'Reserva energética crítica; produza ATP antes de conservar processos.');
-            next.cell.atpMmolL -= 0.12; next.damage.oxidativeStress -= 1;
-            message = 'Processos não essenciais reduzidos durante o jejum';
-            break;
-        case 'injury-repair':
-            if (next.pools.captured.aminoAcid < 0.85 || next.cell.atpMmolL < 1.55) return actionFailure(state, 'Faltam 1 aminoácido e 0,55 ATP acima da reserva vital.');
-            next.pools.captured.aminoAcid -= Math.min(1, next.pools.captured.aminoAcid); next.cell.atpMmolL -= 0.55; next.damage.proteins -= 7;
-            message = 'Microlesão reparada com renovação proteica';
-            break;
-        case 'injury-defer':
-            next.damage.proteins += 3.5;
-            message = 'Reparo adiado; dano proteico aumentou';
-            break;
-        case 'immune-control':
-            if (next.cell.atpMmolL < 1.4) return actionFailure(state, 'ATP insuficiente para reforçar as defesas antioxidantes.');
-            next.cell.atpMmolL -= 0.4; next.damage.oxidativeStress -= 7; next.damage.antioxidantCapacity += 5;
-            message = 'Resposta imune contida com suporte antioxidante';
-            break;
-        case 'immune-attack':
-            if (next.pools.captured.glucose < 0.85) return actionFailure(state, 'Capte 1 pacote de glicose para sustentar a resposta intensa.');
-            next.pools.captured.glucose -= Math.min(1, next.pools.captured.glucose); next.damage.oxidativeStress += 5; next.cell.atpMmolL -= 0.18;
-            message = 'Resposta imune intensa concluída com custo oxidativo';
-            break;
-        case 'heat-pumps':
-            if (next.cell.atpMmolL < 1.45) return actionFailure(state, 'ATP insuficiente para ativar as bombas sem cruzar a reserva vital.');
-            next.cell.atpMmolL -= 0.45; next.cell.volumePercent = approach(next.cell.volumePercent, 100, 1, 1); next.damage.membrane -= 2;
-            message = 'Gradientes iônicos restaurados pelas bombas de membrana';
-            break;
-        case 'heat-adapt':
-            if (next.pools.captured.aminoAcid < 0.5) return actionFailure(state, 'Falta 0,5 pacote de aminoácido para a adaptação osmótica.');
-            next.pools.captured.aminoAcid -= 0.5; next.cell.volumePercent += 2; next.damage.oxidativeStress += 1.5;
-            message = 'Adaptação osmótica adotada com estresse leve';
-            break;
-        default:
-            return actionFailure(state, 'Resposta ainda não implementada.');
+    const scenarioId = state.routine.id;
+    const choice = getScenarioChoice(scenarioId, choiceId);
+    if (!choice) return actionFailure(state, 'A consequência desta decisão não está configurada.');
+    const availability = getScenarioChoiceAvailability(state, scenarioId, choiceId);
+    if (!availability.available) {
+        return actionFailure(state, `Recursos insuficientes: ${availability.missing.join(' · ')}.`);
     }
 
+    const next = cloneState(state);
+    for (const requirement of choice.requirements) {
+        if (requirement.cost <= 0) continue;
+        if (requirement.resource === 'atp') {
+            next.cell.atpMmolL -= requirement.cost;
+            next.totalAtpSpent += requirement.cost;
+        }
+        else if (requirement.resource === 'pyruvate') next.pools.pyruvate -= requirement.cost;
+        else if (requirement.resource === 'antioxidants') next.damage.antioxidantCapacity -= requirement.cost;
+        else next.pools.captured[requirement.resource] -= requirement.cost;
+    }
+    applyScenarioEffects(next, choice.cellularEffects, effectMultiplier);
+
     next.routine = null;
-    next.lastEvent = message;
+    next.lastEvent = choice.result;
     next.cell.atpMmolL = clamp(next.cell.atpMmolL, 0.2, MAX_ATP);
     next.cell.nadhPercent = clamp(next.cell.nadhPercent, 0, 100);
     next.tissue.glucoseMmolL = clamp(next.tissue.glucoseMmolL, 1, 20);
@@ -440,7 +304,17 @@ export function resolveRoutineDecision(state: CellularState, choiceId: string): 
     next.damage.membrane = clamp(next.damage.membrane, 0, 100);
     next.cell.volumePercent = clamp(next.cell.volumePercent, 70, 140);
     syncAdenylates(next);
-    return { state: next, ok: true, event: { message, severity: 'info', affectedSystems: ['cellular', 'decision'] } };
+    return {
+        state: next,
+        ok: true,
+        decisionOutcome: choice.outcome,
+        scenarioId,
+        event: {
+            message: `${choice.outcome === 'adaptive' ? 'Decisão correta' : 'Decisão prejudicial'} — ${choice.result}`,
+            severity: choice.outcome === 'adaptive' ? 'info' : 'critical',
+            affectedSystems: ['cellular', 'decision', choice.outcome],
+        },
+    };
 }
 
 function autoCapture(state: CellularState, dt: number) {
@@ -585,14 +459,6 @@ function advanceStep(
         state.collection.chain = 0;
     }
 
-    if (state.routine) {
-        state.routine.remainingSeconds -= dt;
-        if (state.routine.remainingSeconds <= 0) {
-            applyRoutineTimeout(state);
-            state.routine = null;
-        }
-    }
-
     const cardiacFlow = macro.cardiovascular.cardiacOutput / 4.9;
     const pressureFlow = Math.sqrt(clamp(macro.cardiovascular.meanArterialPressure / 93, 0.25, 1.8));
     const perfusionFactor = clamp(cardiacFlow * pressureFlow, 0.2, 1.6);
@@ -731,6 +597,19 @@ function advanceStep(
         dt,
     );
 
+    (Object.keys(CAPTURED_POOL_CAPS) as SubstrateKind[]).forEach(kind => {
+        const occupancy = state.pools.captured[kind] / CAPTURED_POOL_CAPS[kind] * 100;
+        state.transportSaturation[kind] = approach(state.transportSaturation[kind], occupancy, 3, dt);
+    });
+    const glucoseSaturation = clamp((state.transportSaturation.glucose - 75) / 25, 0, 1);
+    const oxygenSaturation = clamp((state.transportSaturation.oxygen - 82) / 18, 0, 1);
+    const fattyAcidSaturation = clamp((state.transportSaturation.fattyAcid - 70) / 30, 0, 1);
+    const aminoAcidSaturation = clamp((state.transportSaturation.aminoAcid - 80) / 20, 0, 1);
+    const saturationRos = glucoseSaturation * .006 + oxygenSaturation * .004 + fattyAcidSaturation * .008;
+    state.damage.membrane = clamp(state.damage.membrane + fattyAcidSaturation * .006 * dt, 0, 100);
+    state.damage.proteins = clamp(state.damage.proteins + (fattyAcidSaturation * .004 + aminoAcidSaturation * .003) * dt, 0, 100);
+    state.tissue.wasteLoad = clamp(state.tissue.wasteLoad + aminoAcidSaturation * .012 * dt, 0, 100);
+
     const redoxPressure = clamp((state.cell.nadhPercent - 50) / 50, 0, 1);
     const mitochondrialHealth = state.mitochondria.healthPercent / 100;
     const oxidativeAtp = Math.max(0, atpProduced - metabolism.glycolyticAtp);
@@ -770,7 +649,7 @@ function advanceStep(
     const hyperglycemia = Math.max(0, state.tissue.glucoseMmolL - 7) * 0.002;
     const hypoxia = Math.max(0, 25 - state.tissue.oxygenMmHg) * 0.0012;
     const rosGeneration = 0.011 + state.mitochondria.etcFluxPercent * 0.00004 +
-        hyperglycemia + hypoxia + routine.ros + redoxPressure * 0.004;
+        hyperglycemia + hypoxia + routine.ros + redoxPressure * 0.004 + saturationRos;
     const rosClearance = 0.0115 * clamp(state.damage.antioxidantCapacity / 80, 0.15, 1.2)
         * (1 + state.adaptations.antioxidantDefense * 0.07);
     state.damage.oxidativeStress = clamp(
@@ -795,6 +674,61 @@ function advanceStep(
     const averageDamage = state.damage.membrane * 0.35 + state.damage.proteins * 0.4 + state.damage.dna * 0.25;
     const acutePenalty = Math.max(0, 1 - state.cell.atpMmolL) * 8 + Math.max(0, 6.75 - state.cell.pH) * 25;
     state.cell.viabilityPercent = clamp(100 - averageDamage - acutePenalty, 0, 100);
+
+    const cortisolExcess = clamp((macro.hormones.cortisol - 18) / 32, 0, 1);
+    const hyperglycemicStress = clamp((macro.nutrients.bloodGlucose - 140) / 180, 0, 1);
+    const anabolicProtection = clamp(
+        (macro.hormones.igf1 / 180 + macro.hormones.mTORActivity / 50) / 2,
+        0,
+        1.35,
+    );
+    const apoptoticPressure = clamp(
+        state.damage.dna / 100 * .38
+        + state.damage.proteins / 100 * .18
+        + state.damage.oxidativeStress / 100 * .24
+        + Math.max(0, 1.1 - state.cell.atpMmolL) * .22
+        + hyperglycemicStress * .12
+        - anabolicProtection * .08,
+        0,
+        1,
+    );
+    const commitmentDelta = (apoptoticPressure * .32 - (1 - apoptoticPressure) * .055) * dt;
+    state.fate.apoptoticCommitment = clamp(state.fate.apoptoticCommitment + commitmentDelta, 0, 100);
+    state.fate.infectionSusceptibility = approach(
+        state.fate.infectionSusceptibility,
+        clamp(
+            5
+            + (100 - state.cell.viabilityPercent) * .42
+            + state.damage.membrane * .22
+            + cortisolExcess * 28
+            + hyperglycemicStress * 18,
+            0,
+            100,
+        ),
+        18,
+        dt,
+    );
+    const previousFate = state.fate.status;
+    if (state.cell.viabilityPercent <= 8 && state.cell.atpMmolL <= .45) state.fate.status = 'necrosis';
+    else if (state.fate.apoptoticCommitment >= 80 || state.damage.dna >= 78) state.fate.status = 'apoptosis';
+    else if (state.cell.viabilityPercent < 70 || state.fate.apoptoticCommitment >= 25) state.fate.status = 'stress';
+    else state.fate.status = 'homeostasis';
+    if (state.fate.status === 'apoptosis') {
+        state.cell.viabilityPercent = approach(state.cell.viabilityPercent, 0, 45, dt);
+        state.cell.atpMmolL = Math.max(.2, state.cell.atpMmolL - .0025 * dt);
+    } else if (state.fate.status === 'necrosis') {
+        state.cell.viabilityPercent = approach(state.cell.viabilityPercent, 0, 8, dt);
+        state.damage.membrane = clamp(state.damage.membrane + .08 * dt, 0, 100);
+    }
+    if (state.fate.status !== previousFate) {
+        state.fate.lastTransition = state.fate.status === 'homeostasis'
+            ? 'Sinais de morte celular recuaram; homeostase recuperada'
+            : state.fate.status === 'stress'
+                ? 'Dano acumulado ativou resposta celular de estresse'
+                : state.fate.status === 'apoptosis'
+                    ? 'Compromisso apoptótico ultrapassou o limiar de reversibilidade'
+                    : 'Falência energética e de membrana iniciou necrose';
+    }
     state.mitochondria.healthPercent = approach(
         state.mitochondria.healthPercent,
         clamp(100 - state.damage.oxidativeStress * 0.18 - state.damage.proteins * 0.35, 10, 100),
@@ -841,7 +775,6 @@ function advanceStep(
 type RewardTimer = 'homeostasisSeconds' | 'rosControlSeconds' | 'balancedFuelSeconds' | 'phStableSeconds' | 'hypoxiaStableSeconds';
 
 function maybeAwardAdaptation(state: CellularState): CellularEvent | null {
-    if (state.lastEvent.startsWith('Decisão não tomada:')) return null;
     if (state.simulationTime - state.rewards.lastOpportunityAt < 6) return null;
     const opportunities: Array<{ kind: CellularAdaptationKind; timer: RewardTimer; threshold: number; label: string; reason: string }> = [
         { kind: 'enzymaticEfficiency', timer: 'homeostasisSeconds', threshold: 30, label: 'Eficiência enzimática', reason: 'ATP, O₂, pH e viabilidade permaneceram em faixa funcional' },
@@ -896,12 +829,18 @@ export function advanceCellularSimulation(
 
     const startRoutineIfDue = () => {
         if (state.routine || state.simulationTime < state.nextRoutineAt) return;
-        state.routine = createRoutine(state);
+        const candidate = selectEligibleScenario(state, macro);
+        if (!candidate) {
+            state.nextRoutineAt = state.simulationTime + 8;
+            return;
+        }
+        state.routine = createRoutineEvent(candidate.definition, candidate.eligibility.reason);
         applyRoutineOnset(state);
-        state.nextRoutineAt += 48;
+        state.nextRoutineAt = state.simulationTime + 18;
+        state.scenarioCooldowns[candidate.definition.id] = state.simulationTime + candidate.definition.cooldownSeconds;
         state.lastEvent = state.routine.title;
         events.push({
-            message: state.routine.title,
+            message: `${state.routine.title}: ${state.routine.triggerReason}.`,
             severity: state.routine.severity,
             affectedSystems: ['tissue', 'cellular-energy'],
         });
@@ -918,14 +857,6 @@ export function advanceCellularSimulation(
     const adaptationEvent = maybeAwardAdaptation(state);
     if (adaptationEvent) events.push(adaptationEvent);
 
-    if (previous.routine && !state.routine && state.lastEvent.startsWith('Decisão não tomada:')) {
-        events.push({
-            message: state.lastEvent,
-            severity: previous.routine.severity === 'info' ? 'warning' : 'critical',
-            affectedSystems: ['cellular', 'decision'],
-        });
-    }
-
     if (previous.cell.viabilityPercent >= 70 && state.cell.viabilityPercent < 70) {
         events.push({
             message: 'Viabilidade celular comprometida: priorize ATP, perfusão e reparo',
@@ -940,6 +871,13 @@ export function advanceCellularSimulation(
             affectedSystems: ['cellular', 'tissue'],
         });
     }
+    if ((previous.fate?.status ?? 'homeostasis') !== state.fate.status) {
+        events.push({
+            message: state.fate.lastTransition,
+            severity: state.fate.status === 'homeostasis' ? 'info' : state.fate.status === 'stress' ? 'warning' : 'critical',
+            affectedSystems: ['cellular-fate', state.fate.status, state.fate.status === 'necrosis' ? 'inflammation' : 'cellular'],
+        });
+    }
 
     return { state, events };
 }
@@ -951,8 +889,7 @@ function actionFailure(state: CellularState, reason: string): CellularActionResu
 export function captureSubstrate(state: CellularState, kind: SubstrateKind): CellularActionResult {
     const next = cloneState(state);
     const previousCollection = state.collection ?? createInitialCollectionProgress();
-    const amounts: SubstratePool = createPool(1, 3, 0.5, 0.5);
-    const amount = amounts[kind];
+    const amount = CAPTURE_AMOUNTS[kind];
     if (next.pools.available[kind] < amount) {
         return actionFailure(state, 'Oferta no LEC insuficiente; melhore a perfusão e aguarde a entrega capilar.');
     }
@@ -962,6 +899,19 @@ export function captureSubstrate(state: CellularState, kind: SubstrateKind): Cel
 
     next.pools.available[kind] -= amount;
     next.pools.captured[kind] += amount;
+    const occupancy = next.pools.captured[kind] / CAPTURED_POOL_CAPS[kind] * 100;
+    next.transportSaturation[kind] = Math.max(next.transportSaturation[kind], occupancy);
+    if (occupancy >= 80) {
+        if (kind === 'glucose') next.damage.oxidativeStress = clamp(next.damage.oxidativeStress + 1.2, 0, 100);
+        else if (kind === 'oxygen') next.damage.oxidativeStress = clamp(next.damage.oxidativeStress + .8, 0, 100);
+        else if (kind === 'fattyAcid') {
+            next.damage.oxidativeStress = clamp(next.damage.oxidativeStress + 1.4, 0, 100);
+            next.damage.membrane = clamp(next.damage.membrane + .7, 0, 100);
+        } else {
+            next.tissue.wasteLoad = clamp(next.tissue.wasteLoad + 1, 0, 100);
+            next.damage.proteins = clamp(next.damage.proteins + .5, 0, 100);
+        }
+    }
     const priorityThresholds: SubstratePool = createPool(2, 6, 1, 1);
     const wasPriority = state.pools.captured[kind] < priorityThresholds[kind];
     const chained = state.simulationTime - previousCollection.lastCaptureAt <= 2.5;
@@ -976,11 +926,19 @@ export function captureSubstrate(state: CellularState, kind: SubstrateKind): Cel
         fattyAcid: 'Ácido graxo captado',
         aminoAcid: 'Aminoácido captado por cotransporte',
     };
-    next.lastEvent = `${labels[kind]} · cadeia ${next.collection.chain} · +${10 + Math.max(0, next.collection.chain - 1) * 2 + (wasPriority ? 8 : 0)} pontos`;
+    const saturationConsequences: Record<SubstrateKind, string> = {
+        glucose: 'sobrecarga favorece ROS e glicotoxicidade',
+        oxygen: 'excesso aumenta pressão redox e ROS',
+        fattyAcid: 'excesso causa lipotoxicidade e dano de membrana',
+        aminoAcid: 'excesso aumenta carga nitrogenada e estresse proteico',
+    };
+    next.lastEvent = occupancy >= 80
+        ? `${labels[kind]} · ocupação ${occupancy.toFixed(0)}%: ${saturationConsequences[kind]}`
+        : `${labels[kind]} · ocupação ${occupancy.toFixed(0)}% · cadeia ${next.collection.chain}`;
     return {
         state: next,
         ok: true,
-        event: { message: labels[kind], severity: 'info', affectedSystems: ['cellular-transport'] },
+        event: { message: next.lastEvent, severity: occupancy >= 80 ? 'warning' : 'info', affectedSystems: ['cellular-transport', occupancy >= 80 ? 'saturation' : 'capture'] },
     };
 }
 

@@ -10,22 +10,25 @@ import {
     AllostaticLoad,
     CardiovascularState,
     EnergyMatrix,
-    HormonalAction,
-    HormonalProfile,
     NutrientState,
     OrganState,
     OrganSystem,
+    PathophysiologyState,
     PHYSIOLOGY_CONSTANTS,
+    PhysiologicalCapacities,
     PhysiologicalEvent,
     PhysiologicalWarning,
     PhysiologyState,
+    RenalRegulationState,
     RespiratoryExchange,
     RespiratoryState,
     SimulationInput,
     SimulationOutput,
 } from './types';
+import { calculateEndocrineTick, type EndocrineEffectsResult } from './endocrine';
 
 const BASE_ATP_DEMAND = 30; // mmol/min in the simulator's whole-body scale
+const BASE_BMR = 1800; // kcal/day, paciente padrão de 70 kg
 const BASE_VO2 = 3.5; // mL/kg/min (1 MET)
 const BASE_VCO2 = 200; // mL/min
 const BASE_ALVEOLAR_VENTILATION = 4.9; // L/min: (500 - 150) * 14
@@ -36,7 +39,6 @@ const BASE_SODIUM = 140; // mmol/L
 const BASE_LACTATE = 0.8; // mmol/L
 const BASE_GLUCOSE = 90; // mg/dL
 const BASE_RENAL_REABSORPTION = 99; // %
-const GFR_ML_MIN = 125;
 const INSENSIBLE_WATER_LOSS_ML_MIN = 0.6;
 const STANDARD_ATMOSPHERIC_PRESSURE = 760;
 const WATER_VAPOUR_PRESSURE = 47;
@@ -59,46 +61,6 @@ interface EnergyDemandResult {
     exerciseFraction: number;
 }
 
-interface HormonalEffectsResult {
-    newProfile: HormonalProfile;
-    glucoseUptakeRate: number; // mg/dL/min above basal
-    hepaticGlucoseDrive: number; // mg/dL/min above basal
-    lipolysisRate: number; // relative fraction/hour
-    proteinSynthesisRate: number; // g/day
-    glycogenSynthesisRate: number; // mg/dL/min equivalent
-}
-
-const HORMONE_BASELINES: HormonalProfile = {
-    insulin: 10,
-    gh: 1,
-    testosterone: 600,
-    igf1: 200,
-    cortisol: 12,
-    glucagon: 80,
-    adrenaline: 30,
-    noradrenaline: 200,
-    t3: 120,
-    t4: 8,
-    tsh: 2,
-    mTORActivity: 50,
-};
-
-const HORMONE_HALF_LIVES_SEC: Record<keyof HormonalProfile, number> = {
-    insulin: 5 * 60,
-    gh: 20 * 60,
-    testosterone: 60 * 60,
-    igf1: 8 * 60 * 60,
-    cortisol: 70 * 60,
-    glucagon: 6 * 60,
-    adrenaline: 2 * 60,
-    noradrenaline: 2.5 * 60,
-    t3: 24 * 60 * 60,
-    t4: 7 * 24 * 60 * 60,
-    tsh: 50 * 60,
-    mTORActivity: 15 * 60,
-};
-
-const HORMONE_KEYS = Object.keys(HORMONE_BASELINES) as Array<keyof HormonalProfile>;
 
 /** Calculate one physiological transition while preserving the public API. */
 export function calculatePhysiologyTick(
@@ -119,17 +81,48 @@ export function calculatePhysiologyTick(
     const nextTime = prevState.timeElapsed + dt;
     const events: PhysiologicalEvent[] = [];
 
-    const energyDemand = calculateEnergyDemand(
-        prevState.basalMetabolicRate,
+    const provisionalDemand = calculateEnergyDemand(
+        BASE_BMR,
         externalFactors.exercise,
-        prevState.allostaticLoad.currentLoad
+        prevState.allostaticLoad.currentLoad,
+        1,
+        externalFactors.sleep,
     );
 
-    const hormonalEffects = calculateHormonalEffects(
-        prevState.hormones,
-        input.hormonalActions,
+    const hormonalEffects = calculateEndocrineTick({
+        profile: prevState.hormones,
+        regulation: prevState.endocrine,
+        capacities: prevState.capacities,
+        nutrients: prevState.nutrients,
+        actions: input.hormonalActions,
+        exercise: externalFactors.exercise,
+        stress: externalFactors.stress,
+        sleep: externalFactors.sleep,
+        inflammation: Math.max(prevState.allostaticLoad.inflammationLevel, prevState.pathophysiology.infectionSeverity),
+        energyDemand: provisionalDemand.atpDemandRate,
+        energyDeficit: prevState.energy.energyDeficit,
+        heartRate: prevState.cardiovascular.heartRate,
+        simulationTime: nextTime,
+        dt,
+    });
+
+    const energyDemand = calculateEnergyDemand(
+        BASE_BMR,
         externalFactors.exercise,
-        dt
+        prevState.allostaticLoad.currentLoad,
+        hormonalEffects.thyroidMetabolicMultiplier,
+        externalFactors.sleep,
+    );
+
+    const preliminaryRenal = updateRenalRegulation(
+        prevState.renal,
+        prevState.cardiovascular,
+        prevState.nutrients,
+        prevState.capacities,
+        prevState.pathophysiology,
+        hormonalEffects,
+        interventions.renalWaterReabsorption,
+        dt,
     );
 
     const newEnergy = updateEnergyMatrix(
@@ -137,6 +130,9 @@ export function calculatePhysiologyTick(
         energyDemand,
         prevState.nutrients,
         prevState.respiratory.spo2,
+        prevState.capacities,
+        prevState.pathophysiology,
+        input.cellularFeedback,
         dt
     );
 
@@ -146,10 +142,12 @@ export function calculatePhysiologyTick(
         energyDemand,
         externalFactors,
         interventions,
+        preliminaryRenal,
+        prevState.pathophysiology,
         dt
     );
 
-    const respiratoryExchange = calculateRespiratoryExchange(newEnergy, newNutrients);
+    const respiratoryExchange = calculateRespiratoryExchange(newEnergy, newNutrients, input.cellularFeedback);
 
     const newCardiovascular = updateCardiovascular(
         prevState.cardiovascular,
@@ -159,6 +157,8 @@ export function calculatePhysiologyTick(
         newNutrients,
         interventions.heartRateTarget,
         externalFactors.stress,
+        prevState.capacities,
+        prevState.pathophysiology,
         dt
     );
 
@@ -168,7 +168,20 @@ export function calculatePhysiologyTick(
         respiratoryExchange,
         energyDemand.exerciseFraction,
         interventions.ventilationDrive,
+        prevState.capacities,
+        prevState.pathophysiology,
         dt
+    );
+
+    const newRenal = updateRenalRegulation(
+        preliminaryRenal,
+        newCardiovascular,
+        newNutrients,
+        prevState.capacities,
+        prevState.pathophysiology,
+        hormonalEffects,
+        interventions.renalWaterReabsorption,
+        dt,
     );
 
     const newAcidBase = updateAcidBase(
@@ -176,7 +189,30 @@ export function calculatePhysiologyTick(
         newEnergy,
         newRespiratory.paco2,
         newNutrients,
+        newRenal,
+        prevState.pathophysiology,
         dt
+    );
+
+    const newPathophysiology = updatePathophysiology(
+        prevState.pathophysiology,
+        prevState.capacities,
+        newNutrients,
+        hormonalEffects,
+        newCardiovascular,
+        newRespiratory,
+        newAcidBase,
+        input.cellularFeedback,
+        dt,
+    );
+
+    const bodyTemperature = updateBodyTemperature(
+        prevState.bodyTemperature,
+        externalFactors.temperature,
+        energyDemand.exerciseFraction,
+        hormonalEffects.thyroidMetabolicMultiplier,
+        newPathophysiology.infectionSeverity,
+        dt,
     );
 
     const newAllostaticLoad = updateAllostaticLoad(
@@ -186,6 +222,9 @@ export function calculatePhysiologyTick(
         newCardiovascular,
         newRespiratory,
         externalFactors.stress,
+        externalFactors.sleep,
+        newPathophysiology,
+        input.cellularFeedback,
         dt
     );
 
@@ -197,6 +236,9 @@ export function calculatePhysiologyTick(
         newEnergy,
         newNutrients,
         hormonalEffects,
+        prevState.capacities,
+        newPathophysiology,
+        input.cellularFeedback,
         dt
     );
 
@@ -224,17 +266,22 @@ export function calculatePhysiologyTick(
         energy: newEnergy,
         nutrients: newNutrients,
         hormones: hormonalEffects.newProfile,
+        endocrine: hormonalEffects.regulation,
+        capacities: prevState.capacities,
+        renal: newRenal,
+        pathophysiology: newPathophysiology,
         cardiovascular: newCardiovascular,
         respiratory: newRespiratory,
         organs: newOrgans,
         acidBase: newAcidBase,
         allostaticLoad: newAllostaticLoad,
         respiratoryExchange,
-        basalMetabolicRate: prevState.basalMetabolicRate,
+        basalMetabolicRate: BASE_BMR * hormonalEffects.thyroidMetabolicMultiplier,
         totalEnergyExpenditure: energyDemand.totalExpenditure,
         activityLevel: clamp(externalFactors.exercise, 0, 100),
+        bodyTemperature,
         timeElapsed: nextTime,
-        cyclePhase: prevState.cyclePhase,
+        cyclePhase: externalFactors.sleep >= 70 && (((8 + nextTime / 3600) % 24) >= 22 || ((8 + nextTime / 3600) % 24) < 7) ? 'sleep' : 'awake',
         isAlive,
         causeOfDeath,
     };
@@ -251,15 +298,19 @@ export function calculatePhysiologyTick(
 function calculateEnergyDemand(
     bmr: number,
     exerciseIntensity: number,
-    allostaticLoad: number
+    allostaticLoad: number,
+    thyroidMultiplier: number,
+    sleepQuality: number,
 ): EnergyDemandResult {
-    const safeBmr = Math.max(800, finiteOr(bmr, 1800));
+    const safeBmr = Math.max(800, finiteOr(bmr, BASE_BMR));
     const exerciseFraction = clamp(exerciseIntensity / 100, 0, 1);
+    const metabolicBmr = safeBmr * clamp(thyroidMultiplier, .7, 1.7);
     const activityMultiplier = 1 + 3.5 * Math.pow(exerciseFraction, 1.35);
-    const activityCost = safeBmr * (activityMultiplier - 1);
+    const activityCost = metabolicBmr * (activityMultiplier - 1);
     const excessAllostaticLoad = Math.max(0, allostaticLoad - 10) / 90;
-    const allostaticCost = safeBmr * 0.12 * excessAllostaticLoad;
-    const totalExpenditure = safeBmr + activityCost + allostaticCost;
+    const sleepDebtCost = safeBmr * Math.max(0, 70 - sleepQuality) / 100 * .08;
+    const allostaticCost = safeBmr * 0.12 * excessAllostaticLoad + sleepDebtCost;
+    const totalExpenditure = metabolicBmr + activityCost + allostaticCost;
     const atpDemandRate = BASE_ATP_DEMAND * (totalExpenditure / safeBmr);
 
     return {
@@ -277,6 +328,9 @@ function updateEnergyMatrix(
     demand: EnergyDemandResult,
     nutrients: NutrientState,
     spo2: number,
+    capacities: PhysiologicalCapacities,
+    pathophysiology: PathophysiologyState,
+    cellularFeedback: SimulationInput['cellularFeedback'],
     dt: number
 ): EnergyMatrix {
     const dtMin = dt / 60;
@@ -286,7 +340,8 @@ function updateEnergyMatrix(
     const aerobicCapacity = BASE_ATP_DEMAND
         * Math.max(1, prevEnergy.vo2Max / BASE_VO2)
         * oxygenAvailability
-        * (0.45 + 0.55 * substrateAvailability);
+        * (0.45 + 0.55 * substrateAvailability)
+        * clamp(capacities.mitochondrialCapacity, .2, 1);
 
     // Rest is predominantly oxidative; the anaerobic share rises only as
     // exercise intensity and the rate of demand change increase.
@@ -346,7 +401,11 @@ function updateEnergyMatrix(
     // glycolytic ATP raises lactate; clearance rises with concentration and O2.
     const basalGlycolyticRate = demandRate * 0.04;
     const lactateProductionRate = 0.012
-        + Math.max(0, glycolyticRate - basalGlycolyticRate) * 0.018;
+        + Math.max(0, glycolyticRate - basalGlycolyticRate) * 0.018
+        // Infecção sistêmica também acelera glicólise imune e cria
+        // desbalanço perfusional; o termo mantém lactato mensurável na sepse.
+        + pathophysiology.infectionSeverity / 100 * .07
+        + Math.max(0, cellularFeedback?.lactateFlux ?? 0);
     const lactateClearanceRate = (
         0.012 + Math.max(0, prevEnergy.lactateLevel - BASE_LACTATE) * 0.12
     ) * (0.35 + 0.65 * oxygenAvailability);
@@ -388,94 +447,129 @@ function updateEnergyMatrix(
     };
 }
 
-function calculateHormonalEffects(
-    prevHormones: HormonalProfile,
-    actions: HormonalAction[],
-    exerciseIntensity: number,
-    dt: number
-): HormonalEffectsResult {
-    const newProfile = { ...prevHormones };
+function updateRenalRegulation(
+    prev: RenalRegulationState,
+    cardio: CardiovascularState,
+    nutrients: NutrientState,
+    capacities: PhysiologicalCapacities,
+    pathophysiology: PathophysiologyState,
+    hormones: EndocrineEffectsResult,
+    commandedReabsorption: number,
+    dt: number,
+): RenalRegulationState {
+    const mapFactor = cardio.meanArterialPressure >= 80
+        ? 1
+        : clamp((cardio.meanArterialPressure - 35) / 45, .05, 1);
+    const flowFactor = clamp(cardio.cardiacOutput / 4.9, .2, 1.35);
+    const septicPenalty = 1 - pathophysiology.infectionSeverity / 100 * .25;
+    const targetGfr = clamp(
+        125 * capacities.renalFunction * Math.min(mapFactor, Math.pow(flowFactor, .45)) * septicPenalty,
+        5,
+        160,
+    );
+    const gfr = approachExp(prev.gfr, targetGfr, 90, dt);
+    const hypovolemia = clamp((BASE_HYDRATION - nutrients.hydration) / 8, 0, 1);
+    const hypotension = clamp((80 - cardio.meanArterialPressure) / 40, 0, 1);
+    const raasTarget = clamp(20 + hypovolemia * 65 + hypotension * 55, 0, 100);
+    const raasActivity = approachExp(prev.raasActivity, raasTarget, 3 * 60, dt);
+    const estimatedOsmolarity = 2 * nutrients.sodium + nutrients.bloodGlucose / 18 + 5;
+    const adhTarget = clamp(35 + Math.max(0, estimatedOsmolarity - 290) * 4 + hypovolemia * 50, 0, 100);
+    const adhActivity = approachExp(prev.adhActivity, adhTarget, 2 * 60, dt);
+    const aldosteroneTarget = clamp(25 + raasActivity * .6 + Math.max(0, nutrients.potassium - 4) * 18, 0, 100);
+    const aldosteroneActivity = approachExp(prev.aldosteroneActivity, aldosteroneTarget, 12 * 60, dt);
+    const cortisolMineralocorticoid = Math.max(0, hormones.newProfile.cortisol - 25) * .002;
+    const effectiveReabsorption = clamp(
+        commandedReabsorption + (adhActivity - 35) * .004 + cortisolMineralocorticoid,
+        95,
+        99.9,
+    );
+    const urineFlow = clamp(gfr * (1 - effectiveReabsorption / 100), .05, 20);
+    return { gfr, urineFlow, adhActivity, aldosteroneActivity, raasActivity };
+}
 
-    for (const hormone of HORMONE_KEYS) {
-        if (hormone === 'mTORActivity') continue;
-
-        const baseline = HORMONE_BASELINES[hormone];
-        const halfLife = HORMONE_HALF_LIVES_SEC[hormone];
-        const eliminationConstant = Math.log(2) / halfLife;
-        const decay = Math.exp(-eliminationConstant * dt);
-        let value = baseline + (finiteOr(prevHormones[hormone], baseline) - baseline) * decay;
-
-        for (const action of actions) {
-            if (action.hormone !== hormone || action.duration <= 0) continue;
-            const totalDurationSec = Math.max(
-                1e-3,
-                finiteOr(action.totalDuration, action.duration) / 1000
-            );
-            const activeSeconds = Math.min(dt, Math.max(0, action.duration / 1000));
-            const infusionRate = finiteOr(action.amount, 0) / totalDurationSec;
-            const postInfusionDecay = Math.exp(-eliminationConstant * (dt - activeSeconds));
-            value += (infusionRate / eliminationConstant)
-                * (1 - Math.exp(-eliminationConstant * activeSeconds))
-                * postInfusionDecay;
-        }
-
-        newProfile[hormone] = clamp(value, 0, hormoneUpperLimit(hormone));
-    }
-
-    const mTorTarget = clamp(
-        30
-        + newProfile.insulin * 1.5
-        + newProfile.igf1 * 0.025
-        + Math.max(0, newProfile.gh - 1) * 1.2,
+function updatePathophysiology(
+    prev: PathophysiologyState,
+    capacities: PhysiologicalCapacities,
+    nutrients: NutrientState,
+    hormones: EndocrineEffectsResult,
+    cardio: CardiovascularState,
+    respiratory: RespiratoryState,
+    acidBase: AcidBaseBalance,
+    cellularFeedback: SimulationInput['cellularFeedback'],
+    dt: number,
+): PathophysiologyState {
+    const insulinEffect = hormones.newProfile.insulin / 10
+        * hormones.regulation.insulinReceptorSensitivity;
+    const osmoticDiuresisTarget = Math.max(0, nutrients.bloodGlucose - 180) * .025
+        + Math.max(0, nutrients.ketones - .6) * .18;
+    const osmoticDiuresis = approachExp(prev.osmoticDiuresis, osmoticDiuresisTarget, 4 * 60, dt);
+    const ketoneProduction = hormones.ketogenesisRate;
+    const immuneCompetence = clamp(capacities.immuneActivation * (1 - hormones.immuneSuppression), .05, 1.4);
+    const barrierFailure = cellularFeedback?.barrierFailureSignal ?? 0;
+    const pathogenGrowthRate = prev.infectionSeverity
+        * (.00025 + hormones.immuneSuppression * .002 + barrierFailure * .0012);
+    const immuneClearanceRate = prev.infectionSeverity * .0012 * immuneCompetence
+        + (prev.infectionSeverity > 0 ? .006 * immuneCompetence : 0);
+    const infectionFloor = prev.preset === 'sepsis' ? 55 : 0;
+    const infectionSeverity = clamp(
+        Math.max(infectionFloor, prev.infectionSeverity + (pathogenGrowthRate - immuneClearanceRate) * dt),
         0,
-        100
+        100,
     );
-    let mTorActivity = approachExp(prevHormones.mTORActivity, mTorTarget, 180, dt);
-    for (const action of actions) {
-        if (action.hormone !== 'mTORActivity' || action.duration <= 0) continue;
-        const totalDurationSec = Math.max(
-            1e-3,
-            finiteOr(action.totalDuration, action.duration) / 1000
-        );
-        const activeSeconds = Math.min(dt, action.duration / 1000);
-        mTorActivity += action.amount * activeSeconds / totalDurationSec;
+    const capillaryLeak = approachExp(
+        prev.capillaryLeak,
+        clamp(infectionSeverity / 100 * .5, 0, .55),
+        6 * 60,
+        dt,
+    );
+
+    let burdenTarget = 0;
+    if (prev.preset === 'type1-diabetes' || prev.preset === 'type2-diabetes') {
+        burdenTarget = Math.max(0, nutrients.bloodGlucose - 110) * .25
+            + Math.max(0, nutrients.ketones - .6) * 8
+            + Math.max(0, 1 - insulinEffect) * (1 - capacities.pancreaticBetaReserve) * 35;
+    } else if (prev.preset === 'respiratory-failure') {
+        burdenTarget = Math.max(0, 95 - respiratory.spo2) * 4 + respiratory.shuntFraction * 80;
+    } else if (prev.preset === 'renal-failure') {
+        burdenTarget = (1 - capacities.renalFunction) * 55 + Math.max(0, nutrients.potassium - 5) * 12;
+    } else if (prev.preset === 'sepsis') {
+        burdenTarget = infectionSeverity * .7 + Math.max(0, 70 - cardio.meanArterialPressure) * .5;
+    } else if (prev.preset === 'hyperthyroidism') {
+        burdenTarget = Math.max(0, hormones.newProfile.t3 - 180) * .35 + Math.max(0, cardio.heartRate - 100) * .4;
+    } else if (prev.preset === 'adrenal-insufficiency') {
+        burdenTarget = Math.max(0, 8 - hormones.newProfile.cortisol) * 7 + Math.max(0, 80 - cardio.meanArterialPressure) * .6;
     }
-    newProfile.mTORActivity = clamp(mTorActivity, 0, 100);
+    burdenTarget += Math.max(0, 7.30 - acidBase.pH) * 80
+        + infectionSeverity * .35
+        + (cellularFeedback?.apoptoticSignal ?? 0) * 18;
+    const diseaseBurden = approachExp(prev.diseaseBurden, clamp(burdenTarget, 0, 100), 4 * 60, dt);
+    return { ...prev, diseaseBurden, infectionSeverity, capillaryLeak, osmoticDiuresis, ketoneProduction };
+}
 
-    const exerciseFraction = clamp(exerciseIntensity / 100, 0, 1);
-    const insulinAboveBasal = Math.max(0, newProfile.insulin / HORMONE_BASELINES.insulin - 1);
-    const glucagonAboveBasal = Math.max(0, newProfile.glucagon / HORMONE_BASELINES.glucagon - 1);
-    const adrenalineAboveBasal = Math.max(0, newProfile.adrenaline / HORMONE_BASELINES.adrenaline - 1);
-    const glucoseUptakeRate = 0.22 * insulinAboveBasal + 0.35 * exerciseFraction;
-    const hepaticGlucoseDrive = 0.18 * glucagonAboveBasal + 0.12 * adrenalineAboveBasal;
-    const lipolysisRate = clamp(
-        0.002 + 0.012 * glucagonAboveBasal + 0.018 * adrenalineAboveBasal,
-        0,
-        0.08
-    );
-    const proteinSynthesisRate = clamp(
-        250 * (0.7 + 0.3 * newProfile.mTORActivity / 50),
-        80,
-        600
-    );
-    const glycogenSynthesisRate = 0.15 * insulinAboveBasal;
-
-    return {
-        newProfile,
-        glucoseUptakeRate,
-        hepaticGlucoseDrive,
-        lipolysisRate,
-        proteinSynthesisRate,
-        glycogenSynthesisRate,
-    };
+function updateBodyTemperature(
+    previous: number,
+    ambient: number,
+    exerciseFraction: number,
+    thyroidMultiplier: number,
+    infectionSeverity: number,
+    dt: number,
+): number {
+    const target = 36.8
+        + exerciseFraction * .7
+        + Math.max(0, thyroidMultiplier - 1) * 1.2
+        + infectionSeverity / 100 * 1.7
+        + clamp((ambient - 26) / 20, -.25, .5);
+    return clamp(approachExp(previous, target, 8 * 60, dt), 34, 42.5);
 }
 
 function updateNutrients(
     prev: NutrientState,
-    hormones: HormonalEffectsResult,
+    hormones: EndocrineEffectsResult,
     demand: EnergyDemandResult,
     external: SimulationInput['externalFactors'],
     interventions: SimulationInput['interventions'],
+    renal: RenalRegulationState,
+    pathophysiology: PathophysiologyState,
     dt: number
 ): NutrientState {
     const dtMin = dt / 60;
@@ -483,7 +577,10 @@ function updateNutrients(
     const exerciseFraction = demand.exerciseFraction;
     const nutritionInput = clamp((external.nutrition - 80) / 20, -1, 1);
 
-    const passiveGlucoseRegulation = (BASE_GLUCOSE - prev.bloodGlucose) / 15;
+    // Um retorno físico muito lento permanece; o controle rápido agora vem dos
+    // eixos insulina/glucagon. Em diabetes ele não mascara a falha pancreática.
+    const passiveTauMinutes = pathophysiology.preset === 'healthy' ? 60 : 360;
+    const passiveGlucoseRegulation = (BASE_GLUCOSE - prev.bloodGlucose) / passiveTauMinutes;
     const dietaryGlucoseRate = Math.max(0, nutritionInput) * 0.30;
     const lowNutritionCost = Math.max(0, -nutritionInput) * 0.04;
     const extraExerciseUse = exerciseFraction * 0.45;
@@ -495,7 +592,10 @@ function updateNutrients(
         - lowNutritionCost;
     const bloodGlucose = clamp(prev.bloodGlucose + netGlucoseRate * dtMin, 20, 400);
 
-    const hepaticReleaseRate = Math.max(0, hormones.hepaticGlucoseDrive - passiveGlucoseRegulation);
+    const hepaticReleaseRate = Math.min(
+        prev.liverGlycogen / Math.max(dtMin, 1e-6),
+        Math.max(0, hormones.hepaticGlucoseDrive - passiveGlucoseRegulation),
+    );
     const liverStorageRate = Math.max(0, hormones.glycogenSynthesisRate + (bloodGlucose - 100) * 0.01);
     const liverGlycogen = clamp(
         prev.liverGlycogen + (liverStorageRate - hepaticReleaseRate) * 0.05 * dtMin,
@@ -520,17 +620,17 @@ function updateNutrients(
         3
     );
 
-    const reabsorption = clamp(
-        finiteOr(interventions.renalWaterReabsorption, BASE_RENAL_REABSORPTION),
-        95,
-        99.9
-    );
-    const urineFlow = GFR_ML_MIN * (1 - reabsorption / 100);
+    const proteolysisKg = prev.muscleMass * hormones.proteolysisRate * dtHours / 24;
+    const synthesisKg = hormones.proteinSynthesisRate / 1000 * dtHours / 24;
+    const muscleMass = clamp(prev.muscleMass - proteolysisKg + synthesisKg, 10, 55);
+    const aminoAcids = clamp(prev.aminoAcids + proteolysisKg * 100 - synthesisKg * 45, 15, 120);
+
     const waterAbsorption = clamp(finiteOr(interventions.waterAbsorptionRate, 0), 0, 1500);
     const heatLoad = Math.max(0, external.temperature - 26) / 14;
     const sweatLoss = 0.2 + exerciseFraction * 8 + heatLoad * 3;
     const netWaterMlMin = waterAbsorption
-        - urineFlow
+        - renal.urineFlow
+        - pathophysiology.osmoticDiuresis
         - INSENSIBLE_WATER_LOSS_ML_MIN
         - sweatLoss;
     const hydration = clamp(prev.hydration + netWaterMlMin * dtMin / 1000, 28, 55);
@@ -538,12 +638,19 @@ function updateNutrients(
     // On short time scales sodium mass is nearly conserved, so water movement
     // changes concentration. A slow renal controller returns it toward 140.
     const dilutionAdjustedSodium = prev.sodium * prev.hydration / hydration;
+    const sodiumCorrectionTau = 12 * 60 * 60 / Math.max(.12, renal.gfr / 125);
     const sodium = clamp(
-        approachExp(dilutionAdjustedSodium, BASE_SODIUM, 12 * 60 * 60, dt),
+        approachExp(dilutionAdjustedSodium, BASE_SODIUM, sodiumCorrectionTau, dt),
         115,
         170
     );
-    const potassium = clamp(approachExp(prev.potassium, 4, 4 * 60 * 60, dt), 2, 7);
+    const insulinShift = Math.max(0, hormones.newProfile.insulin / 10 - 1) * .16;
+    const renalPotassiumRetention = Math.max(0, 1 - renal.gfr / 125) * 2.2;
+    const ketoneShift = Math.max(0, prev.ketones - .6) * .18;
+    const potassiumTarget = 4 + renalPotassiumRetention + ketoneShift - insulinShift;
+    const potassium = clamp(approachExp(prev.potassium, potassiumTarget, 45 * 60, dt), 2, 7);
+    const ketoneClearance = .012 * Math.max(.1, renal.gfr / 125) + Math.max(0, hormones.newProfile.insulin / 10 - .5) * .018;
+    const ketones = clamp(prev.ketones + (hormones.ketogenesisRate - ketoneClearance) * dtMin, .1, 15);
     const hoursSinceMeal = prev.hoursSinceMeal + dtHours;
 
     return {
@@ -553,6 +660,8 @@ function updateNutrients(
         muscleGlycogen,
         fattyAcids,
         adiposeTissue,
+        aminoAcids,
+        muscleMass,
         proteinSynthesisRate: approachExp(
             prev.proteinSynthesisRate,
             hormones.proteinSynthesisRate,
@@ -562,6 +671,7 @@ function updateNutrients(
         hydration,
         sodium,
         potassium,
+        ketones,
         fedState: hoursSinceMeal < 6,
         hoursSinceMeal,
     };
@@ -569,7 +679,8 @@ function updateNutrients(
 
 function calculateRespiratoryExchange(
     energy: EnergyMatrix,
-    nutrients: NutrientState
+    nutrients: NutrientState,
+    cellularFeedback: SimulationInput['cellularFeedback'],
 ): RespiratoryExchange {
     const intensityFraction = clamp((energy.atpDemand / BASE_ATP_DEMAND - 1) / 3.5, 0, 1);
     const glucoseAvailability = clamp((nutrients.bloodGlucose - 60) / 50, 0, 1);
@@ -583,7 +694,7 @@ function calculateRespiratoryExchange(
     else substrate = 'mixed';
 
     const vo2 = clamp(energy.vo2Current * 70, 80, energy.vo2Max * 70);
-    const vco2 = vo2 * rer;
+    const vco2 = vo2 * rer + Math.max(0, cellularFeedback?.carbonDioxideFlux ?? 0) * 20;
     return { rer, vo2, vco2, substrate };
 }
 
@@ -591,25 +702,24 @@ function updateCardiovascular(
     prev: CardiovascularState,
     demand: EnergyDemandResult,
     energy: EnergyMatrix,
-    hormones: HormonalEffectsResult,
+    hormones: EndocrineEffectsResult,
     nutrients: NutrientState,
     commandedHeartRate: number,
     stress: number,
+    capacities: PhysiologicalCapacities,
+    pathophysiology: PathophysiologyState,
     dt: number
 ): CardiovascularState {
     const exercise = demand.exerciseFraction;
     const command = clamp(finiteOr(commandedHeartRate, BASE_HEART_RATE), 35, 200);
     const stressAboveBasal = clamp((stress - 20) / 80, -0.25, 1);
-    const adrenalineAboveBasal = Math.max(
-        0,
-        hormones.newProfile.adrenaline - HORMONE_BASELINES.adrenaline
-    );
-    const hypovolemia = Math.max(0, (BASE_HYDRATION - nutrients.hydration) / 6);
+    const effectiveHydration = nutrients.hydration * (1 - pathophysiology.capillaryLeak * .16);
+    const hypovolemia = Math.max(0, (BASE_HYDRATION - effectiveHydration) / 6);
     const targetHeartRate = clamp(
         command
         + exercise * 78
         + stressAboveBasal * 12
-        + adrenalineAboveBasal * 0.10
+        + hormones.adrenergicCardiacDrive * 8
         + hypovolemia * 18
         + energy.energyDeficit * 0.08,
         35,
@@ -617,7 +727,7 @@ function updateCardiovascular(
     );
     const heartRate = approachExp(prev.heartRate, targetHeartRate, exercise > 0.2 ? 6 : 12, dt);
 
-    const volumeFactor = clamp(nutrients.hydration / BASE_HYDRATION, 0.70, 1.20);
+    const volumeFactor = clamp(effectiveHydration / BASE_HYDRATION, 0.60, 1.20);
     const fillingPenalty = clamp(1 - Math.max(0, heartRate - 170) / 180, 0.65, 1);
     const targetStrokeVolume = clamp(
         BASE_STROKE_VOLUME * volumeFactor * (1 + 0.42 * exercise) * fillingPenalty,
@@ -627,11 +737,16 @@ function updateCardiovascular(
     const strokeVolume = approachExp(prev.strokeVolume, targetStrokeVolume, 18, dt);
     const cardiacOutput = clamp(heartRate * strokeVolume / 1000, 1.5, 28);
 
+    const vasoplegia = pathophysiology.infectionSeverity / 100
+        * (1 - capacities.vascularToneResponsiveness) * .85;
     const targetSvr = clamp(
         1000
         * (1 - 0.35 * exercise)
         * (1 + 0.16 * stressAboveBasal)
-        * (1 + adrenalineAboveBasal * 0.0015)
+        * (1 + hormones.adrenergicVascularDrive * .08)
+        * (1 + hormones.glucocorticoidVascularSupport)
+        * (.4 + .6 * capacities.vascularToneResponsiveness)
+        * (1 - vasoplegia)
         * (1 + hypovolemia * 0.28),
         450,
         1900
@@ -681,20 +796,24 @@ function updateRespiratory(
     exchange: RespiratoryExchange,
     exerciseFraction: number,
     commandedDrive: number,
+    capacities: PhysiologicalCapacities,
+    pathophysiology: PathophysiologyState,
     dt: number
 ): RespiratoryState {
-    const drive = clamp(finiteOr(commandedDrive, 100), 35, 300) / 100;
+    const ventilatoryCapacity = clamp(capacities.ventilatoryCapacity, .25, 1);
+    const drive = clamp(finiteOr(commandedDrive, 100), 35, 300) / 100 * ventilatoryCapacity;
     const co2Feedback = clamp((prev.paco2 - 40) * 0.18, -3, 12);
     const acidFeedback = clamp((7.4 - acidBase.pH) * 18, -2, 10);
     const targetRespiratoryRate = clamp(
         14 * drive + exerciseFraction * 18 + co2Feedback + acidFeedback,
         5,
-        55
+        55 * ventilatoryCapacity + 5
     );
+    const complianceFactor = clamp(prev.lungCompliance / 100, .3, 1.2);
     const targetTidalVolume = clamp(
-        500 * Math.pow(drive, 0.3) + exerciseFraction * 750,
+        (500 * Math.pow(Math.max(.2, drive), 0.3) + exerciseFraction * 750) * complianceFactor,
         280,
-        2200
+        2200 * ventilatoryCapacity
     );
     const respiratoryRate = approachExp(prev.respiratoryRate, targetRespiratoryRate, 5, dt);
     const tidalVolume = approachExp(prev.tidalVolume, targetTidalVolume, 7, dt);
@@ -715,7 +834,17 @@ function updateRespiratory(
     const alveolarOxygen = INSPIRED_OXYGEN_FRACTION
         * (STANDARD_ATMOSPHERIC_PRESSURE - WATER_VAPOUR_PRESSURE)
         - paco2 / RESPIRATORY_QUOTIENT;
-    const targetPao2 = clamp(alveolarOxygen - 5, 20, 110);
+    const diseaseShunt = pathophysiology.preset === 'respiratory-failure'
+        ? Math.max(.18, prev.shuntFraction)
+        : pathophysiology.preset === 'sepsis' ? .08 : .03;
+    const shuntFraction = approachExp(prev.shuntFraction, diseaseShunt, 3 * 60, dt);
+    const vqTarget = pathophysiology.preset === 'respiratory-failure'
+        ? Math.min(.68, prev.vqEfficiency)
+        : pathophysiology.preset === 'sepsis' ? .88 : .98;
+    const vqEfficiency = approachExp(prev.vqEfficiency, vqTarget, 3 * 60, dt);
+    const aaGradient = 5 + (1 - vqEfficiency) * 90;
+    const ventilatedPao2 = clamp(alveolarOxygen - aaGradient, 20, 110);
+    const targetPao2 = clamp(ventilatedPao2 * (1 - shuntFraction) + 40 * shuntFraction, 20, 110);
     const pao2 = approachExp(prev.pao2, targetPao2, 8, dt);
     // A Hill coefficient of 3 closely matches the clinically relevant upper
     // portion of the oxyhaemoglobin dissociation curve used by the monitor.
@@ -732,6 +861,8 @@ function updateRespiratory(
         spo2,
         pao2,
         paco2,
+        shuntFraction,
+        vqEfficiency,
     };
 }
 
@@ -740,17 +871,23 @@ function updateAcidBase(
     energy: EnergyMatrix,
     paco2: number,
     nutrients: NutrientState,
+    renal: RenalRegulationState,
+    pathophysiology: PathophysiologyState,
     dt: number
 ): AcidBaseBalance {
     const lactateAcidLoad = Math.max(0, energy.lactateLevel - 1) * 0.85;
+    const ketoneAcidLoad = Math.max(0, nutrients.ketones - .6) * 1.25;
     const deficitAcidLoad = Math.min(4, energy.energyDeficit * 0.02);
-    const chronicRespiratoryCompensation = clamp((paco2 - 40) * 0.06, -4, 8);
+    const renalCapacity = clamp(renal.gfr / 125, .05, 1);
+    const chronicRespiratoryCompensation = clamp((paco2 - 40) * 0.06, -4, 8) * renalCapacity;
+    const renalFailureAcidLoad = Math.max(0, 1 - renalCapacity) * 5
+        * (pathophysiology.preset === 'renal-failure' ? 1 : .25);
     const targetBicarbonate = clamp(
-        24 - lactateAcidLoad - deficitAcidLoad + chronicRespiratoryCompensation,
+        24 - lactateAcidLoad - ketoneAcidLoad - deficitAcidLoad - renalFailureAcidLoad + chronicRespiratoryCompensation,
         10,
         40
     );
-    const bicarbonateTau = lactateAcidLoad > 0.5 ? 12 * 60 : 30 * 60;
+    const bicarbonateTau = lactateAcidLoad + ketoneAcidLoad > 0.5 ? 12 * 60 : 30 * 60 / renalCapacity;
     const bicarbonate = clamp(
         approachExp(prev.bicarbonate, targetBicarbonate, bicarbonateTau, dt),
         8,
@@ -798,6 +935,9 @@ function updateAllostaticLoad(
     cardio: CardiovascularState,
     respiratory: RespiratoryState,
     stress: number,
+    sleep: number,
+    pathophysiology: PathophysiologyState,
+    cellularFeedback: SimulationInput['cellularFeedback'],
     dt: number
 ): AllostaticLoad {
     const stressAboveBasal = Math.max(0, stress - 20);
@@ -829,11 +969,18 @@ function updateAllostaticLoad(
         0,
         100
     );
+    const contextualInflammationTarget = clamp(
+        inflammationTarget
+        + pathophysiology.infectionSeverity * .85
+        + (cellularFeedback?.inflammationSignal ?? 0) * 35,
+        0,
+        100
+    );
 
     const metabolicStress = approachExp(prev.metabolicStress, metabolicTarget, 60, dt);
     const cardiovascularStress = approachExp(prev.cardiovascularStress, cardiovascularTarget, 60, dt);
     const oxidativeStress = approachExp(prev.oxidativeStress, oxidativeTarget, 90, dt);
-    const inflammationLevel = approachExp(prev.inflammationLevel, inflammationTarget, 5 * 60, dt);
+    const inflammationLevel = approachExp(prev.inflammationLevel, contextualInflammationTarget, 5 * 60, dt);
     const loadTarget = clamp(
         5 + (metabolicStress + cardiovascularStress + oxidativeStress + inflammationLevel) / 4,
         0,
@@ -843,7 +990,8 @@ function updateAllostaticLoad(
 
     const dtHours = dt / 3600;
     const fatigueGain = Math.max(0, currentLoad - 20) * 0.08 * dtHours;
-    const fatigueRecovery = currentLoad < 20 ? prev.recoveryRate * dtHours : 0;
+    const recoveryMultiplier = clamp(sleep / 80, .15, 1.25);
+    const fatigueRecovery = currentLoad < 35 ? prev.recoveryRate * recoveryMultiplier * dtHours : 0;
     const fatigueLevel = clamp(prev.fatigueLevel + fatigueGain - fatigueRecovery, 0, 100);
 
     return {
@@ -865,7 +1013,10 @@ function updateOrgans(
     acidBase: AcidBaseBalance,
     energy: EnergyMatrix,
     nutrients: NutrientState,
-    hormones: HormonalEffectsResult,
+    hormones: EndocrineEffectsResult,
+    capacities: PhysiologicalCapacities,
+    pathophysiology: PathophysiologyState,
+    cellularFeedback: SimulationInput['cellularFeedback'],
     dt: number
 ): OrganSystem {
     const entries = Object.entries(prev) as Array<[keyof OrganSystem, OrganState]>;
@@ -880,6 +1031,9 @@ function updateOrgans(
             energy,
             nutrients,
             hormones,
+            capacities,
+            pathophysiology,
+            cellularFeedback,
             dt
         );
     }
@@ -894,11 +1048,18 @@ function updateOrgan(
     acidBase: AcidBaseBalance,
     energy: EnergyMatrix,
     nutrients: NutrientState,
-    hormones: HormonalEffectsResult,
+    hormones: EndocrineEffectsResult,
+    capacities: PhysiologicalCapacities,
+    pathophysiology: PathophysiologyState,
+    cellularFeedback: SimulationInput['cellularFeedback'],
     dt: number
 ): OrganState {
     const flowRatio = clamp(cardio.cardiacOutput / 4.9, 0.2, 3);
     const protectedOrgan = key === 'brain' || key === 'heart';
+    const organCapacity = key === 'kidneys'
+        ? capacities.renalFunction
+        : key === 'lungs' ? capacities.ventilatoryCapacity
+            : key === 'muscles' ? capacities.mitochondrialCapacity : 1;
     const perfusionTarget = clamp(
         100 * Math.pow(flowRatio, protectedOrgan ? 0.35 : 0.65),
         protectedOrgan ? 25 : 10,
@@ -911,15 +1072,23 @@ function updateOrgan(
     const hypoxicInjury = Math.max(0, 88 - oxygenation) * 0.003;
     const ischemicInjury = Math.max(0, 55 - perfusion) * 0.002;
     const phInjury = Math.max(0, Math.abs(acidBase.pH - 7.4) - 0.20) * 0.45;
-    const energeticInjury = Math.max(0, energy.energyDeficit - 20) * 0.0015;
+    const energeticInjury = Math.max(0, energy.energyDeficit - 20) * 0.0015
+        + Math.max(0, .5 - organCapacity) * .025;
     const glucoseInjury = key === 'brain' ? Math.max(0, 55 - nutrients.bloodGlucose) * 0.004 : 0;
-    const injuryRatePerMin = hypoxicInjury + ischemicInjury + phInjury + energeticInjury + glucoseInjury;
+    const septicInjury = pathophysiology.infectionSeverity / 100
+        * (key === 'kidneys' || key === 'lungs' ? .035 : .018);
+    const observedTissueInjury = key === 'muscles'
+        ? Math.max(0, .7 - (cellularFeedback?.viabilitySignal ?? 1)) * .025
+        : 0;
+    const injuryRatePerMin = hypoxicInjury + ischemicInjury + phInjury + energeticInjury + glucoseInjury + septicInjury + observedTissueInjury;
     const healthyForRepair = oxygenation > 94
         && perfusion > 85
         && acidBase.pH >= 7.35
         && acidBase.pH <= 7.45
         && energy.energyDeficit < 5;
-    const repairRatePerMin = healthyForRepair ? 0.025 : 0;
+    const repairRatePerMin = healthyForRepair
+        ? 0.025 * (.65 + hormones.regulation.anabolicSensitivity * .35)
+        : 0;
     const damage = clamp(
         prev.damage + (injuryRatePerMin - repairRatePerMin) * dt / 60,
         0,
@@ -979,7 +1148,7 @@ function determineCauseOfDeath(
 
 function generateWarnings(state: PhysiologyState): PhysiologicalWarning[] {
     const warnings: PhysiologicalWarning[] = [];
-    const { acidBase, cardiovascular, respiratory, nutrients, energy } = state;
+    const { acidBase, cardiovascular, respiratory, nutrients, energy, renal } = state;
 
     pushWarning(
         warnings,
@@ -989,7 +1158,8 @@ function generateWarnings(state: PhysiologyState): PhysiologicalWarning[] {
         Math.abs(acidBase.pH - 7.4) > 0.2 ? 'severe' : 'moderate',
         acidBase.pH < 7.35
             ? 'Aumentar ventilação quando houver hipercapnia e tratar a causa metabólica.'
-            : 'Reduzir hiperventilação e revisar perdas de ácido ou excesso de base.'
+            : 'Reduzir hiperventilação e revisar perdas de ácido ou excesso de base.',
+        'vitals',
     );
     pushWarning(
         warnings,
@@ -999,7 +1169,8 @@ function generateWarnings(state: PhysiologyState): PhysiologicalWarning[] {
         nutrients.bloodGlucose < 55 || nutrients.bloodGlucose > 180 ? 'severe' : 'moderate',
         nutrients.bloodGlucose < 70
             ? 'Fornecer substrato e reduzir captação excessiva; glucagon depende de glicogênio hepático.'
-            : 'Aumentar captação insulinodependente e reduzir aporte de glicose.'
+            : 'Aumentar captação insulinodependente e reduzir aporte de glicose.',
+        'vitals',
     );
     pushWarning(
         warnings,
@@ -1007,7 +1178,8 @@ function generateWarnings(state: PhysiologyState): PhysiologicalWarning[] {
         cardiovascular.heartRate,
         [60, 100],
         cardiovascular.heartRate < 40 || cardiovascular.heartRate > 150 ? 'severe' : 'mild',
-        'Revisar comando autonômico, volume circulante, demanda e catecolaminas.'
+        'Revisar comando autonômico, volume circulante, demanda e catecolaminas.',
+        'vitals',
     );
     pushWarning(
         warnings,
@@ -1015,7 +1187,8 @@ function generateWarnings(state: PhysiologyState): PhysiologicalWarning[] {
         respiratory.spo2,
         [95, 100],
         respiratory.spo2 < 85 ? 'severe' : 'moderate',
-        'Aumentar ventilação alveolar e avaliar perfusão e troca gasosa.'
+        'Aumentar ventilação alveolar e avaliar perfusão e troca gasosa.',
+        'tissue',
     );
     pushWarning(
         warnings,
@@ -1023,7 +1196,8 @@ function generateWarnings(state: PhysiologyState): PhysiologicalWarning[] {
         nutrients.sodium,
         [135, 145],
         nutrients.sodium < 125 || nutrients.sodium > 155 ? 'severe' : 'moderate',
-        'Ajustar água absorvida e reabsorção renal lentamente para evitar correção osmótica rápida.'
+        'Ajustar água absorvida e reabsorção renal lentamente para evitar correção osmótica rápida.',
+        'vitals',
     );
     pushWarning(
         warnings,
@@ -1031,7 +1205,8 @@ function generateWarnings(state: PhysiologyState): PhysiologicalWarning[] {
         nutrients.hydration,
         [38, 46],
         nutrients.hydration < 34 || nutrients.hydration > 50 ? 'severe' : 'moderate',
-        'Equilibrar ingestão/absorção de água, suor e excreção renal.'
+        'Equilibrar ingestão/absorção de água, suor e excreção renal.',
+        'tissue',
     );
     pushWarning(
         warnings,
@@ -1039,8 +1214,38 @@ function generateWarnings(state: PhysiologyState): PhysiologicalWarning[] {
         energy.lactateLevel,
         [0.5, 2],
         energy.lactateLevel > 4 ? 'severe' : 'moderate',
-        'Melhorar oferta oxidativa ou reduzir demanda glicolítica.'
+        'Melhorar oferta oxidativa ou reduzir demanda glicolítica.',
+        'mitochondria',
     );
+
+    pushWarning(
+        warnings,
+        'Potássio plasmático',
+        nutrients.potassium,
+        [3.5, 5],
+        nutrients.potassium < 2.8 || nutrients.potassium > 6 ? 'severe' : 'moderate',
+        'Revisar filtração renal, aldosterona, acidose e deslocamento por insulina.',
+        'vitals',
+    );
+    pushWarning(
+        warnings,
+        'Corpos cetônicos',
+        nutrients.ketones,
+        [.1, .6],
+        nutrients.ketones > 3 ? 'severe' : 'moderate',
+        'Restaurar ação efetiva da insulina, hidratação e perfusão renal.',
+        'vitals',
+    );
+    if (renal.gfr < 60) {
+        warnings.push({
+            parameter: 'Filtração glomerular',
+            currentValue: renal.gfr,
+            normalRange: [90, 140],
+            severity: renal.gfr < 30 ? 'severe' : 'moderate',
+            recommendation: 'Corrigir perfusão e considerar a capacidade renal estrutural do cenário.',
+            navigationTarget: 'vitals',
+        });
+    }
 
     if (energy.energyDeficit > 10) {
         warnings.push({
@@ -1049,6 +1254,7 @@ function generateWarnings(state: PhysiologyState): PhysiologicalWarning[] {
             normalRange: [0, 10],
             severity: energy.energyDeficit > 50 ? 'severe' : 'moderate',
             recommendation: 'Reduzir demanda e restaurar oxigênio, substratos e fosfocreatina.',
+            navigationTarget: 'mitochondria',
         });
     }
     return warnings;
@@ -1060,10 +1266,11 @@ function pushWarning(
     value: number,
     normalRange: [number, number],
     severity: PhysiologicalWarning['severity'],
-    recommendation: string
+    recommendation: string,
+    navigationTarget?: PhysiologicalWarning['navigationTarget'],
 ): void {
     if (value < normalRange[0] || value > normalRange[1]) {
-        warnings.push({ parameter, currentValue: value, normalRange, severity, recommendation });
+        warnings.push({ parameter, currentValue: value, normalRange, severity, recommendation, navigationTarget });
     }
 }
 
@@ -1118,24 +1325,6 @@ function generatePhysiologicalEvents(
         });
     }
     return events;
-}
-
-function hormoneUpperLimit(hormone: keyof HormonalProfile): number {
-    const limits: Record<keyof HormonalProfile, number> = {
-        insulin: 300,
-        gh: 100,
-        testosterone: 3000,
-        igf1: 1000,
-        cortisol: 150,
-        glucagon: 1000,
-        adrenaline: 3000,
-        noradrenaline: 5000,
-        t3: 800,
-        t4: 60,
-        tsh: 100,
-        mTORActivity: 100,
-    };
-    return limits[hormone];
 }
 
 function approachExp(current: number, target: number, timeConstantSec: number, dt: number): number {

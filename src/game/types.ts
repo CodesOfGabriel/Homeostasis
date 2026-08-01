@@ -82,6 +82,7 @@ export interface NutrientState {
     hydration: number;            // L - Volume total de água corporal
     sodium: number;               // mmol/L - Sódio (135-145 normal)
     potassium: number;            // mmol/L - Potássio (3.5-5.0 normal)
+    ketones: number;              // mmol/L - Corpos cetônicos circulantes (<0.6 basal)
 
     // Estado metabólico
     fedState: boolean;            // true = fed, false = fasted
@@ -123,6 +124,7 @@ export interface HormonalProfile {
  * Representa uma ação hormonal que o jogador pode executar
  */
 export interface HormonalAction {
+    actionId: string;             // ID da configuração única que originou a ação
     hormone: keyof HormonalProfile;
     amount: number;               // Quantidade a liberar (em unidades do hormônio)
     duration: number;             // ms - Tempo restante do efeito
@@ -178,6 +180,98 @@ export interface RespiratoryState {
     // Mecânica
     lungCompliance: number;       // mL/cmH2O - Complacência pulmonar
     deadSpace: number;            // mL - Espaço morto anatômico
+    shuntFraction: number;        // 0-0.6 - Fração de shunt fisiológico/patológico
+    vqEfficiency: number;         // 0-1 - Eficiência da relação ventilação/perfusão
+}
+
+// ============================================================================
+// REGULATORY CAPACITY & PATHOPHYSIOLOGY
+// ============================================================================
+
+export type DiseasePreset =
+    | 'healthy'
+    | 'type1-diabetes'
+    | 'type2-diabetes'
+    | 'respiratory-failure'
+    | 'renal-failure'
+    | 'sepsis'
+    | 'hyperthyroidism'
+    | 'adrenal-insufficiency';
+
+/** Reservas latentes: doenças alteram capacidades, não marcadores isolados. */
+export interface PhysiologicalCapacities {
+    pancreaticBetaReserve: number;
+    insulinSensitivity: number;
+    hepaticGlucoseResponsiveness: number;
+    adrenalReserve: number;
+    thyroidGlandCapacity: number;
+    renalFunction: number;
+    ventilatoryCapacity: number;
+    vascularToneResponsiveness: number;
+    immuneActivation: number;
+    mitochondrialCapacity: number;
+}
+
+/** Estado dos eixos, exposição acumulada e sensibilidade efetora. */
+export interface EndocrineRegulationState {
+    hpaDrive: number;
+    sympatheticDrive: number;
+    thyroidDrive: number;
+    insulinReceptorSensitivity: number;
+    adrenergicReceptorSensitivity: number;
+    glucocorticoidSensitivity: number;
+    anabolicSensitivity: number;
+    cortisolExposure: number;
+    catecholamineExposure: number;
+    thyroidExposure: number;
+}
+
+export interface RenalRegulationState {
+    gfr: number;                  // mL/min
+    urineFlow: number;            // mL/min
+    adhActivity: number;          // 0-100
+    aldosteroneActivity: number;  // 0-100
+    raasActivity: number;         // 0-100
+}
+
+export interface PathophysiologyState {
+    preset: DiseasePreset;
+    diseaseBurden: number;        // 0-100
+    infectionSeverity: number;    // 0-100
+    capillaryLeak: number;        // fração 0-0.55
+    osmoticDiuresis: number;
+    ketoneProduction: number;
+}
+
+export interface CellularFeedback {
+    lactateFlux: number;
+    carbonDioxideFlux: number;
+    inflammationSignal: number;
+    oxygenDemand: number;
+    viabilitySignal: number;
+    barrierFailureSignal: number;
+    apoptoticSignal: number;
+}
+
+/**
+ * Contexto imposto pelo motor de eventos. Ele continua sendo uma entrada do
+ * modelo, mas não é uma configuração manipulável pelo jogador.
+ */
+export interface PhysiologicalContextFactors {
+    exercise: number;
+    nutrition: number;
+    stress: number;
+    sleep: number;
+    temperature: number;
+}
+
+export interface CausalTrace {
+    id: string;
+    title: string;
+    context: string;
+    steps: string[];
+    timestamp: number;
+    severity: 'info' | 'warning' | 'critical';
 }
 
 // ============================================================================
@@ -277,6 +371,10 @@ export interface PhysiologyState {
     energy: EnergyMatrix;
     nutrients: NutrientState;
     hormones: HormonalProfile;
+    endocrine: EndocrineRegulationState;
+    capacities: PhysiologicalCapacities;
+    renal: RenalRegulationState;
+    pathophysiology: PathophysiologyState;
 
     // Organ Systems
     cardiovascular: CardiovascularState;
@@ -294,6 +392,7 @@ export interface PhysiologyState {
     basalMetabolicRate: number;   // kcal/day - TMB
     totalEnergyExpenditure: number; // kcal/day - TDEE
     activityLevel: number;        // 0-100 - Nível de atividade física
+    bodyTemperature: number;      // °C - Temperatura corporal central
 
     // Time
     timeElapsed: number;          // seconds - Tempo de simulação
@@ -315,19 +414,14 @@ export interface PhysiologyState {
 export interface SimulationInput {
     deltaTime: number;            // seconds - Tempo desde último tick
     hormonalActions: HormonalAction[]; // Ações hormonais ativas
-    externalFactors: {
-        exercise: number;           // 0-100 - Intensidade de exercício
-        nutrition: number;          // 0-100 - Qualidade nutricional
-        stress: number;             // 0-100 - Estresse psicológico
-        sleep: number;              // 0-100 - Qualidade do sono
-        temperature: number;        // °C - Temperatura ambiente
-    };
+    externalFactors: PhysiologicalContextFactors;
     interventions: {
         heartRateTarget: number;          // bpm - comando autonômico/pacing desejado
         ventilationDrive: number;         // % - drive ventilatório relativo ao basal
         renalWaterReabsorption: number;   // % do filtrado reabsorvido
         waterAbsorptionRate: number;      // mL/min absorvidos no trato gastrointestinal
     };
+    cellularFeedback?: CellularFeedback;
 }
 
 /**
@@ -349,6 +443,7 @@ export interface PhysiologicalEvent {
     message: string;
     timestamp: number;
     affectedSystems: string[];
+    causalTrace?: CausalTrace;
 }
 
 /**
@@ -360,6 +455,7 @@ export interface PhysiologicalWarning {
     normalRange: [number, number];
     severity: 'mild' | 'moderate' | 'severe';
     recommendation: string;
+    navigationTarget?: 'tissue' | 'mitochondria' | 'defense' | 'vitals';
 }
 
 // ============================================================================
@@ -395,5 +491,4 @@ export const PHYSIOLOGY_CONSTANTS = {
     // Time Constants
     PCR_RECOVERY_HALF_LIFE: 30,   // seconds
     LACTATE_CLEARANCE_RATE: 0.3,  // mmol/L/min
-    HORMONE_HALF_LIFE: 180,       // seconds (average)
 } as const;

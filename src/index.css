@@ -59,7 +59,6 @@ button:disabled { cursor: not-allowed; }
   .glass-hover:hover { border-color: rgba(217,180,95,.4); box-shadow: inset 0 1px 0 rgba(255,255,255,.1), 0 0 24px -4px rgba(217,180,95,.25), 0 20px 50px -20px rgba(0,0,0,.75); }
   .panel-label { @apply flex items-center gap-2 text-[10px] font-medium uppercase text-muted-foreground; letter-spacing: .12em; }
   .action-button { @apply rounded-lg border border-primary/25 bg-black/20 px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-foreground transition-all hover:border-primary/60 hover:bg-primary/10 disabled:opacity-40 disabled:hover:border-primary/25 disabled:hover:bg-black/20; }
-  .range-control { @apply h-1.5 w-full cursor-pointer appearance-none rounded-full bg-white/10 accent-primary; }
   .help-tip[open] > summary { @apply border-primary/60 bg-primary/10 text-primary; }
   .help-tip summary::-webkit-details-marker { display: none; }
   .substrate-button {

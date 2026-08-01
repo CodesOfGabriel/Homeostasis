@@ -1,16 +1,15 @@
-import { Activity, Atom, Dna, Hexagon, LifeBuoy, Pause, Play, Settings, ShieldHalf } from 'lucide-react';
+import { Activity, Atom, Hexagon, LifeBuoy, Pause, Play, Settings, ShieldHalf } from 'lucide-react';
 import type { CellularRoutineEvent } from '../../game/cellularTypes';
 import type { PhysiologicalEvent } from '../../game/types';
 import { cn, GlassPanel } from './ui';
 
 export type SimulatorTab = 'tissue' | 'intracellular' | 'machinery' | 'system';
-export type StepKey = 'tissue' | 'mitochondria' | 'defense' | 'genome' | 'vitals';
+export type StepKey = 'tissue' | 'mitochondria' | 'defense' | 'vitals';
 
 const STEPS: Array<{ id: StepKey; label: string; icon: typeof Activity }> = [
   { id: 'tissue', label: 'Tecido', icon: LifeBuoy },
   { id: 'mitochondria', label: 'Mitocôndria', icon: Atom },
   { id: 'defense', label: 'Defesa', icon: ShieldHalf },
-  { id: 'genome', label: 'Genoma', icon: Dna },
   { id: 'vitals', label: 'Sinais vitais', icon: Activity },
 ];
 
@@ -72,7 +71,9 @@ export function TopNav({ day, clock, condition, healthy, events, routine, onSett
 }
 
 export function Playback({ running, speed, onToggle, onSpeed }: { running: boolean; speed: number; onToggle: () => void; onSpeed: () => void }) {
-  return <GlassPanel className="flex items-center gap-1 p-1.5"><button type="button" onClick={onToggle} aria-label="Pausar simulação" className={cn('grid size-9 place-items-center rounded-md', !running ? 'text-primary' : 'text-muted-foreground hover:text-foreground')}><Pause className="size-4"/></button><button type="button" onClick={onToggle} aria-label="Executar simulação" className={cn('grid size-9 place-items-center rounded-md', running ? 'text-primary' : 'text-muted-foreground hover:text-foreground')}><Play className="size-4 fill-current"/></button><span className="mx-1 h-5 w-px bg-white/10"/><button type="button" onClick={onSpeed} className="h-9 min-w-11 px-2 text-sm font-medium tabular-nums text-foreground hover:text-primary" aria-label="Alterar velocidade">{speed}x</button></GlassPanel>;
+  const Icon = running ? Pause : Play;
+  const label = running ? 'Pausar simulação' : 'Executar simulação';
+  return <GlassPanel className="flex items-center gap-1 p-1.5"><button type="button" onClick={onToggle} aria-label={label} title={label} className="grid size-11 place-items-center rounded-md text-primary hover:bg-primary/10"><Icon className={cn('size-4', !running && 'fill-current')}/></button><span className="mx-1 h-5 w-px bg-white/10"/><button type="button" onClick={onSpeed} className="h-11 min-w-11 px-2 text-sm font-medium tabular-nums text-foreground hover:text-primary" aria-label="Alterar velocidade">{speed}x</button></GlassPanel>;
 }
 
 export function Stepper({ active, onChange }: { active: StepKey; onChange: (step: StepKey) => void }) {

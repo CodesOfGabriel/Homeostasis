@@ -1,10 +1,16 @@
-import { useMemo, useState } from 'react';
+import { lazy, Suspense, useMemo, useState } from 'react';
 import { RotateCcw, X } from 'lucide-react';
 import { useSimulationLoop, useSimulationStore } from '../../game/simulationStore';
-import { IntracellularView, MachineryView, TissueView } from './views';
-import { ClinicalSystemView } from './ClinicalSystemView';
 import { Playback, Stepper, TopNav, type SimulatorTab, type StepKey } from './navigation';
 import { ActionButton, GlassPanel, PanelLabel } from './ui';
+import { GlobalPhysiologyDock } from './GlobalPhysiologyDock';
+import { GlobalReserveStrip } from './GlobalReserveStrip';
+import { PhysiologicalDecisionLayer } from './PhysiologicalDecisionLayer';
+
+const TissueView = lazy(() => import('./views').then(module => ({ default: module.TissueView })));
+const IntracellularView = lazy(() => import('./views').then(module => ({ default: module.IntracellularView })));
+const MachineryView = lazy(() => import('./views').then(module => ({ default: module.MachineryView })));
+const ClinicalSystemView = lazy(() => import('./ClinicalSystemView').then(module => ({ default: module.ClinicalSystemView })));
 
 const speedOptions = [1, 2, 4];
 
@@ -12,7 +18,6 @@ const stepTabs: Record<StepKey, SimulatorTab> = {
   tissue: 'tissue',
   mitochondria: 'machinery',
   defense: 'intracellular',
-  genome: 'intracellular',
   vitals: 'system',
 };
 
@@ -79,10 +84,15 @@ export function Simulator() {
 
       <div className="relative z-10 flex min-h-0 flex-1 flex-col">
         <TopNav day={time.day} clock={time.clock} condition={condition} healthy={condition === 'Estável'} events={events} routine={cellular.routine} onSettings={() => setSettingsOpen(true)} />
-        {activeTab === 'tissue' && <TissueView />}
-        {activeTab === 'intracellular' && <IntracellularView focus={activeStep === 'genome' ? 'genome' : 'defense'} />}
-        {activeTab === 'machinery' && <MachineryView />}
-        {activeTab === 'system' && <ClinicalSystemView focus="vitals" />}
+        {started && <GlobalReserveStrip />}
+        {started && <Suspense fallback={<div className="grid min-h-0 flex-1 place-items-center text-xs uppercase tracking-widest text-muted-foreground">Preparando escala fisiológica…</div>}>
+          {activeTab === 'tissue' && <TissueView />}
+          {activeTab === 'intracellular' && <IntracellularView />}
+          {activeTab === 'machinery' && <MachineryView />}
+          {activeTab === 'system' && <ClinicalSystemView focus="vitals" onNavigate={chooseStep} />}
+        </Suspense>}
+        {started && <GlobalPhysiologyDock />}
+        {started && <PhysiologicalDecisionLayer />}
         <footer className="pointer-events-none absolute inset-x-0 bottom-0 z-30 flex items-end justify-center gap-3 bg-gradient-to-t from-background/85 via-background/30 to-transparent px-4 pb-2 pt-10 lg:px-6">
           <Stepper active={activeStep} onChange={chooseStep} />
           <div className="pointer-events-auto hidden flex-none sm:block xl:absolute xl:bottom-2 xl:right-6"><Playback running={running} speed={speed} onToggle={() => running ? pause() : start()} onSpeed={cycleSpeed} /></div>
@@ -98,6 +108,7 @@ export function Simulator() {
 
       {settingsOpen && <Overlay title="Configurações da simulação" onClose={() => setSettingsOpen(false)}>
         <p className="text-sm leading-relaxed text-muted-foreground">Este é um modelo educacional simplificado e não deve orientar diagnóstico ou tratamento.</p>
+        <div className="mt-4 rounded-lg border border-warning/20 bg-warning/5 px-3 py-2.5 text-[11px] leading-relaxed text-muted-foreground">Exercício, estresse, nutrição, sono, temperatura e desafios fisiopatológicos pertencem aos eventos e não podem ser configurados pelo jogador. Quando uma situação surgir, a simulação pausará e exigirá uma decisão antes de continuar.</div>
         <div className="mt-5 grid grid-cols-2 gap-2"><ActionButton onClick={() => setSettingsOpen(false)}>Continuar</ActionButton><ActionButton onClick={restartSimulation}><RotateCcw className="mr-2 inline size-3.5"/>Reiniciar</ActionButton></div>
       </Overlay>}
 

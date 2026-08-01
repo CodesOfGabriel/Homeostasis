@@ -1,24 +1,22 @@
-import { useMemo, type ReactNode } from 'react';
+import { type ReactNode } from 'react';
 import {
   Activity,
   AlertTriangle,
+  BrainCircuit,
   Droplets,
   FlaskConical,
   Gauge,
   Heart,
   Minus,
   ScrollText,
-  SlidersHorizontal,
   TrendingDown,
   TrendingUp,
   Wind,
-  Zap,
 } from 'lucide-react';
-import { HORMONAL_ACTIONS, isActionSafe } from '../../game/actions';
 import { useSimulationStore } from '../../game/simulationStore';
-import type { PhysiologyState } from '../../game/types';
 import { CardiacRhythmInline } from './CardiacMonitorCard';
-import { ActionButton, GlassPanel, HelpTip, PanelLabel, RangeControl, Sparkline, cn } from './ui';
+import type { StepKey } from './navigation';
+import { ActionButton, GlassPanel, HelpTip, PanelLabel, Sparkline, cn } from './ui';
 
 type TrendDirection = 'up' | 'down' | 'stable';
 
@@ -103,29 +101,13 @@ function SummaryChip({ label, value, good }: { label: string; value: string; goo
   );
 }
 
-export function ClinicalSystemView({ focus }: { focus?: 'vitals' }) {
+export function ClinicalSystemView({ focus, onNavigate }: { focus?: 'vitals'; onNavigate?: (target: StepKey) => void }) {
   const physiology = useSimulationStore(state => state.physiology);
   const history = useSimulationStore(state => state.history);
   const interventions = useSimulationStore(state => state.interventions);
-  const external = useSimulationStore(state => state.externalFactors);
-  const cooldowns = useSimulationStore(state => state.hormonalCooldowns);
   const warnings = useSimulationStore(state => state.activeWarnings);
   const events = useSimulationStore(state => state.recentEvents);
-  const release = useSimulationStore(state => state.releaseHormone);
   const ingestWater = useSimulationStore(state => state.ingestWater);
-  const setHeartRateTarget = useSimulationStore(state => state.setHeartRateTarget);
-  const setVentilationDrive = useSimulationStore(state => state.setVentilationDrive);
-  const setRenalWaterReabsorption = useSimulationStore(state => state.setRenalWaterReabsorption);
-  const setExerciseIntensity = useSimulationStore(state => state.setExerciseIntensity);
-  const setStressLevel = useSimulationStore(state => state.setStressLevel);
-  const setNutrition = useSimulationStore(state => state.setNutrition);
-  const setSleep = useSimulationStore(state => state.setSleep);
-  const safetyState = useMemo(() => ({
-    glucose: physiology.nutrients.bloodGlucose,
-    pH: physiology.acidBase.pH,
-    heartRate: physiology.cardiovascular.heartRate,
-    energyDeficit: physiology.energy.energyDeficit,
-  }), [physiology]);
 
   const primaryStable = physiology.cardiovascular.meanArterialPressure >= 70
     && physiology.cardiovascular.meanArterialPressure <= 105
@@ -146,6 +128,7 @@ export function ClinicalSystemView({ focus }: { focus?: 'vitals' }) {
             <SummaryChip label="Estado primário" value={primaryStable ? 'Estável' : 'Requer atenção'} good={primaryStable}/>
             <SummaryChip label="Oxigenação" value={`${physiology.respiratory.spo2.toFixed(1)}%`} good={physiology.respiratory.spo2 >= 95}/>
             <SummaryChip label="Alertas ativos" value={String(warnings.length)} good={warnings.length === 0}/>
+            <SummaryChip label="Contexto" value={physiology.pathophysiology.preset === 'healthy' ? 'Saudável' : physiology.pathophysiology.preset} good={physiology.pathophysiology.preset === 'healthy'}/>
           </div>
         </header>
 
@@ -171,23 +154,37 @@ export function ClinicalSystemView({ focus }: { focus?: 'vitals' }) {
             <div className="flex items-start justify-between gap-3"><div><PanelLabel icon={<AlertTriangle className="size-4"/>}>Prioridades clínicas</PanelLabel><p className="mt-1 text-[9px] text-muted-foreground">Alterações que exigem atenção primeiro.</p></div><span className={cn('rounded-full border px-2 py-1 font-mono text-[9px]', warnings.length ? 'border-warning/30 bg-warning/5 text-warning' : 'border-good/30 bg-good/5 text-good')}>{warnings.length}</span></div>
             <div className="gold-line my-3 h-px"/>
             <div className="space-y-2">
-              {warnings.length === 0 ? <div className="rounded-lg border border-good/30 bg-good/5 p-3 text-[10px] leading-relaxed text-good">Nenhum alerta crítico. Os parâmetros prioritários permanecem em faixa segura.</div> : warnings.slice(0, 7).map(warning => <div key={warning.parameter} className="rounded-lg border border-warning/30 bg-warning/5 p-3"><div className="flex items-center justify-between gap-2"><strong className="text-[10px] font-medium text-warning">{warning.parameter}</strong><span className="font-mono text-[10px] text-foreground">{warning.currentValue.toFixed(2)}</span></div><p className="mt-1.5 text-[9px] leading-relaxed text-muted-foreground">{warning.recommendation}</p></div>)}
+              {warnings.length === 0 ? <div className="rounded-lg border border-good/30 bg-good/5 p-3 text-[11px] leading-relaxed text-good">Nenhum alerta crítico. Os parâmetros prioritários permanecem em faixa segura.</div> : warnings.slice(0, 7).map(warning => (
+                <button
+                  type="button"
+                  key={warning.parameter}
+                  onClick={() => warning.navigationTarget && onNavigate?.(warning.navigationTarget)}
+                  className="w-full rounded-lg border border-warning/30 bg-warning/5 p-3 text-left transition hover:border-warning/60 disabled:cursor-default"
+                  disabled={!warning.navigationTarget || !onNavigate}
+                >
+                  <div className="flex items-center justify-between gap-2"><strong className="text-[11px] font-medium text-warning">{warning.parameter}</strong><span className="font-mono text-[11px] text-foreground">{warning.currentValue.toFixed(2)}</span></div>
+                  <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">{warning.recommendation}</p>
+                  {warning.navigationTarget && <span className="mt-2 block text-[9px] uppercase tracking-wider text-primary">Ir para a escala relacionada →</span>}
+                </button>
+              ))}
             </div>
           </GlassPanel>
         </div>
 
         <GlassPanel className="p-4">
-          <div><PanelLabel icon={<SlidersHorizontal className="size-4"/>}>Controles de suporte fisiológico</PanelLabel><p className="mt-1 text-[9px] leading-relaxed text-muted-foreground">Ajuste o suporte e acompanhe a resposta observada. Os marcadores não mudam instantaneamente.</p></div>
+          <div><PanelLabel icon={<BrainCircuit className="size-4"/>}>Regulação central e suporte</PanelLabel><p className="mt-1 text-[9px] leading-relaxed text-muted-foreground">Frequência cardíaca, ventilação e retenção renal são resultados. Modifique sua regulação por sinais hormonais ou circuitos hipotalâmicos.</p></div>
           <div className="gold-line my-3 h-px"/>
-          <div className="grid gap-3 xl:grid-cols-[280px_repeat(3,minmax(0,1fr))]">
+          <div className="grid gap-3 sm:grid-cols-2">
             <div className="rounded-xl border border-primary/15 bg-primary/[.035] p-3.5">
               <div className="flex items-start justify-between gap-3"><div><span className="text-[11px] font-medium text-foreground">Reposição hídrica oral</span><p className="mt-1 text-[9px] leading-relaxed text-muted-foreground">Volume ainda em absorção gastrointestinal.</p></div><Droplets className="size-4 text-primary"/></div>
               <strong className="mt-3 block font-mono text-lg font-medium text-primary">{interventions.pendingWaterMl.toFixed(0)} <small className="text-[9px] font-normal text-muted-foreground">mL pendentes</small></strong>
               <div className="mt-3 grid grid-cols-2 gap-2"><ActionButton onClick={() => ingestWater(250)} disabled={interventions.pendingWaterMl >= 2000}>Adicionar 250 mL</ActionButton><ActionButton onClick={() => ingestWater(500)} disabled={interventions.pendingWaterMl >= 2000}>Adicionar 500 mL</ActionButton></div>
             </div>
-            <RangeControl label="Meta de frequência cardíaca" description="Modula a resposta autonômica cardíaca." value={interventions.heartRateTarget} min={45} max={180} unit="bpm" measured={`${physiology.cardiovascular.heartRate.toFixed(0)} bpm`} onChange={setHeartRateTarget}/>
-            <RangeControl label="Estímulo ventilatório" description="Ajusta a intensidade do comando respiratório." value={interventions.ventilationDrive} min={50} max={180} unit="%" measured={`${physiology.respiratory.respiratoryRate.toFixed(1)} respirações/min`} onChange={setVentilationDrive}/>
-            <RangeControl label="Reabsorção renal de água" description="Define a fração de água retida pelos rins." value={interventions.renalWaterReabsorption} min={98.5} max={99.8} step={.1} unit="%" measured={`${physiology.nutrients.hydration.toFixed(2)} L corporais`} onChange={setRenalWaterReabsorption}/>
+            <div className="flex flex-col rounded-xl border border-white/10 bg-black/15 p-3.5">
+              <div className="flex items-start gap-2"><BrainCircuit className="mt-0.5 size-4 shrink-0 text-primary"/><div><strong className="text-[11px] text-foreground">Centro hipotalâmico</strong><p className="mt-1 text-[9px] leading-relaxed text-muted-foreground">Use sinais autonômicos, quimiorreflexos e osmóticos. O motor transformará esses sinais em respostas cardiovasculares, respiratórias e renais.</p></div></div>
+              <div className="mt-3 grid grid-cols-3 gap-2 text-center text-[9px]"><span className="rounded-lg border border-white/8 bg-black/15 px-2 py-2">FC<br/><strong className="font-mono text-foreground">{physiology.cardiovascular.heartRate.toFixed(0)}</strong></span><span className="rounded-lg border border-white/8 bg-black/15 px-2 py-2">FR<br/><strong className="font-mono text-foreground">{physiology.respiratory.respiratoryRate.toFixed(1)}</strong></span><span className="rounded-lg border border-white/8 bg-black/15 px-2 py-2">ADH<br/><strong className="font-mono text-foreground">{physiology.renal.adhActivity.toFixed(0)}%</strong></span></div>
+              <div className="mt-3 rounded-lg border border-primary/15 bg-primary/5 px-3 py-2 text-[9px] leading-relaxed text-primary">Abra o botão flutuante de sinalização e selecione “Hipotálamo”.</div>
+            </div>
           </div>
         </GlassPanel>
 
@@ -210,43 +207,19 @@ export function ClinicalSystemView({ focus }: { focus?: 'vitals' }) {
               <ClinicalMetric label="Água corporal total" value={physiology.nutrients.hydration.toFixed(1)} unit="L" current={physiology.nutrients.hydration} history={history.hydration} reference="38–46 L neste modelo" good={physiology.nutrients.hydration >= 38 && physiology.nutrients.hydration <= 46} epsilon={.02}/>
               <ClinicalMetric label="Diferença de ânions não mensurados" value={physiology.acidBase.anionGap.toFixed(0)} unit="mmol/L" current={physiology.acidBase.anionGap} history={history.anionGap} reference="8–16 mmol/L" good={physiology.acidBase.anionGap >= 8 && physiology.acidBase.anionGap <= 16} epsilon={.08}/>
               <ClinicalMetric label="Déficit energético acumulado" value={physiology.energy.energyDeficit.toFixed(1)} unit="mmol" current={physiology.energy.energyDeficit} history={history.energyDeficit} reference="ideal abaixo de 10 mmol" color="var(--warning)" good={physiology.energy.energyDeficit <= 10} epsilon={.04}/>
+              <ClinicalMetric label="Corpos cetônicos" value={physiology.nutrients.ketones.toFixed(1)} unit="mmol/L" current={physiology.nutrients.ketones} history={[]} reference="0,1–0,6 mmol/L" color="var(--danger)" good={physiology.nutrients.ketones <= .6} epsilon={.02}/>
+              <ClinicalMetric label="Filtração glomerular estimada" value={physiology.renal.gfr.toFixed(0)} unit="mL/min" current={physiology.renal.gfr} history={[]} reference="90–140 mL/min neste modelo" good={physiology.renal.gfr >= 90} epsilon={.2}/>
+              <ClinicalMetric label="Temperatura corporal central" value={physiology.bodyTemperature.toFixed(1)} unit="°C" current={physiology.bodyTemperature} history={[]} reference="36,1–37,2 °C" good={physiology.bodyTemperature >= 36.1 && physiology.bodyTemperature <= 37.2} epsilon={.02}/>
             </ClinicalSection>
           </div>
         </GlassPanel>
 
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,.65fr)]">
+        <div>
           <GlassPanel className="p-4">
-            <div><PanelLabel icon={<Zap className="size-4"/>}>Sinalização hormonal</PanelLabel><p className="mt-1 text-[9px] leading-relaxed text-muted-foreground">Ações regulatórias com indicação, efeito esperado, segurança e tempo de recarga visíveis.</p></div>
+            <PanelLabel icon={<ScrollText className="size-4"/>}>Linha do tempo clínica</PanelLabel>
             <div className="gold-line my-3 h-px"/>
-            <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-              {HORMONAL_ACTIONS.map(action => {
-                const safety = isActionSafe(action.id, safetyState);
-                const cooldown = cooldowns.get(action.hormone) ?? 0;
-                const disabled = !safety.safe || cooldown > 0;
-                const hormoneValue = physiology.hormones[action.hormone as keyof PhysiologyState['hormones']];
-                return <div key={action.id} className="rounded-xl border border-white/8 bg-black/15 p-3.5"><div className="flex items-start justify-between gap-3"><div><strong className="text-[11px] font-medium text-foreground">{action.name}</strong><p className="mt-1 text-[8px] text-muted-foreground">Nível fisiológico atual</p></div><span className="rounded-md border border-primary/20 bg-primary/5 px-2 py-1 font-mono text-[10px] text-primary">{hormoneValue.toFixed(1)}</span></div><p className="mt-2 min-h-10 text-[9px] leading-relaxed text-muted-foreground">{disabled ? (cooldown > 0 ? `Disponível novamente em ${cooldown.toFixed(0)} segundos.` : safety.reason) : action.description}</p><ActionButton className="mt-3 w-full" disabled={disabled} onClick={() => release(action.hormone as keyof PhysiologyState['hormones'], action.baseAmount)}>{cooldown > 0 ? `Recarga: ${cooldown.toFixed(0)} s` : `Executar: ${action.name}`}</ActionButton></div>;
-              })}
-            </div>
+            <ol className="space-y-3">{events.slice(0, 8).map((event, index) => <li key={`${event.timestamp}-${index}`} className="border-l border-primary/30 pl-3"><div className="flex justify-between gap-3"><strong className={cn('text-[10px] font-medium', event.severity === 'critical' ? 'text-danger' : event.severity === 'warning' ? 'text-warning' : 'text-primary')}>{event.type}</strong><span className="font-mono text-[10px] text-muted-foreground">{formatEventTime(event.timestamp)}</span></div><p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{event.message}</p></li>)}</ol>
           </GlassPanel>
-
-          <div className="space-y-4">
-            <GlassPanel className="p-4">
-              <div><PanelLabel icon={<Activity className="size-4"/>}>Contexto fisiológico</PanelLabel><p className="mt-1 text-[9px] text-muted-foreground">Fatores externos que modulam toda a simulação.</p></div>
-              <div className="gold-line my-3 h-px"/>
-              <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
-                <RangeControl label="Intensidade do exercício" value={external.exercise} min={0} max={100} unit="%" onChange={setExerciseIntensity}/>
-                <RangeControl label="Carga de estresse" value={external.stress} min={0} max={100} unit="%" onChange={setStressLevel}/>
-                <RangeControl label="Disponibilidade nutricional" value={external.nutrition} min={0} max={100} unit="%" onChange={setNutrition}/>
-                <RangeControl label="Qualidade do sono" value={external.sleep} min={0} max={100} unit="%" onChange={setSleep}/>
-              </div>
-            </GlassPanel>
-
-            <GlassPanel className="p-4">
-              <PanelLabel icon={<ScrollText className="size-4"/>}>Linha do tempo clínica</PanelLabel>
-              <div className="gold-line my-3 h-px"/>
-              <ol className="space-y-3">{events.slice(0, 8).map((event, index) => <li key={`${event.timestamp}-${index}`} className="border-l border-primary/30 pl-3"><div className="flex justify-between gap-3"><strong className={cn('text-[9px] font-medium', event.severity === 'critical' ? 'text-danger' : event.severity === 'warning' ? 'text-warning' : 'text-primary')}>{event.type}</strong><span className="font-mono text-[9px] text-muted-foreground">{formatEventTime(event.timestamp)}</span></div><p className="mt-1 text-[9px] leading-relaxed text-muted-foreground">{event.message}</p></li>)}</ol>
-            </GlassPanel>
-          </div>
         </div>
       </div>
     </div>
