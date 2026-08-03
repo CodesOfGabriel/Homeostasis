@@ -12,7 +12,7 @@ const resourceMeta: Record<SubstrateKind, { label: string; receptor: string; uni
   glucose: { label: 'Glicose', receptor: 'GLUT4', unit: '1 pacote', icon: Zap, color: 'var(--good)', cost: 'recrutado por insulina e contração', effect: 'Glicólise, piruvato e glicogênio', risk: 'Com pouca oxidação: maior pressão glicolítica e redox' },
   oxygen: { label: 'Oxigênio', receptor: 'difusão de O₂', unit: 'fluxo automático', icon: Wind, color: 'var(--cyan)', cost: 'gradiente de PO₂ + perfusão', effect: 'aceitador final da CTE', risk: 'ROS depende do fluxo ETC e do estado redox, não de um estoque de O₂' },
   fattyAcid: { label: 'Ácido graxo', receptor: 'CD36 / FATP', unit: '0,5 pacote', icon: Flame, color: 'var(--warning)', cost: 'transporte + CPT-1', effect: 'Beta-oxidação de alto rendimento', risk: 'Exige O₂ e eleva pressão redox' },
-  aminoAcid: { label: 'Aminoácido', receptor: 'LAT1', unit: '0,5 pacote', icon: Atom, color: 'var(--primary)', cost: 'cotransporte e gradiente iônico', effect: 'Reparo e síntese proteica', risk: 'Excesso aumenta carga nitrogenada' },
+  aminoAcid: { label: 'Aminoácido', receptor: 'LAT1–4F2hc', unit: '0,5 pacote', icon: Atom, color: 'var(--primary)', cost: 'antiporte de aminoácidos neutros', effect: 'Reparo e síntese proteica', risk: 'Excesso aumenta carga nitrogenada' },
 };
 
 const statusLabels: Record<FlowSubstrateStatus, string> = {
@@ -70,7 +70,9 @@ export function TissueView() {
   const history = useSimulationStore(state => state.history);
   const warnings = useSimulationStore(state => state.activeWarnings);
   const capture = useSimulationStore(state => state.captureCellularSubstrate);
-  const [feedback, setFeedback] = useState('Selecione um substrato para transferi-lo ao meio intracelular.');
+  const running = useSimulationStore(state => state.isRunning);
+  const timeSpeed = useSimulationStore(state => state.timeSpeed);
+  const [feedback, setFeedback] = useState('Observe a entrega capilar ao LEC e selecione a proteína de transporte para captar o substrato.');
   const [selectedKind, setSelectedKind] = useState<SubstrateKind>('oxygen');
   const tissue = cellular.tissue;
   const decisionVisible = Boolean(cellular.routine || scenarioResponse);
@@ -107,7 +109,7 @@ export function TissueView() {
   };
 
   return (
-    <div className={cn('relative z-10 grid min-h-0 flex-1 grid-cols-1 gap-3 px-4 pb-20 lg:px-6', decisionVisible ? 'lg:grid-cols-1 xl:grid-cols-[minmax(0,1fr)_250px]' : 'lg:grid-cols-[230px_minmax(0,1fr)] xl:grid-cols-[230px_minmax(0,1fr)_270px]')}>
+    <div className="relative z-10 grid min-h-0 flex-1 grid-cols-1 gap-3 px-4 pb-20 lg:grid-cols-[230px_minmax(0,1fr)] lg:px-6 xl:grid-cols-[230px_minmax(0,1fr)_270px]">
       {!decisionVisible && <GlassPanel className="relative z-20 hidden min-h-0 max-h-full self-stretch overflow-visible bg-black/25 p-3 lg:flex lg:flex-col">
         <div className="flex items-center gap-2"><PanelLabel icon={<Crosshair className="size-3.5"/>}>Objetivo</PanelLabel><HelpTip title="Como vencer este ciclo?">Mantenha ATP, oxigênio, pH e integridade celular. Prepare reservas sem saturá-las; decisões podem exigir esses recursos.</HelpTip></div><div className="gold-line my-3 h-px"/>
         <h2 className="text-[13px] font-medium">Manter a homeostase tecidual</h2><p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">Equilibre perfusão, gases, energia e pH sem criar outro desequilíbrio.</p>
@@ -117,7 +119,7 @@ export function TissueView() {
         <div className="mt-auto rounded-lg border border-white/8 bg-black/15 p-2.5 text-[9px] leading-relaxed text-muted-foreground"><span className="mb-1 block uppercase tracking-wider text-primary">Leitura ativa</span>{feedback}</div>
       </GlassPanel>}
 
-      <section className="min-h-0 overflow-visible rounded-xl p-1" aria-label="Microambiente tecidual">
+      <section className="min-h-0 overflow-visible rounded-xl p-1 lg:col-start-2 lg:row-start-1" aria-label="Microambiente tecidual">
         <div className="mx-auto flex min-h-full max-w-5xl flex-col justify-end">
           <CellularFlowScene
             available={cellular.pools.available}
@@ -125,8 +127,14 @@ export function TissueView() {
             wasteLoad={cellular.tissue.wasteLoad}
             oxidativeStress={cellular.damage.oxidativeStress}
             membranePotentialMv={cellular.cell.membranePotentialMv}
+            perfusionPercent={cellular.tissue.perfusionPercent}
+            lactateMmolL={cellular.tissue.lactateMmolL}
+            carbonDioxideMmHg={cellular.tissue.carbonDioxideMmHg}
+            running={running}
+            timeSpeed={timeSpeed}
             lastCaptured={cellular.collection.lastKind}
             captureChain={cellular.collection.chain}
+            captureScore={cellular.collection.score}
             chips={flowChips}
             selectedKind={selectedKind}
             onSelect={setSelectedKind}
@@ -146,7 +154,7 @@ export function TissueView() {
         </div>
       </section>
 
-      <GlassPanel className="scrollbar-thin relative z-20 hidden max-h-full self-start overflow-y-auto bg-black/25 p-3 xl:block">
+      <GlassPanel className="scrollbar-thin relative z-20 hidden max-h-full self-start overflow-y-auto bg-black/25 p-3 xl:col-start-3 xl:row-start-1 xl:block">
         <div className="flex items-center justify-between gap-2"><PanelLabel>Status do tecido</PanelLabel><HelpTip title="Faixas de referência" align="right"><p>Faixas funcionais adotadas pelo simulador:</p><ul className="mt-2 space-y-1"><li>pH tecidual: 7,30–7,45</li><li>Tensão de O₂: ≥ 35 mmHg</li><li>ATP celular: ≥ 1,50 mmol/L</li><li>Estresse oxidativo: ≤ 40%</li><li>Potencial de membrana: −80 a −55 mV</li></ul></HelpTip></div><div className="gold-line my-3 h-px"/>
         <div className="space-y-1.5">
           <CompactTissueMetric label="pH tecidual" value={tissue.pH.toFixed(2)} history={[...history.pH, tissue.pH]} good={tissue.pH >= 7.3 && tissue.pH <= 7.45}/>

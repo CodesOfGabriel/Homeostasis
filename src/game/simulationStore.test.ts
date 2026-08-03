@@ -284,6 +284,18 @@ describe('ciclo de gameplay celular', () => {
     expect(captureSubstrate(high, 'oxygen').ok).toBe(false);
   });
 
+  it('abastece glicose e aminoácidos coletáveis pela entrega capilar', () => {
+    const state = initializeCellularState();
+    state.nextRoutineAt = 9999;
+    state.pools.available.glucose = 0;
+    state.pools.available.aminoAcid = 0;
+
+    const delivered = advanceCellularSimulation(state, initializePhysiologyState(), controls, 5).state;
+
+    expect(delivered.pools.available.glucose).toBeGreaterThan(0);
+    expect(delivered.pools.available.aminoAcid).toBeGreaterThan(0);
+  });
+
   it('repara dano e compra automação quando há recursos', () => {
     const initial = initializeCellularState();
     const prepared = {

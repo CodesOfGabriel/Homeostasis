@@ -15,12 +15,15 @@ As cenas são transparentes e preservam `cell-background.png` como contexto anat
 
 ## Visualizações adicionadas
 
-- **Tecido:** fluxo de glicose, O₂, ácido graxo e aminoácidos do vaso até os transportadores de membrana, com chips clicáveis ancorados nas próprias rotas.
-- **Receptores:** hover/foco nos portais de membrana identifica discretamente GLUT4, difusão de O₂, CD36/FATP e LAT1.
+- **Tecido:** a entrega capilar e a captação são populações separadas. As moléculas deixam o lúmen, atravessam o endotélio, sofrem dispersão browniana no LEC e desaparecem gradualmente; outra população nasce no LEC para atravessar a membrana. O HUD lê diretamente os saldos `available` e `captured` de glicose e aminoácidos.
+- **Bicamada fosfolipídica:** cada fosfolipídio tem cabeça polar, glicerol e duas caudas hidrofóbicas voltadas para o núcleo da membrana; uma das caudas recebe a dobra de insaturação. As duas monocamadas têm composição visual assimétrica e colesterol intercalado, sem pulsação de escala.
+- **Proteínas de membrana:** modelos procedurais compactos e opacos usam `0.38×` da escala-base e seguem a topologia estrutural conhecida sem competir com a escala da célula: GLUT4 com 12 hélices em dois feixes de seis; CD36 em hairpin com duas hélices, grande domínio extracelular e glicanos; LAT1 com 12 hélices ligado por dissulfeto à hélice única e ao domínio extracelular de 4F2hc; canal Kv tetrâmero com poro, cavidade e filtro de seletividade centrais. O₂ cruza a bicamada sem receptor ou canal. As legendas são pílulas mínimas; o detalhe permanece no texto acessível.
 - **HUD tecidual:** eventos recentes em uma faixa horizontal; objetivo e foco em 230 px; status em 270 px; detalhe do substrato selecionado em um console compacto alinhado à direita.
 - **Estados de captação:** a interface descreve o mecanismo fisiológico — gradiente favorável, oferta intersticial baixa, excesso, sobrecarga metabólica ou transportador saturado — em vez de estados genéricos como “bloqueado”.
-- **Efluxo:** resíduos e ROS retornam da célula ao vaso, com densidade e velocidade ligadas ao estado fisiológico.
-- **Moléculas:** cada classe possui forma e cor próprias; ATP é representado como um pequeno agrupamento molecular.
+- **Efluxo:** CO₂ sai por difusão, lactato/H⁺ por MCT4 e resíduos por exocitose, com densidade e velocidade ligadas a CO₂ tecidual, lactato, carga de resíduos e estresse oxidativo.
+- **Vesículas:** endocitose por LDLR/clatrina é mostrada como rota lipídica distinta da entrada de ácido graxo livre; exocitose mostra a fusão da vesícula e a liberação de carga no LEC.
+- **Moléculas:** glicose, O₂, ácido graxo, aminoácido, CO₂, lactato e resíduos têm geometrias atômicas instanciadas próprias em `0.24×` da escala-base; o desaparecimento usa uma curva contínua de dissolução em vez de corte abrupto. No LEC, os desvios laterais usam amostras gaussianas `√(2DΔt)` em passo fixo de 140 ms, coeficientes visuais dependentes do tamanho molecular e fronteiras reflexivas. A apresentação interpola essas amostras com `smootherstep`, preservando os pontos estocásticos e removendo o flicker de uma nova amostra por frame.
+- **Ancoragem e profundidade:** a cena molecular usa coordenadas fixas do viewport sobre o fundo anatômico. A camada de decisão sobrepõe o vaso/tecido sem adicionar padding à aba tecidual; Canvas, rótulos moleculares, HUD e painéis ocupam níveis de profundidade separados.
 - **Célula:** membrana pulsa de acordo com o potencial, núcleo e mitocôndrias têm movimento sutil.
 - **Construção:** o receptor adrenérgico representa integralmente a coluna de transportadores; navette mitocondrial e complexo de reparo montam uma peça nova a cada compra.
 - **Cadeia respiratória:** contadores mostram moléculas processadas em equivalentes/min; partículas de elétrons preservam sua fase e recebem novos elementos gradualmente quando o fluxo aumenta.

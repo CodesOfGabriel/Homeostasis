@@ -1,20 +1,23 @@
-import { useEffect, useMemo, useRef } from 'react';
-import { Canvas, useFrame } from '@react-three/fiber';
-import { Line, OrthographicCamera } from '@react-three/drei';
-import {
-  CatmullRomCurve3,
-  Color,
-  IcosahedronGeometry,
-  InstancedMesh,
-  MeshBasicMaterial,
-  Object3D,
-  OctahedronGeometry,
-  SphereGeometry,
-  TetrahedronGeometry,
-  Vector3,
-} from 'three';
+import { useEffect, useMemo, useState } from 'react';
+import { Canvas } from '@react-three/fiber';
+import { OrthographicCamera } from '@react-three/drei';
+import { CatmullRomCurve3, Vector3 } from 'three';
 import type { SubstrateKind, SubstratePool } from '../../game/cellularTypes';
-import { advanceFlowProgress, calculateFlowParticleCount, MAX_FLOW_PARTICLES } from './flowAnimation';
+import {
+  calculateDeliveryParticleCount,
+  calculateUptakeParticleCount,
+  MAX_DELIVERY_PARTICLES,
+  MAX_UPTAKE_PARTICLES,
+  TRANSPORT_MECHANISMS,
+  type TransportMechanism,
+} from './flowAnimation';
+import {
+  DetailedMembraneTransporter,
+  EndocyticVesicle,
+  ExocyticVesicle,
+  IonChannelModel,
+  MolecularFlow,
+} from './MolecularTransportModels';
 
 export type FlowSubstrateStatus = 'available' | 'capturable' | 'cooldown' | 'limited' | 'excess' | 'toxic' | 'blocked' | 'selected';
 
@@ -33,18 +36,48 @@ interface CellularFlowSceneProps {
   wasteLoad: number;
   oxidativeStress: number;
   membranePotentialMv: number;
+  perfusionPercent: number;
+  lactateMmolL: number;
+  carbonDioxideMmHg: number;
+  running: boolean;
+  timeSpeed: number;
   lastCaptured: SubstrateKind | null;
   captureChain: number;
+  captureScore: number;
   chips: Record<SubstrateKind, FlowChipDatum>;
   selectedKind: SubstrateKind;
   onSelect: (kind: SubstrateKind) => void;
 }
 
-const flowMeta: Record<SubstrateKind, { color: string }> = {
-  glucose: { color: '#55be83' },
-  oxygen: { color: '#58bdd0' },
-  fattyAcid: { color: '#e2a54f' },
-  aminoAcid: { color: '#d9b45f' },
+const flowMeta: Record<SubstrateKind, { color: string; molecule: string; transporter: string; mechanism: string; detail: string }> = {
+  glucose: {
+    color: '#55be83',
+    molecule: 'Glicose',
+    transporter: 'GLUT4',
+    mechanism: 'difusão facilitada',
+    detail: 'carreador alterna a abertura; não é um poro livre',
+  },
+  oxygen: {
+    color: '#58bdd0',
+    molecule: 'O₂',
+    transporter: 'Bicamada lipídica',
+    mechanism: 'difusão simples',
+    detail: 'atravessa entre os fosfolipídios, sem receptor ou canal',
+  },
+  fattyAcid: {
+    color: '#e2a54f',
+    molecule: 'Ácido graxo',
+    transporter: 'CD36 / FATP',
+    mechanism: 'transporte assistido',
+    detail: 'ácido graxo livre entra por CD36/FATP; LDL usa outra rota',
+  },
+  aminoAcid: {
+    color: '#d9b45f',
+    molecule: 'Aminoácido',
+    transporter: 'LAT1–4F2hc',
+    mechanism: 'antiporte',
+    detail: 'aminoácido entra enquanto outro deixa a célula',
+  },
 };
 
 const BACKGROUND_WIDTH = 1672;
@@ -61,52 +94,91 @@ function imagePoint([x, y]: ImagePoint, z = .1) {
   );
 }
 
-// Âncoras medidas diretamente em cell-background.png (1672 × 941):
-// lúmen vascular → parede endotelial direita → LEC → membrana celular → LIC.
-const flowPathPixels: Record<SubstrateKind, ImagePoint[]> = {
-  glucose: [[342, 270], [445, 302], [560, 330], [635, 350], [748, 390]],
-  oxygen: [[310, 420], [418, 435], [525, 450], [578, 465], [700, 482]],
-  fattyAcid: [[270, 565], [400, 550], [520, 560], [600, 580], [718, 605]],
-  aminoAcid: [[260, 720], [440, 690], [550, 675], [660, 680], [785, 680]],
+function curveFrom(points: ImagePoint[], z = .13) {
+  return new CatmullRomCurve3(points.map(point => imagePoint(point, z)));
+}
+
+// A entrega termina no LEC: as partículas se dispersam e desaparecem ali.
+const deliveryPaths: Record<SubstrateKind, ImagePoint[]> = {
+  glucose: [[342, 270], [430, 292], [493, 310], [542, 326], [588, 336]],
+  oxygen: [[310, 420], [395, 430], [458, 442], [510, 453], [555, 462]],
+  fattyAcid: [[270, 565], [370, 553], [450, 557], [520, 566], [575, 578]],
+  aminoAcid: [[260, 720], [365, 701], [470, 683], [555, 674], [620, 677]],
 };
 
-const flowCurves = Object.fromEntries((Object.keys(flowPathPixels) as SubstrateKind[]).map(kind => [
-  kind,
-  new CatmullRomCurve3(flowPathPixels[kind].map(point => imagePoint(point))),
-])) as Record<SubstrateKind, CatmullRomCurve3>;
+// Uma nova população nasce no LEC e só então atravessa a membrana.
+const uptakePaths: Record<SubstrateKind, ImagePoint[]> = {
+  glucose: [[575, 336], [608, 341], [635, 350], [680, 369], [748, 390]],
+  oxygen: [[548, 460], [568, 462], [590, 468], [635, 476], [700, 482]],
+  fattyAcid: [[570, 577], [594, 579], [620, 586], [668, 600], [726, 615]],
+  aminoAcid: [[615, 676], [643, 678], [675, 682], [720, 686], [780, 681]],
+};
+
+const deliveryCurves = Object.fromEntries((Object.keys(deliveryPaths) as SubstrateKind[]).map(kind => [kind, curveFrom(deliveryPaths[kind], .12)])) as Record<SubstrateKind, CatmullRomCurve3>;
+const uptakeCurves = Object.fromEntries((Object.keys(uptakePaths) as SubstrateKind[]).map(kind => [kind, curveFrom(uptakePaths[kind], .19)])) as Record<SubstrateKind, CatmullRomCurve3>;
 
 const flowChipPixels: Record<SubstrateKind, ImagePoint> = {
-  glucose: [560, 330],
-  oxygen: [525, 450],
-  fattyAcid: [520, 560],
-  aminoAcid: [550, 675],
+  glucose: [535, 300],
+  oxygen: [490, 430],
+  fattyAcid: [505, 548],
+  aminoAcid: [550, 700],
 };
 
-const receptorMeta: Record<SubstrateKind, { label: string; position: ImagePoint }> = {
-  glucose: { label: 'GLUT4', position: [635, 350] },
-  oxygen: { label: 'Difusão de O₂', position: [578, 465] },
-  fattyAcid: { label: 'CD36 / FATP', position: [600, 580] },
-  aminoAcid: { label: 'LAT1', position: [660, 680] },
+const transporterPixels: Record<SubstrateKind, ImagePoint> = {
+  glucose: [635, 350],
+  oxygen: [590, 468],
+  fattyAcid: [620, 586],
+  aminoAcid: [675, 682],
 };
+
+const transporterRotations: Record<SubstrateKind, number> = {
+  glucose: -.1,
+  oxygen: -.03,
+  fattyAcid: .11,
+  aminoAcid: .16,
+};
+
+const mechanismLabels: Record<TransportMechanism, string> = {
+  'facilitated-diffusion': 'CARREADOR',
+  'simple-diffusion': 'SEM CANAL',
+  'fatty-acid-transport': 'TRANSPORTADOR',
+  antiport: 'ANTIPORTE',
+};
+
+function useReducedMotion() {
+  const [reduced, setReduced] = useState(false);
+  useEffect(() => {
+    const query = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const update = () => setReduced(query.matches);
+    update();
+    query.addEventListener('change', update);
+    return () => query.removeEventListener('change', update);
+  }, []);
+  return reduced;
+}
 
 export function CellularFlowScene(props: CellularFlowSceneProps) {
+  const reducedMotion = useReducedMotion();
   return (
     <div
-      className="pointer-events-none absolute left-1/2 top-[48%] z-0 overflow-hidden"
+      className="cellular-flow-layer pointer-events-none fixed left-1/2 top-[48%] z-[1] isolate overflow-hidden"
       style={{ width: 'max(100vw, 177.683vh)', height: 'max(100vh, 56.280vw)', transform: 'translate(-50%, -48%)' }}
-      aria-label="Fluxos moleculares integrados ao fundo anatômico"
+      aria-label="Mapa molecular: entrega capilar, difusão intersticial, transporte de membrana e efluxo celular"
     >
+      <div className="cellular-flow-depth-plane absolute inset-0 z-[1]" aria-hidden="true"/>
       <Canvas
-        style={{ position: 'absolute', inset: 0 }}
+        style={{ position: 'absolute', inset: 0, zIndex: 2 }}
         dpr={[1, 1.5]}
         gl={{ antialias: true, alpha: true, powerPreference: 'high-performance' }}
         fallback={<div className="grid h-full place-items-center text-xs text-muted-foreground">Visualização 3D indisponível</div>}
       >
         <OrthographicCamera makeDefault manual position={[0, 0, 10]} left={-BACKGROUND_ASPECT} right={BACKGROUND_ASPECT} top={1} bottom={-1} near={.1} far={100}/>
-        <ambientLight intensity={1.8}/>
-        <FlowWorld {...props}/>
+        <FlowWorld {...props} reducedMotion={reducedMotion}/>
       </Canvas>
-      <div className="absolute inset-0 z-10" aria-label="Substratos nos fluxos">
+
+      <div className="absolute inset-0 z-10" aria-label="Controles e identificação dos fluxos">
+        <CompartmentMap available={props.available} captured={props.captured} running={props.running}/>
+
         {(Object.keys(props.chips) as SubstrateKind[]).map(kind => {
           const chip = props.chips[kind];
           const [x, y] = flowChipPixels[kind];
@@ -123,125 +195,196 @@ export function CellularFlowScene(props: CellularFlowSceneProps) {
             style={{ left: `${x / BACKGROUND_WIDTH * 100}%`, top: `${y / BACKGROUND_HEIGHT * 100}%`, '--flow-color': flowMeta[kind].color } as React.CSSProperties}
           >
             <span className="flow-chip-orb" aria-hidden="true"/>
-            <span className="min-w-0"><strong>{chip.label}</strong><small>{chip.value} {chip.unit}</small></span>
-            <span className="flow-chip-direction" aria-hidden="true">{chip.direction === 'in' ? '→' : '←'}</span>
+            <span className="min-w-0"><strong>{chip.label}</strong><small>LEC {props.available[kind].toFixed(2)}</small></span>
+            <span className="flow-chip-direction" aria-hidden="true">⇢</span>
           </button>;
         })}
-        {(Object.keys(receptorMeta) as SubstrateKind[]).map(kind => {
-          const receptor = receptorMeta[kind];
-          const [x, y] = receptor.position;
-          return <span
-            key={`receptor-${kind}`}
-            className="flow-receptor pointer-events-auto"
-            tabIndex={0}
-            aria-label={`Receptor do fluxo de ${props.chips[kind].label}: ${receptor.label}`}
-            style={{ left: `${x / BACKGROUND_WIDTH * 100}%`, top: `${y / BACKGROUND_HEIGHT * 100}%`, '--flow-color': flowMeta[kind].color } as React.CSSProperties}
+
+        {(Object.keys(transporterPixels) as SubstrateKind[]).map(kind => {
+          const meta = flowMeta[kind];
+          const [x, y] = transporterPixels[kind];
+          const selected = props.selectedKind === kind;
+          return <button
+            type="button"
+            key={`transporter-${kind}`}
+            className="flow-transporter-label pointer-events-auto"
+            data-selected={selected}
+            aria-pressed={selected}
+            aria-label={`${meta.molecule}: ${meta.transporter}, ${meta.mechanism}. ${meta.detail}`}
+            title={`${meta.transporter} · ${meta.mechanism}. ${meta.detail}`}
+            onClick={() => props.onSelect(kind)}
+            style={{ left: `${x / BACKGROUND_WIDTH * 100}%`, top: `${y / BACKGROUND_HEIGHT * 100}%`, '--flow-color': meta.color } as React.CSSProperties}
           >
-            <span className="flow-receptor-label">{receptor.label}</span>
-          </span>;
+            <span>{mechanismLabels[TRANSPORT_MECHANISMS[kind]]}</span>
+            <strong>{meta.transporter}</strong>
+          </button>;
         })}
+
+        <FlowAnnotation position={[630, 270]} tone="#78d1dc" title="CANAL IÔNICO · Kv" detail="K⁺ atravessa um poro aquoso; substratos não usam este canal"/>
+        <FlowAnnotation position={[665, 612]} tone="#e2a54f" title="LDLR · ENDOCITOSE" detail="LDL → clatrina → vesícula; rota distinta do ácido graxo livre"/>
+        <FlowAnnotation position={[730, 744]} tone="#dc6658" title="EXOCITOSE" detail="vesícula funde à membrana e libera resíduos no LEC"/>
+        <FlowAnnotation position={[535, 515]} tone="#9db1b7" title="CO₂ · DIFUSÃO PARA FORA" detail="citosol → LEC → sangue, seguindo o gradiente"/>
+        <FlowAnnotation position={[550, 625]} tone="#b16ed1" title="MCT4 · EFLUXO" detail="lactato + H⁺ deixam a célula por cotransporte"/>
       </div>
     </div>
   );
 }
 
-function FlowWorld({ available, captured, wasteLoad, oxidativeStress, membranePotentialMv, lastCaptured, captureChain }: CellularFlowSceneProps) {
-  return (
-    <group>
-      {(Object.keys(flowMeta) as SubstrateKind[]).map((kind, index) => {
-        const meta = flowMeta[kind];
-        // O pool capturado representa moléculas efetivamente colocadas no fluxo.
-        // A oferta extracelular só mantém uma pequena densidade basal na entrada.
-        const count = calculateFlowParticleCount(available[kind], captured[kind]);
-        return <FlowChannel key={kind} kind={kind} curve={flowCurves[kind]} color={meta.color} count={count} speed={.07 + index * .008 + Math.min(4, captureChain) * .006} emphasized={lastCaptured === kind}/>;
-      })}
-      <ToxinFlow wasteLoad={wasteLoad} oxidativeStress={oxidativeStress}/>
-      <MembraneGate position={imagePoint([635, 350], .2).toArray()} color="#55be83" active={lastCaptured === 'glucose'} membranePotentialMv={membranePotentialMv}/>
-      <MembraneGate position={imagePoint([578, 465], .2).toArray()} color="#58bdd0" active={lastCaptured === 'oxygen'} membranePotentialMv={membranePotentialMv}/>
-      <MembraneGate position={imagePoint([600, 580], .2).toArray()} color="#e2a54f" active={lastCaptured === 'fattyAcid'} membranePotentialMv={membranePotentialMv}/>
-      <MembraneGate position={imagePoint([660, 680], .2).toArray()} color="#d9b45f" active={lastCaptured === 'aminoAcid'} membranePotentialMv={membranePotentialMv}/>
-    </group>
-  );
+function CompartmentMap({ available, captured, running }: { available: SubstratePool; captured: SubstratePool; running: boolean }) {
+  return <div className="flow-compartment-map" aria-label="Saldos moleculares por compartimento">
+    <div><span className="flow-compartment-kicker"><i className="bg-danger"/>Lúmen capilar</span><strong>ENTREGA</strong><small>perfusão sanguínea</small></div>
+    <b aria-hidden="true">→</b>
+    <div><span className="flow-compartment-kicker"><i className="bg-cyan"/>LEC coletável</span><strong><PoolValue label="Glicose" value={available.glucose}/> · <PoolValue label="AA" value={available.aminoAcid}/></strong><small>{running ? 'difusão abastecendo o saldo' : 'fluxo pausado'}</small></div>
+    <b aria-hidden="true">→</b>
+    <div><span className="flow-compartment-kicker"><i className="bg-good"/>LIC captado</span><strong><PoolValue label="Glicose" value={captured.glucose}/> · <PoolValue label="AA" value={captured.aminoAcid}/></strong><small>disponível para rotas e reparo</small></div>
+  </div>;
 }
 
-function MembraneGate({ position, color, active, membranePotentialMv }: { position: [number, number, number]; color: string; active: boolean; membranePotentialMv: number }) {
-  const ref = useRef<THREE.Group>(null);
-  useFrame(({ clock }) => {
-    if (!ref.current) return;
-    const voltageGlow = Math.max(0, Math.min(1, (Math.abs(membranePotentialMv) - 45) / 45));
-    const scale = active ? 1.08 + Math.sin(clock.elapsedTime * 8) * .08 : .9 + voltageGlow * .1;
-    ref.current.scale.setScalar(scale);
-    ref.current.rotation.z = Math.sin(clock.elapsedTime * .8) * .08;
-  });
-  return <group ref={ref} position={position}><mesh><torusGeometry args={[.045, .012, 10, 24]}/><meshBasicMaterial color={color} transparent opacity={active ? 1 : .62}/></mesh><mesh rotation={[0, 0, Math.PI / 2]}><cylinderGeometry args={[.013, .013, .075, 12]}/><meshBasicMaterial color="#e9fbff" transparent opacity={active ? .9 : .5}/></mesh></group>;
+function PoolValue({ label, value }: { label: string; value: number }) {
+  const shortLabel = label === 'Glicose' ? 'GLC' : label.toUpperCase();
+  return <span title={`${label}: ${value.toFixed(2)} pacotes`}><span className="flow-pool-label">{shortLabel} </span><em key={value.toFixed(2)}>{value.toFixed(2)}</em></span>;
 }
 
-function FlowChannel({ kind, curve, color, count, speed, emphasized }: { kind: SubstrateKind; curve: CatmullRomCurve3; color: string; count: number; speed: number; emphasized: boolean }) {
-  const mesh = useRef<InstancedMesh>(null);
-  const dummy = useMemo(() => new Object3D(), []);
-  const initialCount = Math.min(count, MAX_FLOW_PARTICLES);
-  const activeCount = useRef(initialCount);
-  const spawnAccumulator = useRef(0);
-  const particleProgress = useRef(Array.from(
-    { length: MAX_FLOW_PARTICLES },
-    (_, index) => index < initialCount ? index / initialCount : 0,
-  ));
-  const geometry = useMemo(() => {
-    if (kind === 'glucose') return new IcosahedronGeometry(.04, 0);
-    if (kind === 'oxygen') return new SphereGeometry(.032, 10, 8);
-    if (kind === 'fattyAcid') return new OctahedronGeometry(.045, 0);
-    return new TetrahedronGeometry(.045, 0);
-  }, [kind]);
-  const material = useMemo(() => new MeshBasicMaterial({ color: new Color(color), transparent: true, opacity: .94 }), [color]);
-  useEffect(() => () => { geometry.dispose(); material.dispose(); }, [geometry, material]);
-  const points = useMemo(() => curve.getPoints(48), [curve]);
-
-  useFrame(({ clock }, delta) => {
-    if (!mesh.current) return;
-
-    const targetCount = Math.min(count, MAX_FLOW_PARTICLES);
-    if (targetCount < activeCount.current) {
-      activeCount.current = targetCount;
-      spawnAccumulator.current = 0;
-    } else if (targetCount > activeCount.current) {
-      spawnAccumulator.current += delta;
-      while (spawnAccumulator.current >= .11 && activeCount.current < targetCount) {
-        particleProgress.current[activeCount.current] = 0;
-        activeCount.current += 1;
-        spawnAccumulator.current -= .11;
-      }
-    }
-
-    mesh.current.count = activeCount.current;
-    for (let index = 0; index < activeCount.current; index += 1) {
-      // Integra o deslocamento frame a frame. Alterar a velocidade não muda a
-      // fase das partículas que já estavam viajando.
-      particleProgress.current[index] = advanceFlowProgress(particleProgress.current[index], speed, delta);
-      const t = particleProgress.current[index];
-      const point = curve.getPointAt(t);
-      const tangent = curve.getTangentAt(t);
-      dummy.position.copy(point);
-      dummy.position.z += Math.sin(index * 2.13 + clock.elapsedTime * 2) * .07;
-      dummy.rotation.set(tangent.y * .4, tangent.x * .4, clock.elapsedTime * .8 + index);
-      const pulse = (emphasized ? 1.28 : 1) * (.86 + Math.sin(clock.elapsedTime * 3 + index) * .12);
-      dummy.scale.setScalar(pulse);
-      dummy.updateMatrix();
-      mesh.current.setMatrixAt(index, dummy.matrix);
-    }
-    mesh.current.instanceMatrix.needsUpdate = true;
-  });
-
-  return <group><Line points={points} color={color} transparent opacity={emphasized ? .42 : .18} lineWidth={emphasized ? 1.4 : .65} dashed dashScale={6} dashSize={.18} gapSize={.28}/><instancedMesh ref={mesh} args={[geometry, material, MAX_FLOW_PARTICLES]}/></group>;
+function FlowAnnotation({ position: [x, y], tone, title, detail }: { position: ImagePoint; tone: string; title: string; detail: string }) {
+  return <span
+    className="flow-annotation"
+    tabIndex={0}
+    style={{ left: `${x / BACKGROUND_WIDTH * 100}%`, top: `${y / BACKGROUND_HEIGHT * 100}%`, '--flow-color': tone } as React.CSSProperties}
+  ><strong>{title}</strong><small>{detail}</small></span>;
 }
 
-function ToxinFlow({ wasteLoad, oxidativeStress }: { wasteLoad: number; oxidativeStress: number }) {
-  const curve = useMemo(() => new CatmullRomCurve3([
-    imagePoint([725, 620], .16),
-    imagePoint([640, 645], .14),
-    imagePoint([545, 650], .12),
-    imagePoint([445, 640], .1),
-    imagePoint([330, 615], .08),
-  ]), []);
-  const count = Math.max(2, Math.min(12, Math.round(2 + wasteLoad * .06 + oxidativeStress * .05)));
-  return <FlowChannel kind="fattyAcid" curve={curve} color="#dc6658" count={count} speed={.045 + oxidativeStress * .0007} emphasized={oxidativeStress > 35}/>;
+function FlowWorld({
+  available,
+  captured,
+  wasteLoad,
+  oxidativeStress,
+  membranePotentialMv,
+  perfusionPercent,
+  lactateMmolL,
+  carbonDioxideMmHg,
+  running,
+  timeSpeed,
+  lastCaptured,
+  captureChain,
+  captureScore,
+  selectedKind,
+  reducedMotion,
+}: CellularFlowSceneProps & { reducedMotion: boolean }) {
+  const perfusionSpeed = Math.max(.45, Math.min(1.55, perfusionPercent / 100));
+  return <group>
+    {(Object.keys(flowMeta) as SubstrateKind[]).map((kind, index) => {
+      const meta = flowMeta[kind];
+      const selected = selectedKind === kind;
+      const active = lastCaptured === kind;
+      return <group key={kind}>
+        <MolecularFlow
+          kind={kind}
+          curve={deliveryCurves[kind]}
+          count={calculateDeliveryParticleCount(available[kind], perfusionPercent)}
+          maxParticles={MAX_DELIVERY_PARTICLES}
+          speed={(kind === 'oxygen' ? .09 : .055 + index * .006) * perfusionSpeed * timeSpeed}
+          running={running}
+          reducedMotion={reducedMotion}
+          fadeStart={.52}
+          brownian
+          emphasized={selected}
+          pathColor={meta.color}
+          pathOpacity={selected ? .16 : .045}
+          moleculeScale={kind === 'oxygen' ? .74 : .82}
+        />
+        <MolecularFlow
+          kind={kind}
+          curve={uptakeCurves[kind]}
+          count={calculateUptakeParticleCount(available[kind], captured[kind], active)}
+          maxParticles={MAX_UPTAKE_PARTICLES}
+          speed={(kind === 'oxygen' ? .11 : .072 + index * .007 + Math.min(5, captureChain) * .006) * timeSpeed}
+          running={running}
+          reducedMotion={reducedMotion}
+          fadeStart={.84}
+          emphasized={selected || active}
+          burstKey={active ? captureScore : 0}
+          pathColor={meta.color}
+          pathOpacity={selected ? .22 : .055}
+          moleculeScale={kind === 'oxygen' ? .76 : .9}
+        />
+        <DetailedMembraneTransporter
+          kind={kind}
+          position={imagePoint(transporterPixels[kind], .24).toArray()}
+          rotation={transporterRotations[kind]}
+          active={active || (kind === 'oxygen' && running)}
+        />
+      </group>;
+    })}
+
+    <IonChannelModel position={imagePoint([630, 270], .22).toArray()} membranePotentialMv={membranePotentialMv} running={running && !reducedMotion}/>
+    <EndocyticVesicle position={imagePoint([640, 610], .25).toArray()} running={running && !reducedMotion} active={selectedKind === 'fattyAcid'}/>
+    <ExocyticVesicle position={imagePoint([760, 720], .26).toArray()} running={running && !reducedMotion} activity={wasteLoad}/>
+    <EffluxWorld
+      wasteLoad={wasteLoad}
+      oxidativeStress={oxidativeStress}
+      lactateMmolL={lactateMmolL}
+      carbonDioxideMmHg={carbonDioxideMmHg}
+      running={running}
+      reducedMotion={reducedMotion}
+      timeSpeed={timeSpeed}
+    />
+  </group>;
+}
+
+function EffluxWorld({ wasteLoad, oxidativeStress, lactateMmolL, carbonDioxideMmHg, running, reducedMotion, timeSpeed }: {
+  wasteLoad: number;
+  oxidativeStress: number;
+  lactateMmolL: number;
+  carbonDioxideMmHg: number;
+  running: boolean;
+  reducedMotion: boolean;
+  timeSpeed: number;
+}) {
+  const co2Curve = useMemo(() => curveFrom([[790, 500], [700, 492], [610, 480], [520, 458], [430, 440]], .16), []);
+  const lactateCurve = useMemo(() => curveFrom([[790, 625], [720, 616], [650, 601], [570, 575], [470, 545]], .17), []);
+  const wasteCurve = useMemo(() => curveFrom([[760, 720], [700, 718], [640, 700], [580, 677], [510, 650]], .2), []);
+  return <group>
+    <MolecularFlow
+      kind="carbonDioxide"
+      curve={co2Curve}
+      count={Math.max(2, Math.min(8, Math.round(2 + Math.max(0, carbonDioxideMmHg - 32) / 8)))}
+      maxParticles={8}
+      speed={(.055 + Math.max(0, carbonDioxideMmHg - 40) * .001) * timeSpeed}
+      running={running}
+      reducedMotion={reducedMotion}
+      fadeStart={.78}
+      brownian
+      pathColor="#9db1b7"
+      pathOpacity={.045}
+      moleculeScale={.82}
+    />
+    <MolecularFlow
+      kind="lactate"
+      curve={lactateCurve}
+      count={Math.max(2, Math.min(8, Math.round(2 + lactateMmolL * .65)))}
+      maxParticles={8}
+      speed={(.045 + lactateMmolL * .002) * timeSpeed}
+      running={running}
+      reducedMotion={reducedMotion}
+      fadeStart={.8}
+      pathColor="#b16ed1"
+      pathOpacity={lactateMmolL > 3 ? .12 : .04}
+      moleculeScale={.9}
+    />
+    <MolecularFlow
+      kind="waste"
+      curve={wasteCurve}
+      count={Math.max(1, Math.min(6, Math.round(1 + wasteLoad * .05 + oxidativeStress * .025)))}
+      maxParticles={6}
+      speed={(.03 + wasteLoad * .0007) * timeSpeed}
+      running={running}
+      reducedMotion={reducedMotion}
+      fadeStart={.68}
+      brownian
+      emphasized={oxidativeStress > 35}
+      pathColor="#dc6658"
+      pathOpacity={.055}
+      moleculeScale={.88}
+    />
+  </group>;
 }

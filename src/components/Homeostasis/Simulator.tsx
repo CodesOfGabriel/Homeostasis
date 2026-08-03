@@ -88,7 +88,7 @@ export function Simulator() {
       <div className="relative z-10 flex min-h-0 flex-1 flex-col">
         <TopNav day={time.day} clock={time.clock} condition={condition} healthy={condition === 'Estável'} events={events} routine={cellular.routine} onSettings={() => setSettingsOpen(true)} />
         {started && <GlobalReserveStrip shifted={decisionVisible} />}
-        <div className={cn('flex min-h-0 flex-1 flex-col transition-[padding] duration-300', decisionVisible && 'lg:pl-[412px]')}>
+        <div className={cn('flex min-h-0 flex-1 flex-col transition-[padding] duration-300', decisionVisible && activeTab !== 'tissue' && 'lg:pl-[412px]')}>
           {started && <Suspense fallback={<div className="grid min-h-0 flex-1 place-items-center text-xs uppercase tracking-widest text-muted-foreground">Preparando escala fisiológica…</div>}>
             {activeTab === 'tissue' && <TissueView />}
             {activeTab === 'intracellular' && <IntracellularView />}
