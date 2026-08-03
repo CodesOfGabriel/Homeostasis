@@ -59,7 +59,7 @@ export const HYPOTHALAMIC_SIGNALS: HypothalamicSignalDefinition[] = [
         label: 'Reforçar resposta quimiorreflexa',
         shortLabel: 'Quimiorreflexo ↑',
         description: 'Amplifica o drive respiratório central diante de CO₂, acidemia ou hipóxia.',
-        mechanism: 'Integração hipotálamo–tronco aumenta a resposta dos centros respiratórios.',
+        mechanism: 'Quimiorreceptores e centros bulbares aumentam o drive ventilatório; o hipotálamo modula o contexto autonômico.',
         axis: 'respiratory', cost: .09, cooldownSeconds: 14,
         effects: { respiratoryDrive: .68 },
     },

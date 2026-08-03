@@ -19,7 +19,7 @@ import { ActionButton, GlassPanel, PanelLabel, cn } from './ui';
 const categories = Object.keys(ACTION_CATEGORIES) as HormoneCategory[];
 const axisMeta: Record<HypothalamicAxis, { label: string; icon: typeof Activity }> = {
   autonomic: { label: 'Autonômico', icon: Activity },
-  respiratory: { label: 'Respiratório', icon: Wind },
+  respiratory: { label: 'Tronco / quimiorreflexo', icon: Wind },
   osmotic: { label: 'Osmótico / ADH', icon: Droplets },
 };
 
@@ -42,6 +42,8 @@ export function GlobalPhysiologyDock() {
   const atpPool = useSimulationStore(state => state.physiology.energy.atpPool);
   const cooldowns = useSimulationStore(state => state.hormonalCooldowns);
   const pendingCommands = useSimulationStore(state => state.pendingCommands);
+  const decisionPending = useSimulationStore(state => Boolean(state.cellular.routine));
+  const iatrogenicEpisodes = useSimulationStore(state => state.iatrogenicEpisodes);
   const trace = useSimulationStore(state => state.lastCausalTrace);
   const simulationTime = useSimulationStore(state => state.physiology.timeElapsed);
   const release = useSimulationStore(state => state.releaseHormone);
@@ -58,7 +60,7 @@ export function GlobalPhysiologyDock() {
   const hypothalamicWarningCount = HYPOTHALAMIC_SIGNALS.filter(signal =>
     !isHypothalamicSignalSafe(signal.id, physiology).safe).length;
   const totalAvailableCount = availableCount + hypothalamicAvailableCount;
-  const totalWarningCount = warningCount + hypothalamicWarningCount;
+  const totalWarningCount = warningCount + hypothalamicWarningCount + iatrogenicEpisodes.length;
 
   useEffect(() => setMounted(true), []);
   useEffect(() => {
@@ -92,15 +94,15 @@ export function GlobalPhysiologyDock() {
 
   const dock = (
     <>
-      {open && <button type="button" aria-label="Fechar central de sinalização" onClick={close} className="fixed inset-0 z-[41] bg-black/30 backdrop-blur-[2px] sm:hidden"/>}
+      {open && <button type="button" aria-label="Fechar central de sinalização" onClick={close} className="fixed inset-0 z-[46] bg-black/30 backdrop-blur-[2px] sm:hidden"/>}
 
       {open && (
         <GlassPanel
           ref={panelRef}
           id="global-hormone-panel"
           role="dialog"
-          aria-label="Central de sinalização hormonal e hipotalâmica"
-          className="fixed inset-x-3 bottom-[calc(84px+env(safe-area-inset-bottom))] z-[43] flex max-h-[72dvh] flex-col overflow-hidden p-0 sm:inset-x-auto sm:bottom-[86px] sm:right-6 sm:max-h-[min(72dvh,680px)] sm:w-[430px]"
+          aria-label="Central de sinalização hormonal e regulação central"
+          className="fixed inset-x-3 bottom-[calc(84px+env(safe-area-inset-bottom))] z-[48] flex max-h-[72dvh] flex-col overflow-hidden p-0 sm:inset-x-auto sm:bottom-[86px] sm:right-6 sm:max-h-[min(72dvh,680px)] sm:w-[430px]"
         >
           <div className="mx-auto mt-2 h-1 w-10 rounded-full bg-white/15 sm:hidden"/>
           <div className="flex flex-none items-start justify-between gap-3 border-b border-white/8 p-4">
@@ -110,16 +112,20 @@ export function GlobalPhysiologyDock() {
 
           <div className="grid flex-none grid-cols-2 gap-1 border-b border-white/8 p-2" role="tablist" aria-label="Tipo de sinalização">
             <button type="button" role="tab" aria-selected={mode === 'hormonal'} onClick={() => setMode('hormonal')} className={cn('min-h-11 rounded-lg border px-3 text-[10px] font-medium uppercase tracking-wider transition', mode === 'hormonal' ? 'border-primary/50 bg-primary/10 text-primary' : 'border-white/8 bg-black/10 text-muted-foreground')}><Zap className="mr-1.5 inline size-3.5"/>Hormônios</button>
-            <button type="button" role="tab" aria-selected={mode === 'hypothalamus'} onClick={() => setMode('hypothalamus')} className={cn('min-h-11 rounded-lg border px-3 text-[10px] font-medium uppercase tracking-wider transition', mode === 'hypothalamus' ? 'border-primary/50 bg-primary/10 text-primary' : 'border-white/8 bg-black/10 text-muted-foreground')}><BrainCircuit className="mr-1.5 inline size-3.5"/>Hipotálamo</button>
+            <button type="button" role="tab" aria-selected={mode === 'hypothalamus'} onClick={() => setMode('hypothalamus')} className={cn('min-h-11 rounded-lg border px-3 text-[10px] font-medium uppercase tracking-wider transition', mode === 'hypothalamus' ? 'border-primary/50 bg-primary/10 text-primary' : 'border-white/8 bg-black/10 text-muted-foreground')}><BrainCircuit className="mr-1.5 inline size-3.5"/>Regulação central</button>
           </div>
 
           {mode === 'hormonal' ? <div className="flex flex-none gap-1 overflow-x-auto border-b border-white/8 px-3 py-2" role="tablist" aria-label="Categorias hormonais">
             {categories.map(item => <button key={item} type="button" role="tab" aria-selected={category === item} onClick={() => setCategory(item)} className={cn('min-h-11 flex-1 rounded-lg border px-2 text-[10px] font-medium uppercase tracking-wider transition', category === item ? 'border-primary/50 bg-primary/10 text-primary' : 'border-white/8 bg-black/10 text-muted-foreground hover:text-foreground')}>{ACTION_CATEGORIES[item].name}</button>)}
-          </div> : <div className="flex flex-none gap-1 overflow-x-auto border-b border-white/8 px-3 py-2" role="tablist" aria-label="Eixos hipotalâmicos">
+          </div> : <div className="flex flex-none gap-1 overflow-x-auto border-b border-white/8 px-3 py-2" role="tablist" aria-label="Eixos de regulação central">
             {(Object.keys(axisMeta) as HypothalamicAxis[]).map(item => { const Icon = axisMeta[item].icon; return <button key={item} type="button" role="tab" aria-selected={axis === item} onClick={() => setAxis(item)} className={cn('min-h-11 flex-1 rounded-lg border px-2 text-[9px] font-medium uppercase tracking-wider transition', axis === item ? 'border-primary/50 bg-primary/10 text-primary' : 'border-white/8 bg-black/10 text-muted-foreground hover:text-foreground')}><Icon className="mr-1 inline size-3"/>{axisMeta[item].label}</button>; })}
           </div>}
 
           <div className="scrollbar-thin min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
+            {iatrogenicEpisodes.length > 0 && <section className="rounded-xl border border-danger/45 bg-danger/10 p-3" aria-label="Carga iatrogênica ativa">
+              <div className="flex items-start gap-2"><AlertTriangle className="mt-0.5 size-4 shrink-0 text-danger"/><div><strong className="text-[11px] uppercase tracking-wider text-danger">Carga iatrogênica ativa</strong><p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">A penalidade cresce com a intensidade e o tempo de exposição. O relógio abaixo é fisiológico.</p></div></div>
+              <div className="mt-2 space-y-2">{iatrogenicEpisodes.map(episode => { const progress = episode.remainingSeconds / episode.totalSeconds * 100; return <div key={episode.id} className="rounded-lg border border-danger/20 bg-black/20 px-2.5 py-2"><div className="flex items-center justify-between gap-2"><strong className="text-[10px] text-foreground">{episode.label}</strong><span className={cn('font-mono text-[9px] uppercase', episode.severity === 'critical' ? 'text-danger' : 'text-warning')}>{episode.severity === 'critical' ? 'crítica' : episode.severity === 'severe' ? 'grave' : 'moderada'} · erro {(episode.intensity * 100).toFixed(0)}% · {episode.remainingSeconds.toFixed(0)} s</span></div><p className="mt-1 text-[9px] leading-relaxed text-muted-foreground">{episode.reason}</p><div className="mt-2 h-1 overflow-hidden rounded-full bg-white/8"><div className="h-full rounded-full bg-danger transition-[width]" style={{ width: `${Math.max(0, Math.min(100, progress))}%` }}/></div></div>; })}</div>
+            </section>}
             {mode === 'hormonal' ? HORMONAL_ACTIONS.filter(action => action.category === category).map(action => {
               const definition = HORMONE_DEFINITIONS[action.hormone];
               const safety = isActionSafe(action.id, safetyState);
@@ -143,7 +149,7 @@ export function GlobalPhysiologyDock() {
                     disabled={disabled}
                     onClick={() => {
                       const result = release(action.id);
-                      setFeedback(result.ok ? `${action.shortName} entrou na fila do próximo passo fisiológico.` : result.reason ?? 'Sinal indisponível.');
+                      setFeedback(result.ok ? decisionPending ? `${action.shortName} foi preparado para a decisão atual; volte à sidebar para escolher a estratégia.` : `${action.shortName} entrou na fila do próximo passo fisiológico.` : result.reason ?? 'Sinal indisponível.');
                     }}
                   >
                     {queued ? 'Sinal na fila' : cooldown > 0 ? `Recarga: ${cooldown.toFixed(0)} s` : !safety.safe ? 'Contraindicado no contexto' : 'Liberar sinal'}
@@ -166,7 +172,7 @@ export function GlobalPhysiologyDock() {
                   <div className="mt-2 rounded-lg border border-white/5 bg-black/15 px-2.5 py-2 text-[10px] leading-relaxed text-muted-foreground"><span className="text-foreground">Mecanismo:</span> {signal.mechanism}</div>
                   <div className="mt-2 flex items-center gap-3 text-[10px] text-muted-foreground"><span><Clock3 className="mr-1 inline size-3"/>{signal.cooldownSeconds}s</span><span>ATP {signal.cost.toFixed(2)}</span></div>
                   {!safety.safe && <p className="mt-2 flex items-start gap-1.5 text-[11px] leading-relaxed text-warning"><AlertTriangle className="mt-0.5 size-3.5 shrink-0"/>{safety.reason}</p>}
-                  <ActionButton className="mt-3 min-h-11 w-full" disabled={disabled} onClick={() => { const result = sendHypothalamicSignal(signal.id); setFeedback(result.ok ? `${signal.shortLabel} entrou na fila do próximo passo fisiológico.` : result.reason ?? 'Circuito indisponível.'); }}>{queued ? 'Sinal na fila' : cooldown > 0 ? `Recarga: ${cooldown.toFixed(0)} s` : !safety.safe ? 'Bloqueado pelo contexto' : 'Recrutar circuito'}</ActionButton>
+                  <ActionButton className="mt-3 min-h-11 w-full" disabled={disabled} onClick={() => { const result = sendHypothalamicSignal(signal.id); setFeedback(result.ok ? decisionPending ? `${signal.shortLabel} foi preparado para a decisão atual; volte à sidebar para escolher a estratégia.` : `${signal.shortLabel} entrou na fila do próximo passo fisiológico.` : result.reason ?? 'Circuito indisponível.'); }}>{queued ? 'Sinal na fila' : cooldown > 0 ? `Recarga: ${cooldown.toFixed(0)} s` : !safety.safe ? 'Bloqueado pelo contexto' : 'Recrutar circuito'}</ActionButton>
                 </article>;
               })}
             </>}
@@ -185,14 +191,14 @@ export function GlobalPhysiologyDock() {
       <button
         ref={triggerRef}
         type="button"
-        aria-label={open ? 'Fechar central de sinalização' : 'Abrir sinalização hormonal e hipotalâmica'}
+        aria-label={open ? 'Fechar central de sinalização' : 'Abrir sinalização hormonal e regulação central'}
         aria-expanded={open}
         aria-controls="global-hormone-panel"
         onClick={() => setOpen(value => !value)}
-        className={cn('fixed bottom-[calc(86px+env(safe-area-inset-bottom))] right-3 z-[44] grid size-12 place-items-center rounded-full border bg-[#111722]/85 text-primary shadow-[0_0_22px_-6px_rgba(217,180,95,.55)] backdrop-blur-xl transition sm:bottom-[86px] sm:right-6', totalWarningCount ? 'border-warning/70' : 'border-primary/60', open && 'pointer-events-none opacity-0')}
+        className={cn('fixed bottom-[calc(86px+env(safe-area-inset-bottom))] right-3 z-[47] grid size-12 place-items-center rounded-full border bg-[#111722]/85 text-primary shadow-[0_0_22px_-6px_rgba(217,180,95,.55)] backdrop-blur-xl transition sm:bottom-[86px] sm:right-6', iatrogenicEpisodes.length > 0 ? 'border-danger/80' : totalWarningCount ? 'border-warning/70' : 'border-primary/60', open && 'pointer-events-none opacity-0')}
       >
-        {open ? <X className="size-5"/> : <Zap className="size-5"/>}
-        <span className={cn('absolute -right-1 -top-1 grid min-h-5 min-w-5 place-items-center rounded-full border px-1 font-mono text-[9px]', totalWarningCount ? 'border-warning bg-[#21170d] text-warning' : 'border-primary/60 bg-[#17140d] text-primary')}>{open ? '×' : totalAvailableCount}</span>
+        {open ? <X className="size-5"/> : iatrogenicEpisodes.length > 0 ? <AlertTriangle className="size-5 text-danger"/> : <Zap className="size-5"/>}
+        <span className={cn('absolute -right-1 -top-1 grid min-h-5 min-w-5 place-items-center rounded-full border px-1 font-mono text-[9px]', iatrogenicEpisodes.length > 0 ? 'border-danger bg-[#271010] text-danger' : totalWarningCount ? 'border-warning bg-[#21170d] text-warning' : 'border-primary/60 bg-[#17140d] text-primary')}>{open ? '×' : iatrogenicEpisodes.length > 0 ? `!${iatrogenicEpisodes.length}` : totalAvailableCount}</span>
       </button>
     </>
   );

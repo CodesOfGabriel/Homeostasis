@@ -21,6 +21,7 @@ import { initializePhysiologyState } from './physiology';
 import {
     advanceCellularSimulation,
     allocateAtp,
+    applyScenarioCellularEffects,
     captureSubstrate,
     initializeCellularState,
     oxidizeSubstrate,
@@ -33,6 +34,7 @@ import type {
     CellularActionResult,
     CellularEvent,
     CellularState,
+    DecisionSignalId,
     OxidationSubstrate,
     RepairTarget,
     SubstrateKind,
@@ -57,6 +59,13 @@ import {
     type HypothalamicSignalId,
 } from './hypothalamus';
 import { evaluateScenarioResolution } from './scenarioResolution';
+import {
+    advanceIatrogenicConsequences,
+    assessSignalMisuse,
+    iatrogenicEpisodeEvent,
+    mergeIatrogenicEpisodes,
+    type IatrogenicEpisode,
+} from './iatrogenic';
 
 // ============================================================================
 // STATE INTERFACE
@@ -75,7 +84,7 @@ export interface CommandResult {
     reason?: string;
 }
 
-type SimulationCommand =
+export type SimulationCommand =
     | { id: string; type: 'release-hormone'; actionId: string }
     | { id: string; type: 'hypothalamic-signal'; signalId: HypothalamicSignalId }
     | { id: string; type: 'ingest-water'; amountMl: number }
@@ -87,6 +96,39 @@ export interface DecisionFeedback {
     message: string;
     outcome: 'adaptive' | 'harmful';
     timestamp: number;
+}
+
+export interface ScenarioOnsetSnapshot {
+    time: number;
+    heartRate: number;
+    meanArterialPressure: number;
+    perfusionIndex: number;
+    spo2: number;
+    respiratoryRate: number;
+    paco2: number;
+    glucose: number;
+    lactate: number;
+    pH: number;
+    hydration: number;
+    sodium: number;
+    temperature: number;
+    cellularAtp: number;
+    tissueOxygen: number;
+    oxidativeStress: number;
+    inflammation: number;
+    infection: number;
+    cellVolume: number;
+}
+
+export interface ScenarioResponseState {
+    scenarioId: string;
+    choiceId: string;
+    outcome: 'adaptive' | 'harmful';
+    effectMultiplier: number;
+    risk: 'recoverable' | 'unstable' | 'catastrophic';
+    totalSeconds: number;
+    remainingSeconds: number;
+    result: string;
 }
 
 interface SimulationStore {
@@ -148,6 +190,10 @@ interface SimulationStore {
     lastCausalTrace: CausalTrace | null;
     lastReinforcementAt: number;
     lastDecision: DecisionFeedback | null;
+    activeScenarioId: string | null;
+    scenarioOnset: ScenarioOnsetSnapshot | null;
+    scenarioResponse: ScenarioResponseState | null;
+    iatrogenicEpisodes: IatrogenicEpisode[];
 
     // UI State
     selectedOrgan: string | null;
@@ -218,6 +264,36 @@ const createInitialInterventions = (): SystemicInterventions => ({
     cumulativeWaterMl: 0,
 });
 
+export function collectPreparedDecisionSignals(
+    pendingCommands: readonly SimulationCommand[],
+    activeActions: readonly HormonalAction[],
+    hypothalamus: HypothalamicRegulationState,
+): DecisionSignalId[] {
+    const signals = new Set<DecisionSignalId>();
+    activeActions.forEach(action => signals.add(`hormone:${action.actionId}` as DecisionSignalId));
+    pendingCommands.forEach(command => {
+        if (command.type === 'release-hormone') signals.add(`hormone:${command.actionId}` as DecisionSignalId);
+        if (command.type === 'hypothalamic-signal') signals.add(`central:${command.signalId}`);
+    });
+
+    const lastSignal = hypothalamus.lastSignal;
+    const centralSignalActive = lastSignal === 'sympathetic-arousal'
+        ? hypothalamus.autonomicTone > .08
+        : lastSignal === 'parasympathetic-recovery'
+            ? hypothalamus.autonomicTone < -.08
+            : lastSignal === 'chemoreflex-ventilation'
+                ? hypothalamus.respiratoryDrive > .08
+                : lastSignal === 'reduce-respiratory-drive'
+                    ? hypothalamus.respiratoryDrive < -.08
+                    : lastSignal === 'adh-retention'
+                        ? hypothalamus.osmoticDrive > .08
+                        : lastSignal === 'suppress-adh'
+                            ? hypothalamus.osmoticDrive < -.08
+                            : false;
+    if (lastSignal && centralSignalActive) signals.add(`central:${lastSignal}`);
+    return [...signals];
+}
+
 // ============================================================================
 // STORE IMPLEMENTATION
 // ============================================================================
@@ -250,6 +326,10 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
     lastCausalTrace: null,
     lastReinforcementAt: -45,
     lastDecision: null,
+    activeScenarioId: null,
+    scenarioOnset: null,
+    scenarioResponse: null,
+    iatrogenicEpisodes: [],
     selectedOrgan: null,
 
     // ============================================================================
@@ -295,6 +375,10 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
             lastCausalTrace: null,
             lastReinforcementAt: -45,
             lastDecision: null,
+            activeScenarioId: null,
+            scenarioOnset: null,
+            scenarioResponse: null,
+            iatrogenicEpisodes: [],
             selectedOrgan: null,
         });
     },
@@ -319,7 +403,8 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
         const realDeltaTime = (now - state.lastTickTime) / 1000; // em segundos
         // Evita saltos numéricos quando a aba volta do background.
         const adjustedDeltaTime = Math.min(2, realDeltaTime * state.timeSpeed);
-        const physiologicalContext = getScenarioContext(state.cellular.routine?.id);
+        const physiologicalContext = getScenarioContext(state.activeScenarioId ?? state.cellular.routine?.id);
+        const currentScenarioId = state.activeScenarioId ?? state.cellular.routine?.id;
 
         const commandOutput = applySimulationCommands(
             state.physiology,
@@ -330,6 +415,7 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
             state.hypothalamicCooldowns,
             state.pendingCommands,
             physiologicalContext,
+            currentScenarioId,
         );
         const preparedPhysiology = commandOutput.physiology;
         const preparedInterventions = commandOutput.interventions;
@@ -384,9 +470,71 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
             ? getScenarioDefinition(cellularOutput.state.routine.id)
             : undefined;
         let resultingPhysiology = output.newState;
+        let resultingCellular = cellularOutput.state;
+        let nextScenarioResponse = state.scenarioResponse;
+        let completedDecision: DecisionFeedback | null = null;
+        let responseEvent: PhysiologicalEvent | null = null;
         if (startedScenario) {
             resultingPhysiology = applyScenarioPhysiologyEffects(resultingPhysiology, startedScenario.onStartPhysiology);
         }
+
+        // Depois da escolha, o evento não desaparece: contexto e consequência
+        // percorrem uma trajetória observável. Cada tick aplica apenas a fração
+        // correspondente do efeito configurado.
+        if (state.scenarioResponse) {
+            const response = state.scenarioResponse;
+            const choice = getScenarioChoice(response.scenarioId, response.choiceId);
+            const effectSeconds = Math.min(adjustedDeltaTime, response.remainingSeconds);
+            const effectFraction = effectSeconds / Math.max(.001, response.totalSeconds);
+            if (choice && effectFraction > 0) {
+                resultingPhysiology = applyScenarioPhysiologyEffects(
+                    resultingPhysiology,
+                    choice.physiologyEffects,
+                    response.effectMultiplier * effectFraction,
+                );
+                resultingCellular = applyScenarioCellularEffects(
+                    resultingCellular,
+                    choice.cellularEffects,
+                    response.effectMultiplier * effectFraction,
+                );
+            }
+            const remainingSeconds = Math.max(0, response.remainingSeconds - effectSeconds);
+            nextScenarioResponse = remainingSeconds > .001 ? { ...response, remainingSeconds } : null;
+            if (!nextScenarioResponse) {
+                const title = response.risk === 'catastrophic'
+                    ? 'Cascata fisiológica crítica'
+                    : response.outcome === 'adaptive'
+                        ? 'Recuperação homeostática observada'
+                        : 'Descompensação após a intervenção';
+                completedDecision = {
+                    scenarioId: response.scenarioId,
+                    title,
+                    message: response.result,
+                    outcome: response.outcome,
+                    timestamp: resultingPhysiology.timeElapsed,
+                };
+                responseEvent = {
+                    type: 'cellular',
+                    severity: response.outcome === 'adaptive' ? 'info' : 'critical',
+                    message: response.result,
+                    timestamp: resultingPhysiology.timeElapsed,
+                    affectedSystems: ['cellular', 'decision', response.outcome],
+                };
+            }
+        }
+
+        const activeIatrogenicEpisodes = mergeIatrogenicEpisodes(
+            state.iatrogenicEpisodes,
+            commandOutput.iatrogenicEpisodes,
+        );
+        const iatrogenicOutput = advanceIatrogenicConsequences(
+            resultingPhysiology,
+            resultingCellular,
+            activeIatrogenicEpisodes,
+            adjustedDeltaTime,
+        );
+        resultingPhysiology = iatrogenicOutput.physiology;
+        resultingCellular = iatrogenicOutput.cellular;
 
         // Atualizar cooldowns hormonais
         const newCooldowns = Object.fromEntries(
@@ -409,7 +557,7 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
             .filter(action => action.duration > 0);
 
         // Atualizar histórico para gráficos
-        const shouldRecord = output.newState.timeElapsed - state.lastHistoryRecordTime >= 1;
+        const shouldRecord = resultingPhysiology.timeElapsed - state.lastHistoryRecordTime >= 1;
         let newHistory = state.history;
 
         if (shouldRecord) {
@@ -441,31 +589,31 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
                 oxidativeStress: [...state.history.oxidativeStress],
                 membranePotential: [...state.history.membranePotential],
             };
-            newHistory.time.push(output.newState.timeElapsed);
-            newHistory.heartRate.push(output.newState.cardiovascular.heartRate);
-            newHistory.systolicBP.push(output.newState.cardiovascular.systolicBP);
-            newHistory.diastolicBP.push(output.newState.cardiovascular.diastolicBP);
-            newHistory.meanArterialPressure.push(output.newState.cardiovascular.meanArterialPressure);
-            newHistory.spo2.push(output.newState.respiratory.spo2);
-            newHistory.respiratoryRate.push(output.newState.respiratory.respiratoryRate);
-            newHistory.perfusionIndex.push(output.newState.cardiovascular.perfusionIndex);
-            newHistory.glucose.push(output.newState.nutrients.bloodGlucose);
-            newHistory.pH.push(output.newState.acidBase.pH);
-            newHistory.pao2.push(output.newState.respiratory.pao2);
-            newHistory.paco2.push(output.newState.respiratory.paco2);
-            newHistory.bicarbonate.push(output.newState.acidBase.bicarbonate);
-            newHistory.baseExcess.push(output.newState.acidBase.baseExcess);
-            newHistory.lactate.push(output.newState.energy.lactateLevel);
-            newHistory.cardiacOutput.push(output.newState.cardiovascular.cardiacOutput);
-            newHistory.sodium.push(output.newState.nutrients.sodium);
-            newHistory.potassium.push(output.newState.nutrients.potassium);
-            newHistory.hydration.push(output.newState.nutrients.hydration);
-            newHistory.anionGap.push(output.newState.acidBase.anionGap);
-            newHistory.energyDeficit.push(output.newState.energy.energyDeficit);
-            newHistory.tissueOxygen.push(cellularOutput.state.tissue.oxygenMmHg);
-            newHistory.cellularAtp.push(cellularOutput.state.cell.atpMmolL);
-            newHistory.oxidativeStress.push(cellularOutput.state.damage.oxidativeStress);
-            newHistory.membranePotential.push(cellularOutput.state.cell.membranePotentialMv);
+            newHistory.time.push(resultingPhysiology.timeElapsed);
+            newHistory.heartRate.push(resultingPhysiology.cardiovascular.heartRate);
+            newHistory.systolicBP.push(resultingPhysiology.cardiovascular.systolicBP);
+            newHistory.diastolicBP.push(resultingPhysiology.cardiovascular.diastolicBP);
+            newHistory.meanArterialPressure.push(resultingPhysiology.cardiovascular.meanArterialPressure);
+            newHistory.spo2.push(resultingPhysiology.respiratory.spo2);
+            newHistory.respiratoryRate.push(resultingPhysiology.respiratory.respiratoryRate);
+            newHistory.perfusionIndex.push(resultingPhysiology.cardiovascular.perfusionIndex);
+            newHistory.glucose.push(resultingPhysiology.nutrients.bloodGlucose);
+            newHistory.pH.push(resultingPhysiology.acidBase.pH);
+            newHistory.pao2.push(resultingPhysiology.respiratory.pao2);
+            newHistory.paco2.push(resultingPhysiology.respiratory.paco2);
+            newHistory.bicarbonate.push(resultingPhysiology.acidBase.bicarbonate);
+            newHistory.baseExcess.push(resultingPhysiology.acidBase.baseExcess);
+            newHistory.lactate.push(resultingPhysiology.energy.lactateLevel);
+            newHistory.cardiacOutput.push(resultingPhysiology.cardiovascular.cardiacOutput);
+            newHistory.sodium.push(resultingPhysiology.nutrients.sodium);
+            newHistory.potassium.push(resultingPhysiology.nutrients.potassium);
+            newHistory.hydration.push(resultingPhysiology.nutrients.hydration);
+            newHistory.anionGap.push(resultingPhysiology.acidBase.anionGap);
+            newHistory.energyDeficit.push(resultingPhysiology.energy.energyDeficit);
+            newHistory.tissueOxygen.push(resultingCellular.tissue.oxygenMmHg);
+            newHistory.cellularAtp.push(resultingCellular.cell.atpMmolL);
+            newHistory.oxidativeStress.push(resultingCellular.damage.oxidativeStress);
+            newHistory.membranePotential.push(resultingCellular.cell.membranePotentialMv);
 
             // Manter apenas maxDataPoints
             Object.keys(newHistory).forEach(key => {
@@ -482,21 +630,21 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
         const cellularEvents = cellularOutput.events.map(event =>
             cellularEventToPhysiological(event, output.newState.timeElapsed));
         const updatedEvents = [
-            ...[...commandOutput.events, ...cellularEvents, ...output.events].reverse(),
+            ...[...commandOutput.events, ...iatrogenicOutput.events, ...cellularEvents, ...output.events, ...(responseEvent ? [responseEvent] : [])].reverse(),
             ...state.recentEvents,
         ].slice(0, 50);
 
         // Atualizar warnings (substituir)
         const updatedWarnings = output.warnings;
 
-        const reinforcementEvent = resultingPhysiology.timeElapsed - state.lastReinforcementAt >= 45
+        const reinforcementEvent = iatrogenicOutput.episodes.length === 0 && resultingPhysiology.timeElapsed - state.lastReinforcementAt >= 45
             ? createPositiveReinforcementEvent(preparedPhysiology, resultingPhysiology)
             : null;
         const reinforcementEvents = reinforcementEvent ? [reinforcementEvent] : [];
 
         set({
             physiology: resultingPhysiology,
-            cellular: cellularOutput.state,
+            cellular: resultingCellular,
             interventions: nextInterventions,
             lastTickTime: now,
             lastHistoryRecordTime: shouldRecord
@@ -512,6 +660,19 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
             activeWarnings: updatedWarnings,
             lastCausalTrace: commandOutput.causalTrace ?? state.lastCausalTrace,
             lastReinforcementAt: reinforcementEvent ? output.newState.timeElapsed : state.lastReinforcementAt,
+            activeScenarioId: startedScenario
+                ? startedScenario.id
+                : completedDecision
+                    ? null
+                    : state.activeScenarioId,
+            scenarioOnset: startedScenario
+                ? createScenarioOnsetSnapshot(resultingPhysiology, resultingCellular)
+                : completedDecision
+                    ? null
+                    : state.scenarioOnset,
+            scenarioResponse: nextScenarioResponse,
+            iatrogenicEpisodes: iatrogenicOutput.episodes,
+            lastDecision: completedDecision ?? state.lastDecision,
             // Toda situação exige uma decisão. A simulação congela no instante
             // do evento e só retoma depois que um caminho é escolhido.
             isRunning: startedScenario ? false : state.isRunning,
@@ -638,10 +799,32 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
         const state = get();
         const scenarioId = state.cellular.routine?.id;
         const pendingChoice = scenarioId ? getScenarioChoice(scenarioId, choiceId) : undefined;
+        if (!scenarioId || !pendingChoice) return false;
+
+        // Sinais escolhidos durante a análise entram no mesmo instante causal
+        // da decisão. Assim, hormônios e circuitos centrais realmente alteram
+        // a resposta do evento, embora o relógio permaneça congelado.
+        const commandOutput = applySimulationCommands(
+            state.physiology,
+            state.interventions,
+            state.activeHormonalActions,
+            state.hormonalCooldowns,
+            state.hypothalamus,
+            state.hypothalamicCooldowns,
+            state.pendingCommands,
+            getScenarioContext(scenarioId),
+            scenarioId,
+        );
         const resolution = scenarioId && pendingChoice
-            ? evaluateScenarioResolution(scenarioId, pendingChoice.outcome, state.physiology, state.cellular, state.hypothalamus)
+            ? evaluateScenarioResolution(scenarioId, pendingChoice.outcome, commandOutput.physiology, state.cellular, commandOutput.hypothalamus)
             : null;
-        const result = resolveRoutineDecision(state.cellular, choiceId, resolution?.effectMultiplier ?? 1);
+        const result = resolveRoutineDecision(
+            state.cellular,
+            choiceId,
+            1,
+            false,
+            commandOutput.preparedSignals,
+        );
         if (!result.ok || !result.scenarioId || !result.decisionOutcome) {
             set(cellularActionUpdate(state, result));
             return false;
@@ -658,35 +841,46 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
             return false;
         }
 
-        const physiology = applyScenarioPhysiologyEffects(
-            state.physiology,
-            choice.physiologyEffects,
-            resolution?.effectMultiplier ?? 1,
-        );
-        const contextualMessage = `${choice.result}${resolution ? ` ${resolution.summary}.` : ''}`;
-        const event: CellularEvent = result.event ? { ...result.event, message: contextualMessage } : {
-            message: contextualMessage,
-            severity: result.decisionOutcome === 'adaptive' ? 'info' : 'critical',
-            affectedSystems: ['cellular', 'decision', result.decisionOutcome],
+        const responseDuration = Math.max(12, definition.durationSeconds);
+        const response: ScenarioResponseState = {
+            scenarioId: definition.id,
+            choiceId,
+            outcome: result.decisionOutcome,
+            effectMultiplier: resolution?.effectMultiplier ?? 1,
+            risk: resolution?.risk ?? 'recoverable',
+            totalSeconds: responseDuration,
+            remainingSeconds: responseDuration,
+            result: choice.result,
+        };
+        const responseStartedEvent: PhysiologicalEvent = {
+            type: 'system',
+            severity: 'info',
+            message: `${choice.label}: intervenção iniciada. Observe a trajetória antes de concluir se a compensação foi suficiente.`,
+            timestamp: commandOutput.physiology.timeElapsed,
+            affectedSystems: ['decision', 'observation'],
         };
         set({
-            physiology,
+            physiology: commandOutput.physiology,
             cellular: result.state,
+            interventions: commandOutput.interventions,
+            activeHormonalActions: commandOutput.actions,
+            hormonalCooldowns: commandOutput.cooldowns,
+            hypothalamus: commandOutput.hypothalamus,
+            hypothalamicCooldowns: commandOutput.hypothalamicCooldowns,
+            pendingCommands: [],
             recentEvents: [
-                cellularEventToPhysiological(event, physiology.timeElapsed),
+                responseStartedEvent,
+                ...commandOutput.events.reverse(),
                 ...state.recentEvents,
             ].slice(0, 50),
-            lastDecision: {
-                scenarioId: definition.id,
-                title: resolution?.risk === 'catastrophic'
-                    ? 'Risco de cascata catastrófica'
-                    : result.decisionOutcome === 'adaptive'
-                        ? 'Homeostase em recuperação'
-                        : 'Decisão prejudicial',
-                message: contextualMessage,
-                outcome: result.decisionOutcome,
-                timestamp: physiology.timeElapsed,
-            },
+            scenarioResponse: response,
+            activeScenarioId: definition.id,
+            iatrogenicEpisodes: mergeIatrogenicEpisodes(
+                state.iatrogenicEpisodes,
+                commandOutput.iatrogenicEpisodes,
+            ),
+            lastDecision: null,
+            lastCausalTrace: commandOutput.causalTrace ?? state.lastCausalTrace,
             isRunning: state.resumeAfterDecision,
             resumeAfterDecision: false,
             lastTickTime: Date.now(),
@@ -734,6 +928,33 @@ function cellularEventToPhysiological(
     };
 }
 
+function createScenarioOnsetSnapshot(
+    physiology: PhysiologyState,
+    cellular: CellularState,
+): ScenarioOnsetSnapshot {
+    return {
+        time: physiology.timeElapsed,
+        heartRate: physiology.cardiovascular.heartRate,
+        meanArterialPressure: physiology.cardiovascular.meanArterialPressure,
+        perfusionIndex: physiology.cardiovascular.perfusionIndex,
+        spo2: physiology.respiratory.spo2,
+        respiratoryRate: physiology.respiratory.respiratoryRate,
+        paco2: physiology.respiratory.paco2,
+        glucose: physiology.nutrients.bloodGlucose,
+        lactate: physiology.energy.lactateLevel,
+        pH: physiology.acidBase.pH,
+        hydration: physiology.nutrients.hydration,
+        sodium: physiology.nutrients.sodium,
+        temperature: physiology.bodyTemperature,
+        cellularAtp: cellular.cell.atpMmolL,
+        tissueOxygen: cellular.tissue.oxygenMmHg,
+        oxidativeStress: cellular.damage.oxidativeStress,
+        inflammation: physiology.allostaticLoad.inflammationLevel,
+        infection: physiology.pathophysiology.infectionSeverity,
+        cellVolume: cellular.cell.volumePercent,
+    };
+}
+
 function cellularActionUpdate(
     state: SimulationStore,
     result: CellularActionResult,
@@ -767,6 +988,8 @@ interface CommandApplicationResult {
     hypothalamicCooldowns: Record<string, number>;
     events: PhysiologicalEvent[];
     causalTrace: CausalTrace | null;
+    preparedSignals: DecisionSignalId[];
+    iatrogenicEpisodes: IatrogenicEpisode[];
 }
 
 function applySimulationCommands(
@@ -778,6 +1001,7 @@ function applySimulationCommands(
     initialHypothalamicCooldowns: Record<string, number>,
     commands: SimulationCommand[],
     externalFactors: PhysiologicalContextFactors,
+    scenarioId?: string,
 ): CommandApplicationResult {
     let physiology = initialPhysiology;
     const interventions = { ...initialInterventions };
@@ -787,6 +1011,8 @@ function applySimulationCommands(
     const hypothalamicCooldowns = { ...initialHypothalamicCooldowns };
     const events: PhysiologicalEvent[] = [];
     let causalTrace: CausalTrace | null = null;
+    const preparedSignals = new Set(collectPreparedDecisionSignals([], initialActions, initialHypothalamus));
+    const iatrogenicEpisodes: IatrogenicEpisode[] = [];
 
     for (const command of commands) {
         if (command.type === 'hypothalamic-signal') {
@@ -802,6 +1028,7 @@ function applySimulationCommands(
                 continue;
             }
             hypothalamus = applyHypothalamicSignal(hypothalamus, definition);
+            preparedSignals.add(`central:${definition.id}`);
             hypothalamicCooldowns[definition.id] = definition.cooldownSeconds;
             physiology = {
                 ...physiology,
@@ -812,6 +1039,11 @@ function applySimulationCommands(
                 message: `${definition.shortLabel}: circuito hipotalâmico recrutado. ${definition.mechanism}`,
                 timestamp: physiology.timeElapsed, affectedSystems: ['hypothalamus', definition.axis],
             });
+            const iatrogenicEpisode = assessSignalMisuse(`central:${definition.id}`, physiology, scenarioId);
+            if (iatrogenicEpisode) {
+                iatrogenicEpisodes.push(iatrogenicEpisode);
+                events.push(iatrogenicEpisodeEvent(iatrogenicEpisode, physiology.timeElapsed));
+            }
             continue;
         }
 
@@ -866,6 +1098,7 @@ function applySimulationCommands(
             cooldown: definition.cooldownSeconds,
             metabolicCost: definition.metabolicCost,
         });
+        preparedSignals.add(`hormone:${definition.id}` as DecisionSignalId);
         cooldowns[definition.id] = definition.cooldownSeconds;
         physiology = {
             ...physiology,
@@ -886,6 +1119,15 @@ function applySimulationCommands(
             affectedSystems: ['hormonal', definition.effectModel],
             causalTrace,
         });
+        const iatrogenicEpisode = assessSignalMisuse(
+            `hormone:${definition.id}` as DecisionSignalId,
+            physiology,
+            scenarioId,
+        );
+        if (iatrogenicEpisode) {
+            iatrogenicEpisodes.push(iatrogenicEpisode);
+            events.push(iatrogenicEpisodeEvent(iatrogenicEpisode, physiology.timeElapsed));
+        }
     }
 
     return {
@@ -897,6 +1139,8 @@ function applySimulationCommands(
         hypothalamicCooldowns,
         events,
         causalTrace,
+        preparedSignals: [...preparedSignals],
+        iatrogenicEpisodes,
     };
 }
 

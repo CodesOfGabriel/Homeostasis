@@ -10,8 +10,25 @@ import {
   runGlycolysis,
 } from './cellularSimulation';
 import { initializePhysiologyState } from './physiology';
-import { getScenarioContext } from './scenarios';
+import { getScenarioContext, getScenarioDefinition, SCENARIO_DEFINITIONS } from './scenarios';
 import { useSimulationStore } from './simulationStore';
+
+function forceScenario<T extends ReturnType<typeof initializeCellularState>>(state: T, scenarioId: string): T {
+  return {
+    ...state,
+    nextRoutineAt: 0,
+    scenarioCooldowns: Object.fromEntries(
+      SCENARIO_DEFINITIONS.map(definition => [definition.id, definition.id === scenarioId ? 0 : 9999]),
+    ),
+  };
+}
+
+function advanceStoreTicks(count: number) {
+  for (let index = 0; index < count; index += 1) {
+    useSimulationStore.setState({ lastTickTime: Date.now() - 1000 });
+    useSimulationStore.getState().tick();
+  }
+}
 
 describe('controles da simulação', () => {
   beforeEach(() => {
@@ -72,7 +89,7 @@ describe('controles da simulação', () => {
   it('pausa em todo evento e só retoma depois de uma decisão obrigatória', () => {
     const cellular = useSimulationStore.getState().cellular;
     useSimulationStore.setState({
-      cellular: { ...cellular, nextRoutineAt: 0 },
+      cellular: forceScenario(cellular, 'stair-climb'),
       isRunning: true,
       lastTickTime: Date.now() - 1000,
     });
@@ -92,36 +109,138 @@ describe('controles da simulação', () => {
     expect(useSimulationStore.getState().cellular.routine?.id).toBe('stair-climb');
     expect(useSimulationStore.getState().recentEvents).toHaveLength(eventCount);
 
-    expect(useSimulationStore.getState().captureCellularSubstrate('oxygen')).toBe(true);
-    expect(useSimulationStore.getState().recentEvents).toHaveLength(eventCount);
+    useSimulationStore.setState({
+      cellular: {
+        ...useSimulationStore.getState().cellular,
+        pools: {
+          ...useSimulationStore.getState().cellular.pools,
+          captured: { ...useSimulationStore.getState().cellular.pools.captured, oxygen: 1 },
+        },
+      },
+    });
+    expect(useSimulationStore.getState().sendHypothalamicSignal('chemoreflex-ventilation').ok).toBe(true);
     expect(useSimulationStore.getState().resolveCellularRoutine('stair-aerobic')).toBe(true);
     const resolved = useSimulationStore.getState();
     expect(resolved.cellular.routine).toBeNull();
     expect(resolved.isRunning).toBe(true);
-    expect(resolved.lastDecision?.outcome).toBe('adaptive');
-    expect(resolved.physiology.energy.energyDeficit).toBeLessThan(deficitDuringEvent);
+    expect(resolved.lastDecision).toBeNull();
+    expect(resolved.scenarioResponse?.outcome).toBe('adaptive');
+    expect(resolved.activeScenarioId).toBe('stair-climb');
+    expect(resolved.hypothalamus.respiratoryDrive).toBeGreaterThan(0);
+    expect(resolved.physiology.energy.energyDeficit).toBe(deficitDuringEvent);
+
+    useSimulationStore.getState().setTimeSpeed(4);
+    advanceStoreTicks(1);
+    expect(useSimulationStore.getState().physiology.activityLevel).toBeGreaterThan(0);
+    advanceStoreTicks(20);
+    const observed = useSimulationStore.getState();
+    expect(observed.scenarioResponse).toBeNull();
+    expect(observed.activeScenarioId).toBeNull();
+    expect(observed.lastDecision?.outcome).toBe('adaptive');
   });
 
   it('aplica prejuízo sistêmico quando o caminho escolhido está errado', () => {
     const cellular = useSimulationStore.getState().cellular;
     useSimulationStore.setState({
-      cellular: { ...cellular, nextRoutineAt: 0 },
+      cellular: forceScenario(cellular, 'stair-climb'),
       isRunning: true,
       lastTickTime: Date.now() - 1000,
     });
     useSimulationStore.getState().tick();
     const loadDuringEvent = useSimulationStore.getState().physiology.allostaticLoad.currentLoad;
 
+    expect(useSimulationStore.getState().releaseHormone('release-adrenaline').ok).toBe(true);
     expect(useSimulationStore.getState().resolveCellularRoutine('stair-glycolytic')).toBe(true);
+    const startedResponse = useSimulationStore.getState();
+    expect(startedResponse.lastDecision).toBeNull();
+    expect(startedResponse.physiology.allostaticLoad.currentLoad).toBe(loadDuringEvent);
+    useSimulationStore.getState().setTimeSpeed(4);
+    advanceStoreTicks(20);
     const resolved = useSimulationStore.getState();
     expect(resolved.lastDecision?.outcome).toBe('harmful');
     expect(resolved.physiology.allostaticLoad.currentLoad).toBeGreaterThan(loadDuringEvent);
-    expect(resolved.recentEvents[0].severity).toBe('critical');
+    expect(resolved.recentEvents.some(event => event.severity === 'critical' && event.affectedSystems.includes('decision'))).toBe(true);
+  });
+
+  it('exige e aplica regulação simpática na hipotensão ortostática', () => {
+    const cellular = forceScenario(useSimulationStore.getState().cellular, 'orthostatic-transition');
+    useSimulationStore.setState({ cellular, isRunning: true, lastTickTime: Date.now() - 1000 });
+    useSimulationStore.getState().tick();
+    expect(useSimulationStore.getState().cellular.routine?.id).toBe('orthostatic-transition');
+    expect(useSimulationStore.getState().resolveCellularRoutine('orthostasis-sympathetic')).toBe(false);
+
+    expect(useSimulationStore.getState().sendHypothalamicSignal('sympathetic-arousal').ok).toBe(true);
+    expect(useSimulationStore.getState().resolveCellularRoutine('orthostasis-sympathetic')).toBe(true);
+    const response = useSimulationStore.getState();
+    expect(response.hypothalamus.autonomicTone).toBeGreaterThan(0);
+    expect(response.scenarioResponse?.scenarioId).toBe('orthostatic-transition');
+    expect(response.iatrogenicEpisodes).toHaveLength(0);
+  });
+
+  it('exige contrarregulação hormonal na hipoglicemia noturna', () => {
+    const physiology = useSimulationStore.getState().physiology;
+    const cellular = forceScenario(useSimulationStore.getState().cellular, 'nocturnal-hypoglycemia');
+    useSimulationStore.setState({
+      physiology: {
+        ...physiology,
+        nutrients: { ...physiology.nutrients, hoursSinceMeal: 6, bloodGlucose: 92 },
+      },
+      cellular,
+      isRunning: true,
+      lastTickTime: Date.now() - 1000,
+    });
+    useSimulationStore.getState().tick();
+    expect(useSimulationStore.getState().cellular.routine?.id).toBe('nocturnal-hypoglycemia');
+    expect(useSimulationStore.getState().resolveCellularRoutine('hypoglycemia-counterregulate')).toBe(false);
+
+    expect(useSimulationStore.getState().releaseHormone('release-glucagon').ok).toBe(true);
+    expect(useSimulationStore.getState().resolveCellularRoutine('hypoglycemia-counterregulate')).toBe(true);
+    const response = useSimulationStore.getState();
+    expect(response.activeHormonalActions.some(action => action.actionId === 'release-glucagon')).toBe(true);
+    expect(response.scenarioResponse?.scenarioId).toBe('nocturnal-hypoglycemia');
+    expect(response.iatrogenicEpisodes).toHaveLength(0);
+  });
+
+  it('mantém penalidade crítica enquanto a insulina inadequada permanece ativa', () => {
+    const physiology = useSimulationStore.getState().physiology;
+    const cellular = forceScenario(useSimulationStore.getState().cellular, 'nocturnal-hypoglycemia');
+    useSimulationStore.setState({
+      physiology: {
+        ...physiology,
+        nutrients: { ...physiology.nutrients, hoursSinceMeal: 6, bloodGlucose: 92 },
+      },
+      cellular,
+      isRunning: true,
+      lastTickTime: Date.now() - 1000,
+    });
+    useSimulationStore.getState().tick();
+    expect(useSimulationStore.getState().releaseHormone('release-insulin').ok).toBe(true);
+    expect(useSimulationStore.getState().resolveCellularRoutine('hypoglycemia-insulin')).toBe(true);
+    const exposed = useSimulationStore.getState();
+    expect(exposed.iatrogenicEpisodes[0]?.severity).toBe('critical');
+    expect(exposed.iatrogenicEpisodes[0]?.remainingSeconds).toBeGreaterThan(80);
+    const glucoseBeforeExposure = exposed.physiology.nutrients.bloodGlucose;
+
+    exposed.setTimeSpeed(4);
+    advanceStoreTicks(5);
+    const progressed = useSimulationStore.getState();
+    expect(progressed.physiology.nutrients.bloodGlucose).toBeLessThan(glucoseBeforeExposure);
+    expect(progressed.iatrogenicEpisodes[0]?.remainingSeconds).toBeLessThan(exposed.iatrogenicEpisodes[0].remainingSeconds);
+    expect(progressed.recentEvents.some(event => event.message.includes('Iatrogenia crítica'))).toBe(true);
   });
 });
 
 describe('ciclo de gameplay celular', () => {
   const controls = { heartRateTarget: 70, ventilationDrive: 100, renalWaterReabsorption: 99.2, pendingWaterMl: 0, exercise: 60, temperature: 22 };
+
+  it('configura os novos desafios com requisitos reais de sinalização', () => {
+    const scenarioIds = ['orthostatic-transition', 'hypercapnic-challenge', 'acute-water-load', 'nocturnal-hypoglycemia'];
+    scenarioIds.forEach(id => {
+      const definition = getScenarioDefinition(id);
+      expect(definition?.choices).toHaveLength(2);
+      expect(definition?.choices.every(choice => (choice.signalRequirements?.length ?? 0) > 0)).toBe(true);
+    });
+  });
 
   it('capta glicose, executa glicólise e oxida piruvato', () => {
     let state = initializeCellularState();
@@ -132,8 +251,9 @@ describe('ciclo de gameplay celular', () => {
     expect(glycolysis.ok).toBe(true);
     state = glycolysis.state;
     const oxygen = captureSubstrate(state, 'oxygen');
-    expect(oxygen.ok).toBe(true);
-    state = oxygen.state;
+    expect(oxygen.ok).toBe(false);
+    expect(oxygen.reason).toContain('gradiente de PO₂');
+    state.pools.captured.oxygen = 3;
     const oxidation = oxidizeSubstrate(state, 'pyruvate');
     expect(oxidation.ok).toBe(true);
     expect(oxidation.state.totalAtpProduced).toBeGreaterThan(state.totalAtpProduced);
@@ -142,6 +262,26 @@ describe('ciclo de gameplay celular', () => {
     expect(oxidation.state.mitochondria.processing.oxygenPerMin).toBeGreaterThan(0);
     const continued = advanceCellularSimulation(oxidation.state, initializePhysiologyState(), controls, .25);
     expect(continued.state.mitochondria.processing.pyruvatePerMin).toBeGreaterThan(0);
+  });
+
+  it('faz O₂ seguir o gradiente e modula GLUT4 por insulina e contração', () => {
+    const lowSignal = initializePhysiologyState();
+    lowSignal.hormones.insulin = 1;
+    lowSignal.activityLevel = 0;
+    const highSignal = initializePhysiologyState();
+    highSignal.hormones.insulin = 18;
+    highSignal.activityLevel = 75;
+
+    const lowState = initializeCellularState();
+    lowState.nextRoutineAt = 9999;
+    const highState = initializeCellularState();
+    highState.nextRoutineAt = 9999;
+    const low = advanceCellularSimulation(lowState, lowSignal, controls, 5).state;
+    const high = advanceCellularSimulation(highState, highSignal, controls, 5).state;
+
+    expect(low.pools.captured.oxygen).toBeGreaterThan(0);
+    expect(high.pools.captured.glucose).toBeGreaterThan(low.pools.captured.glucose);
+    expect(captureSubstrate(high, 'oxygen').ok).toBe(false);
   });
 
   it('repara dano e compra automação quando há recursos', () => {
@@ -164,21 +304,20 @@ describe('ciclo de gameplay celular', () => {
   });
 
   it('cria evento com contexto embutido e distingue decisão adaptativa da prejudicial', () => {
-    const initial = initializeCellularState();
-    initial.nextRoutineAt = 0;
+    const initial = forceScenario(initializeCellularState(), 'stair-climb');
     const started = advanceCellularSimulation(initial, initializePhysiologyState(), controls, 0.25);
     expect(started.state.routine?.id).toBe('stair-climb');
     expect(started.state.routine?.choices).toHaveLength(2);
     expect(getScenarioContext(started.state.routine?.id).exercise).toBe(78);
 
     started.state.pools.captured.oxygen = 1;
-    const correct = resolveRoutineDecision(started.state, 'stair-aerobic');
+    const correct = resolveRoutineDecision(started.state, 'stair-aerobic', 1, true, ['central:chemoreflex-ventilation']);
     expect(correct.ok).toBe(true);
     expect(correct.decisionOutcome).toBe('adaptive');
     expect(correct.state.routine).toBeNull();
 
     const lactateBefore = started.state.tissue.lactateMmolL;
-    const wrong = resolveRoutineDecision(started.state, 'stair-glycolytic');
+    const wrong = resolveRoutineDecision(started.state, 'stair-glycolytic', 1, true, ['hormone:release-adrenaline']);
     expect(wrong.ok).toBe(true);
     expect(wrong.decisionOutcome).toBe('harmful');
     expect(wrong.state.tissue.lactateMmolL).toBeGreaterThan(lactateBefore);
@@ -186,18 +325,17 @@ describe('ciclo de gameplay celular', () => {
   });
 
   it('bloqueia uma decisão sem recursos e cobra os substratos ao liberá-la', () => {
-    const initial = initializeCellularState();
-    initial.nextRoutineAt = 0;
+    const initial = forceScenario(initializeCellularState(), 'stair-climb');
     const started = advanceCellularSimulation(initial, initializePhysiologyState(), controls, .25).state;
     const blocked = resolveRoutineDecision(started, 'stair-aerobic');
     expect(blocked.ok).toBe(false);
-    expect(blocked.reason).toContain('O₂ captado');
+    expect(blocked.reason).toContain('O₂ disponível à cadeia respiratória');
     expect(blocked.state.routine?.id).toBe('stair-climb');
 
     started.pools.captured.oxygen = 1;
     const oxygenBefore = started.pools.captured.oxygen;
     const spentBefore = started.totalAtpSpent;
-    const resolved = resolveRoutineDecision(started, 'stair-aerobic');
+    const resolved = resolveRoutineDecision(started, 'stair-aerobic', 1, true, ['central:chemoreflex-ventilation']);
     expect(resolved.ok).toBe(true);
     expect(resolved.state.pools.captured.oxygen).toBe(oxygenBefore - 1);
     expect(resolved.state.totalAtpSpent).toBeCloseTo(spentBefore + .15);
@@ -227,7 +365,8 @@ describe('ciclo de gameplay celular', () => {
     initial.nextRoutineAt = 0;
     const macro = initializePhysiologyState();
     const result = advanceCellularSimulation(initial, macro, controls, .25);
-    expect(result.state.routine?.triggerReason).toContain('78%');
+    expect(result.state.routine?.triggerReason).toBeTruthy();
+    expect(getScenarioContext(result.state.routine?.id)).not.toEqual(getScenarioContext(undefined));
     expect(macro.activityLevel).toBe(0);
   });
 
@@ -236,7 +375,7 @@ describe('ciclo de gameplay celular', () => {
     initial.nextRoutineAt = 0;
     let state = advanceCellularSimulation(initial, initializePhysiologyState(), controls, 0.25).state;
     state = advanceCellularSimulation(state, initializePhysiologyState(), controls, 60).state;
-    expect(state.routine?.id).toBe('stair-climb');
+    expect(state.routine).not.toBeNull();
     expect(state.routine?.remainingSeconds).toBeGreaterThan(0);
   });
 

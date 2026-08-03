@@ -20,6 +20,10 @@ const routineEffects: Record<string, string> = {
   'micro-injury': 'Dano↑ · ATP↓ · Reparo↑',
   'immune-challenge': 'ROS↑ · ATP↓ · Inflamação↑',
   'heat-dehydration': 'Osm↑ · Volume↓ · Perfusão↓',
+  'orthostatic-transition': 'PAM↓ · Perfusão↓ · Barorreflexo?',
+  'hypercapnic-challenge': 'PaCO₂↑ · pH↓ · Drive?',
+  'acute-water-load': 'H₂O↑ · Na⁺↓ · ADH?',
+  'nocturnal-hypoglycemia': 'Glicose↓ · ATP↓ · Contrarregulação?',
 };
 
 function eventEffects(event: PhysiologicalEvent) {

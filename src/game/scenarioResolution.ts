@@ -74,6 +74,24 @@ export function evaluateScenarioResolution(
         pressureScore += Math.max(0, -hypothalamus.osmoticDrive) * .5
             + catecholamineExcess * .35
             + Math.max(0, physiology.bodyTemperature - 38) * .35;
+    } else if (scenarioId === 'orthostatic-transition') {
+        protectiveScore += Math.max(0, hypothalamus.autonomicTone) * .65
+            + clamp(physiology.cardiovascular.meanArterialPressure / 90, 0, 1.1) * .25;
+        pressureScore += Math.max(0, -hypothalamus.autonomicTone) * .7
+            + Math.max(0, 65 - physiology.cardiovascular.meanArterialPressure) / 30;
+    } else if (scenarioId === 'hypercapnic-challenge') {
+        protectiveScore += Math.max(0, hypothalamus.respiratoryDrive) * .72;
+        pressureScore += Math.max(0, physiology.respiratory.paco2 - 45) / 25
+            + Math.max(0, 7.35 - physiology.acidBase.pH) * 4
+            + catecholamineExcess * .25;
+    } else if (scenarioId === 'acute-water-load') {
+        protectiveScore += Math.max(0, -hypothalamus.osmoticDrive) * .7;
+        pressureScore += Math.max(0, hypothalamus.osmoticDrive) * .72
+            + Math.max(0, 135 - physiology.nutrients.sodium) / 12;
+    } else if (scenarioId === 'nocturnal-hypoglycemia') {
+        protectiveScore += glucagonDrive * .48 + clamp(catecholamineExcess, 0, 1) * .35;
+        pressureScore += insulinAction * .58
+            + Math.max(0, 72 - physiology.nutrients.bloodGlucose) / 28;
     }
 
     protectiveScore = clamp(protectiveScore, 0, 2);

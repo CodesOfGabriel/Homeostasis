@@ -172,7 +172,7 @@ export function ClinicalSystemView({ focus, onNavigate }: { focus?: 'vitals'; on
         </div>
 
         <GlassPanel className="p-4">
-          <div><PanelLabel icon={<BrainCircuit className="size-4"/>}>Regulação central e suporte</PanelLabel><p className="mt-1 text-[9px] leading-relaxed text-muted-foreground">Frequência cardíaca, ventilação e retenção renal são resultados. Modifique sua regulação por sinais hormonais ou circuitos hipotalâmicos.</p></div>
+          <div><PanelLabel icon={<BrainCircuit className="size-4"/>}>Regulação central e suporte</PanelLabel><p className="mt-1 text-[9px] leading-relaxed text-muted-foreground">Frequência cardíaca, ventilação e retenção renal são resultados. Modifique sua regulação por sinais hormonais, autonômicos, bulbares e osmóticos.</p></div>
           <div className="gold-line my-3 h-px"/>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="rounded-xl border border-primary/15 bg-primary/[.035] p-3.5">
@@ -181,9 +181,9 @@ export function ClinicalSystemView({ focus, onNavigate }: { focus?: 'vitals'; on
               <div className="mt-3 grid grid-cols-2 gap-2"><ActionButton onClick={() => ingestWater(250)} disabled={interventions.pendingWaterMl >= 2000}>Adicionar 250 mL</ActionButton><ActionButton onClick={() => ingestWater(500)} disabled={interventions.pendingWaterMl >= 2000}>Adicionar 500 mL</ActionButton></div>
             </div>
             <div className="flex flex-col rounded-xl border border-white/10 bg-black/15 p-3.5">
-              <div className="flex items-start gap-2"><BrainCircuit className="mt-0.5 size-4 shrink-0 text-primary"/><div><strong className="text-[11px] text-foreground">Centro hipotalâmico</strong><p className="mt-1 text-[9px] leading-relaxed text-muted-foreground">Use sinais autonômicos, quimiorreflexos e osmóticos. O motor transformará esses sinais em respostas cardiovasculares, respiratórias e renais.</p></div></div>
+              <div className="flex items-start gap-2"><BrainCircuit className="mt-0.5 size-4 shrink-0 text-primary"/><div><strong className="text-[11px] text-foreground">Integração central</strong><p className="mt-1 text-[9px] leading-relaxed text-muted-foreground">Use sinais autonômicos e osmóticos integrados ao hipotálamo; quimiorreflexos respiratórios são processados principalmente no tronco encefálico.</p></div></div>
               <div className="mt-3 grid grid-cols-3 gap-2 text-center text-[9px]"><span className="rounded-lg border border-white/8 bg-black/15 px-2 py-2">FC<br/><strong className="font-mono text-foreground">{physiology.cardiovascular.heartRate.toFixed(0)}</strong></span><span className="rounded-lg border border-white/8 bg-black/15 px-2 py-2">FR<br/><strong className="font-mono text-foreground">{physiology.respiratory.respiratoryRate.toFixed(1)}</strong></span><span className="rounded-lg border border-white/8 bg-black/15 px-2 py-2">ADH<br/><strong className="font-mono text-foreground">{physiology.renal.adhActivity.toFixed(0)}%</strong></span></div>
-              <div className="mt-3 rounded-lg border border-primary/15 bg-primary/5 px-3 py-2 text-[9px] leading-relaxed text-primary">Abra o botão flutuante de sinalização e selecione “Hipotálamo”.</div>
+              <div className="mt-3 rounded-lg border border-primary/15 bg-primary/5 px-3 py-2 text-[9px] leading-relaxed text-primary">Abra o botão flutuante de sinalização e selecione “Regulação central”.</div>
             </div>
           </div>
         </GlassPanel>

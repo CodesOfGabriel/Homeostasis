@@ -2,7 +2,7 @@ import { lazy, Suspense, useMemo, useState } from 'react';
 import { RotateCcw, X } from 'lucide-react';
 import { useSimulationLoop, useSimulationStore } from '../../game/simulationStore';
 import { Playback, Stepper, TopNav, type SimulatorTab, type StepKey } from './navigation';
-import { ActionButton, GlassPanel, PanelLabel } from './ui';
+import { ActionButton, GlassPanel, PanelLabel, cn } from './ui';
 import { GlobalPhysiologyDock } from './GlobalPhysiologyDock';
 import { GlobalReserveStrip } from './GlobalReserveStrip';
 import { PhysiologicalDecisionLayer } from './PhysiologicalDecisionLayer';
@@ -38,6 +38,8 @@ export function Simulator() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const physiology = useSimulationStore(state => state.physiology);
   const cellular = useSimulationStore(state => state.cellular);
+  const scenarioResponse = useSimulationStore(state => state.scenarioResponse);
+  const iatrogenicEpisodes = useSimulationStore(state => state.iatrogenicEpisodes);
   const warnings = useSimulationStore(state => state.activeWarnings);
   const events = useSimulationStore(state => state.recentEvents);
   const running = useSimulationStore(state => state.isRunning);
@@ -47,13 +49,14 @@ export function Simulator() {
   const reset = useSimulationStore(state => state.reset);
   const setSpeed = useSimulationStore(state => state.setTimeSpeed);
   const time = simulationClock(physiology.timeElapsed);
+  const decisionVisible = Boolean(cellular.routine || scenarioResponse);
 
   const condition = useMemo(() => {
     if (!physiology.isAlive) return 'Falência';
-    if (cellular.cell.viabilityPercent < 35 || warnings.some(warning => warning.severity === 'severe')) return 'Crítica';
-    if (cellular.cell.viabilityPercent < 70 || warnings.length > 0) return 'Atenção';
+    if (cellular.cell.viabilityPercent < 35 || warnings.some(warning => warning.severity === 'severe') || iatrogenicEpisodes.some(episode => episode.severity === 'critical')) return 'Crítica';
+    if (cellular.cell.viabilityPercent < 70 || warnings.length > 0 || iatrogenicEpisodes.length > 0) return 'Atenção';
     return 'Estável';
-  }, [cellular.cell.viabilityPercent, physiology.isAlive, warnings]);
+  }, [cellular.cell.viabilityPercent, iatrogenicEpisodes, physiology.isAlive, warnings]);
 
   const chooseStep = (step: StepKey) => {
     setActiveStep(step);
@@ -84,16 +87,18 @@ export function Simulator() {
 
       <div className="relative z-10 flex min-h-0 flex-1 flex-col">
         <TopNav day={time.day} clock={time.clock} condition={condition} healthy={condition === 'Estável'} events={events} routine={cellular.routine} onSettings={() => setSettingsOpen(true)} />
-        {started && <GlobalReserveStrip />}
-        {started && <Suspense fallback={<div className="grid min-h-0 flex-1 place-items-center text-xs uppercase tracking-widest text-muted-foreground">Preparando escala fisiológica…</div>}>
-          {activeTab === 'tissue' && <TissueView />}
-          {activeTab === 'intracellular' && <IntracellularView />}
-          {activeTab === 'machinery' && <MachineryView />}
-          {activeTab === 'system' && <ClinicalSystemView focus="vitals" onNavigate={chooseStep} />}
-        </Suspense>}
+        {started && <GlobalReserveStrip shifted={decisionVisible} />}
+        <div className={cn('flex min-h-0 flex-1 flex-col transition-[padding] duration-300', decisionVisible && 'lg:pl-[412px]')}>
+          {started && <Suspense fallback={<div className="grid min-h-0 flex-1 place-items-center text-xs uppercase tracking-widest text-muted-foreground">Preparando escala fisiológica…</div>}>
+            {activeTab === 'tissue' && <TissueView />}
+            {activeTab === 'intracellular' && <IntracellularView />}
+            {activeTab === 'machinery' && <MachineryView />}
+            {activeTab === 'system' && <ClinicalSystemView focus="vitals" onNavigate={chooseStep} />}
+          </Suspense>}
+        </div>
         {started && <GlobalPhysiologyDock />}
-        {started && <PhysiologicalDecisionLayer />}
-        <footer className="pointer-events-none absolute inset-x-0 bottom-0 z-30 flex items-end justify-center gap-3 bg-gradient-to-t from-background/85 via-background/30 to-transparent px-4 pb-2 pt-10 lg:px-6">
+        {started && <PhysiologicalDecisionLayer onNavigate={chooseStep} />}
+        <footer className={cn('pointer-events-none absolute inset-x-0 bottom-0 z-30 flex items-end justify-center gap-3 bg-gradient-to-t from-background/85 via-background/30 to-transparent px-4 pb-2 pt-10 transition-[padding] lg:px-6', decisionVisible && 'lg:pl-[424px]')}>
           <Stepper active={activeStep} onChange={chooseStep} />
           <div className="pointer-events-auto hidden flex-none sm:block xl:absolute xl:bottom-2 xl:right-6"><Playback running={running} speed={speed} onToggle={() => running ? pause() : start()} onSpeed={cycleSpeed} /></div>
         </footer>

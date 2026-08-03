@@ -9,8 +9,8 @@ import { ElectronTransportChain } from './ElectronTransportChain';
 import { ActionButton, GlassPanel, HelpTip, MetricCard, PanelLabel, ProgressBar, Sparkline, cn } from './ui';
 
 const resourceMeta: Record<SubstrateKind, { label: string; receptor: string; unit: string; icon: typeof Zap; color: string; cost: string; effect: string; risk: string }> = {
-  glucose: { label: 'Glicose', receptor: 'GLUT4', unit: '1 pacote', icon: Zap, color: 'var(--good)', cost: 'transportador · sem ATP direto', effect: 'Glicólise, piruvato e glicogênio', risk: 'Com pouco O₂: lactato, H⁺ e ROS' },
-  oxygen: { label: 'Oxigênio', receptor: 'difusão de O₂', unit: '3 pacotes', icon: Wind, color: 'var(--cyan)', cost: 'difusão conforme gradiente', effect: 'CTE e fosforilação oxidativa', risk: 'Excesso redox: ROS de reperfusão' },
+  glucose: { label: 'Glicose', receptor: 'GLUT4', unit: '1 pacote', icon: Zap, color: 'var(--good)', cost: 'recrutado por insulina e contração', effect: 'Glicólise, piruvato e glicogênio', risk: 'Com pouca oxidação: maior pressão glicolítica e redox' },
+  oxygen: { label: 'Oxigênio', receptor: 'difusão de O₂', unit: 'fluxo automático', icon: Wind, color: 'var(--cyan)', cost: 'gradiente de PO₂ + perfusão', effect: 'aceitador final da CTE', risk: 'ROS depende do fluxo ETC e do estado redox, não de um estoque de O₂' },
   fattyAcid: { label: 'Ácido graxo', receptor: 'CD36 / FATP', unit: '0,5 pacote', icon: Flame, color: 'var(--warning)', cost: 'transporte + CPT-1', effect: 'Beta-oxidação de alto rendimento', risk: 'Exige O₂ e eleva pressão redox' },
   aminoAcid: { label: 'Aminoácido', receptor: 'LAT1', unit: '0,5 pacote', icon: Atom, color: 'var(--primary)', cost: 'cotransporte e gradiente iônico', effect: 'Reparo e síntese proteica', risk: 'Excesso aumenta carga nitrogenada' },
 };
@@ -23,12 +23,13 @@ const adaptationLabels = {
 };
 const saturationConsequences: Record<SubstrateKind, string> = {
   glucose: 'acúmulo aumenta ROS e glicotoxicidade; processe por glicólise antes de captar mais',
-  oxygen: 'ocupação alta com NADH elevado aumenta pressão redox e ROS',
+  oxygen: 'o fluxo acompanha PO₂, perfusão e consumo mitocondrial; não é um transportador saturável',
   fattyAcid: 'acúmulo causa lipotoxicidade, dano de membrana e estresse proteico',
   aminoAcid: 'acúmulo aumenta carga nitrogenada, resíduos e estresse de síntese',
 };
 
 function substrateStatus(kind: SubstrateKind, available: number, captured: number, tissue: { glucoseMmolL: number; oxygenMmHg: number }): FlowSubstrateStatus {
+  if (kind === 'oxygen') return tissue.oxygenMmHg < 25 ? 'limited' : 'available';
   if (captured + CAPTURE_AMOUNTS[kind] > CAPTURED_POOL_CAPS[kind]) return 'blocked';
   if (available < CAPTURE_AMOUNTS[kind]) return 'limited';
   if (kind === 'glucose' && tissue.glucoseMmolL > 11) return 'toxic';
@@ -39,8 +40,11 @@ function substrateStatus(kind: SubstrateKind, available: number, captured: numbe
 
 function substrateStatusExplanation(kind: SubstrateKind, status: FlowSubstrateStatus) {
   const meta = resourceMeta[kind];
+  if (kind === 'oxygen') return status === 'limited'
+    ? 'PO₂ tecidual baixa: melhore ventilação e perfusão para ampliar a entrega à cadeia respiratória.'
+    : 'O₂ difunde continuamente segundo PO₂, perfusão e consumo; não há botão fisiológico de captação.';
   if (status === 'blocked') return `${meta.receptor}: pool intracelular saturado; processe o substrato antes de aumentar a captação.`;
-  if (status === 'limited') return kind === 'oxygen' ? 'PO₂ tecidual baixa: a difusão oferece menos O₂ à mitocôndria.' : `Entrega capilar reduzida: há pouco ${meta.label.toLowerCase()} disponível no interstício.`;
+  if (status === 'limited') return `Entrega capilar reduzida: há pouco ${meta.label.toLowerCase()} disponível no interstício.`;
   if (status === 'excess') return `Oferta acima da demanda atual; a captação extra aumenta o risco descrito para ${meta.label.toLowerCase()}.`;
   if (status === 'toxic') return kind === 'glucose' ? 'Sobrecarga glicêmica: a entrada adicional favorece estresse redox e ROS.' : 'Sobrecarga lipídica com oxigenação insuficiente: a oxidação pode elevar ROS.';
   if (status === 'cooldown') return `${meta.receptor} está recuperando o gradiente após uma captação recente.`;
@@ -62,12 +66,14 @@ function CompactTissueMetric({ label, value, unit, history, color = 'var(--teal)
 
 export function TissueView() {
   const cellular = useSimulationStore(state => state.cellular);
+  const scenarioResponse = useSimulationStore(state => state.scenarioResponse);
   const history = useSimulationStore(state => state.history);
   const warnings = useSimulationStore(state => state.activeWarnings);
   const capture = useSimulationStore(state => state.captureCellularSubstrate);
   const [feedback, setFeedback] = useState('Selecione um substrato para transferi-lo ao meio intracelular.');
   const [selectedKind, setSelectedKind] = useState<SubstrateKind>('oxygen');
   const tissue = cellular.tissue;
+  const decisionVisible = Boolean(cellular.routine || scenarioResponse);
   const cell = cellular.cell;
   const selectedMeta = resourceMeta[selectedKind];
   const selectedAvailable = cellular.pools.available[selectedKind];
@@ -91,21 +97,25 @@ export function TissueView() {
   })) as Record<SubstrateKind, FlowChipDatum>, [cellular.pools.available, cellular.pools.captured, tissue]);
 
   const doCapture = (kind: SubstrateKind) => {
+    if (kind === 'oxygen') {
+      setFeedback('O₂ é ajustado continuamente pelo gradiente: use ventilação, perfusão e demanda mitocondrial.');
+      return;
+    }
     const status = substrateStatus(kind, cellular.pools.available[kind], cellular.pools.captured[kind], tissue);
     const ok = capture(kind);
     setFeedback(ok ? `${resourceMeta[kind].label} captado com sucesso.` : `Captação indisponível: ${substrateStatusExplanation(kind, status)}`);
   };
 
   return (
-    <div className="relative z-10 grid min-h-0 flex-1 grid-cols-1 gap-3 px-4 pb-20 lg:grid-cols-[230px_minmax(0,1fr)] lg:px-6 xl:grid-cols-[230px_minmax(0,1fr)_270px]">
-      <GlassPanel className="relative z-20 hidden min-h-0 max-h-full self-stretch overflow-visible bg-black/25 p-3 lg:flex lg:flex-col">
+    <div className={cn('relative z-10 grid min-h-0 flex-1 grid-cols-1 gap-3 px-4 pb-20 lg:px-6', decisionVisible ? 'lg:grid-cols-1 xl:grid-cols-[minmax(0,1fr)_250px]' : 'lg:grid-cols-[230px_minmax(0,1fr)] xl:grid-cols-[230px_minmax(0,1fr)_270px]')}>
+      {!decisionVisible && <GlassPanel className="relative z-20 hidden min-h-0 max-h-full self-stretch overflow-visible bg-black/25 p-3 lg:flex lg:flex-col">
         <div className="flex items-center gap-2"><PanelLabel icon={<Crosshair className="size-3.5"/>}>Objetivo</PanelLabel><HelpTip title="Como vencer este ciclo?">Mantenha ATP, oxigênio, pH e integridade celular. Prepare reservas sem saturá-las; decisões podem exigir esses recursos.</HelpTip></div><div className="gold-line my-3 h-px"/>
         <h2 className="text-[13px] font-medium">Manter a homeostase tecidual</h2><p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">Equilibre perfusão, gases, energia e pH sem criar outro desequilíbrio.</p>
         <div className="mt-4 flex items-center gap-2"><PanelLabel icon={<Target className="size-3.5"/>}>Foco atual</PanelLabel><HelpTip title="Prioridade atual">O foco muda com alertas e cenários. Prepare os substratos indicados antes de escolher uma resposta.</HelpTip></div><div className="gold-line my-2 h-px"/>
         <h3 className="text-xs font-medium">{cellular.routine?.title ?? (warnings[0]?.parameter ? `Corrigir ${warnings[0].parameter}` : 'Sustentar metabolismo aeróbio')}</h3>
         <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">{cellular.routine?.description ?? warnings[0]?.recommendation ?? 'Garanta O₂ e substratos sem saturar os pools celulares.'}</p>
         <div className="mt-auto rounded-lg border border-white/8 bg-black/15 p-2.5 text-[9px] leading-relaxed text-muted-foreground"><span className="mb-1 block uppercase tracking-wider text-primary">Leitura ativa</span>{feedback}</div>
-      </GlassPanel>
+      </GlassPanel>}
 
       <section className="min-h-0 overflow-visible rounded-xl p-1" aria-label="Microambiente tecidual">
         <div className="mx-auto flex min-h-full max-w-5xl flex-col justify-end">
@@ -125,12 +135,12 @@ export function TissueView() {
             <div className="grid items-center gap-2.5 sm:grid-cols-[minmax(0,1fr)_auto]">
               <div className="flex min-w-0 items-center gap-2.5">
                 <span className="grid size-9 flex-none place-items-center rounded-full border bg-black/30" style={{ color: selectedMeta.color, borderColor: selectedMeta.color }}><SelectedIcon className="size-4"/></span>
-                <div className="min-w-0"><div className="flex items-center gap-2"><strong className="font-display text-sm">{selectedMeta.label}</strong><span className="substrate-state" data-state={selectedStatus}>{substrateStatusLabel(selectedKind, selectedStatus)}</span></div><p className="mt-1 font-mono text-[9px] text-muted-foreground">Tecido {selectedAvailable.toFixed(1)} · Célula {selectedCaptured.toFixed(1)} · ocupação {selectedSaturation.toFixed(0)}%</p><p className="mt-1 truncate text-[8px] text-muted-foreground" title={selectedStatusExplanation}>{selectedStatusExplanation}</p></div>
+                <div className="min-w-0"><div className="flex items-center gap-2"><strong className="font-display text-sm">{selectedMeta.label}</strong><span className="substrate-state" data-state={selectedStatus}>{substrateStatusLabel(selectedKind, selectedStatus)}</span></div><p className="mt-1 font-mono text-[9px] text-muted-foreground">{selectedKind === 'oxygen' ? `PO₂ ${tissue.oxygenMmHg.toFixed(0)} mmHg · fluxo CTE ${cellular.mitochondria.oxygenConsumption.toFixed(1)}/min` : `Tecido ${selectedAvailable.toFixed(1)} · Célula ${selectedCaptured.toFixed(1)} · ocupação ${selectedSaturation.toFixed(0)}%`}</p><p className="mt-1 truncate text-[8px] text-muted-foreground" title={selectedStatusExplanation}>{selectedStatusExplanation}</p></div>
               </div>
               <div className="grid gap-2 text-[8px] leading-relaxed text-muted-foreground sm:col-span-2 sm:row-start-2 sm:grid-cols-3"><p><span className="block uppercase tracking-wider text-foreground/55">Custo</span>{selectedMeta.cost}</p><p><span className="block uppercase tracking-wider text-foreground/55">Efeito</span>{selectedMeta.effect}</p><p><span className="block uppercase tracking-wider text-foreground/55">Risco</span>{selectedMeta.risk}</p></div>
-              <ActionButton onClick={() => doCapture(selectedKind)} disabled={selectedStatus === 'limited' || selectedStatus === 'blocked'} className="min-w-24 border-primary/50 bg-primary/10 sm:col-start-2 sm:row-start-1">Captar <span className="block text-[8px] normal-case text-muted-foreground">{selectedMeta.unit}</span></ActionButton>
+              <ActionButton onClick={() => doCapture(selectedKind)} disabled={selectedKind === 'oxygen' || selectedStatus === 'limited' || selectedStatus === 'blocked'} className="min-w-24 border-primary/50 bg-primary/10 sm:col-start-2 sm:row-start-1">{selectedKind === 'oxygen' ? 'Automático' : 'Captar'} <span className="block text-[8px] normal-case text-muted-foreground">{selectedMeta.unit}</span></ActionButton>
             </div>
-            <div className={cn('mt-2 rounded-md border px-2.5 py-2 text-[9px] leading-relaxed', selectedSaturation >= 75 ? 'border-warning/35 bg-warning/5 text-warning' : 'border-white/5 bg-black/15 text-muted-foreground')}><strong>Economia do pool:</strong> {selectedSaturation >= 75 ? saturationConsequences[selectedKind] : `capte quando uma rota ou decisão exigir ${selectedMeta.label.toLowerCase()}; acima de 75% começam custos de saturação.`}</div>
+            <div className={cn('mt-2 rounded-md border px-2.5 py-2 text-[9px] leading-relaxed', selectedKind !== 'oxygen' && selectedSaturation >= 75 ? 'border-warning/35 bg-warning/5 text-warning' : 'border-white/5 bg-black/15 text-muted-foreground')}><strong>{selectedKind === 'oxygen' ? 'Fisiologia do fluxo:' : 'Economia do pool:'}</strong> {selectedKind === 'oxygen' ? saturationConsequences.oxygen : selectedSaturation >= 75 ? saturationConsequences[selectedKind] : `capte quando uma rota ou decisão exigir ${selectedMeta.label.toLowerCase()}; acima de 75% começam custos de saturação.`}</div>
             <div className="mt-2 flex items-center gap-3 border-t border-white/8 pt-2"><span className="flex-none text-[8px] uppercase tracking-wider text-primary">Console</span><p className="min-w-0 truncate text-[9px] text-muted-foreground" role="status" aria-live="polite">{feedback}</p><span className="ml-auto hidden flex-none font-mono text-[9px] text-foreground/70 sm:inline">ATP {cell.atpMmolL.toFixed(2)} · pH {tissue.pH.toFixed(2)} · {adaptationLabels[leadingAdaptation[0]]} Nv.{leadingAdaptation[1]}</span></div>
           </GlassPanel>
         </div>
@@ -194,7 +204,7 @@ export function MachineryView() {
   const canOxidize = (kind: OxidationSubstrate) => kind === 'pyruvate' ? cellular.pools.pyruvate >= 1 && cellular.pools.captured.oxygen >= 3 && cellular.cell.adpMmolL >= .45 : cellular.pools.captured.fattyAcid >= 1 && cellular.pools.captured.oxygen >= 6 && cellular.cell.adpMmolL >= .85;
   return <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto px-4 pb-28 lg:px-6"><div className="mx-auto grid max-w-7xl grid-cols-1 gap-4 xl:grid-cols-[1fr_340px]">
     <GlassPanel className="p-4"><div className="flex items-center justify-between gap-2"><PanelLabel icon={<Atom className="size-4"/>}>Rotas bioquímicas</PanelLabel><HelpTip title="Referências da rota"><p>Os substratos são exibidos em pacotes, não em unidades clínicas; não há uma faixa “normal” fixa para seus estoques.</p><ul className="mt-2 space-y-1"><li>O₂ tecidual: mantenha ≥ 35 mmHg</li><li>ATP celular: mantenha ≥ 1,50 mmol/L</li><li>ΔΨ mitocondrial: cerca de −150 a −180 mV</li><li>NADH: em equilíbrio, ~40–60%</li><li>Saúde mitocondrial: ≥ 70%</li></ul><p className="mt-2">Os botões ficam disponíveis quando há os pacotes necessários para cada reação.</p></HelpTip></div><div className="gold-line my-3 h-px"/><div className="grid grid-cols-2 gap-2 md:grid-cols-5">{[
-      ['Glicose', cellular.pools.captured.glucose], ['Oxigênio', cellular.pools.captured.oxygen], ['Ácido graxo', cellular.pools.captured.fattyAcid], ['Aminoácido', cellular.pools.captured.aminoAcid], ['Piruvato', cellular.pools.pyruvate]
+      ['Glicose', cellular.pools.captured.glucose], ['O₂ disponível à CTE', cellular.pools.captured.oxygen], ['Ácido graxo', cellular.pools.captured.fattyAcid], ['Aminoácido', cellular.pools.captured.aminoAcid], ['Piruvato', cellular.pools.pyruvate]
     ].map(([label, value]) => <GlassPanel key={String(label)} soft className="p-3 text-center"><PanelLabel className="justify-center">{label}</PanelLabel><strong className="mt-2 block font-display text-xl">{Number(value).toFixed(1)}</strong></GlassPanel>)}</div>
       <CellularMachineryScene automation={cellular.automation} etcFlux={cellular.mitochondria.etcFluxPercent} atp={cellular.cell.atpMmolL}/>
       <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-3">

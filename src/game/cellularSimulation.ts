@@ -8,6 +8,7 @@ import type {
     CellularEvent,
     CellularState,
     CellularTickResult,
+    DecisionSignalId,
     OxidationSubstrate,
     RepairTarget,
     SubstrateKind,
@@ -182,7 +183,9 @@ export function initializeCellularState(): CellularState {
         totalAtpProduced: 0,
         totalAtpSpent: 0,
         lastEvent: 'Microambiente em homeostase basal',
-        nextRoutineAt: 15,
+        // O primeiro desafio chega cedo o bastante para apresentar a mecânica,
+        // mas sem interromper a leitura inicial dos painéis.
+        nextRoutineAt: 30,
         scenarioCooldowns: {},
         simulationTime: 0,
     };
@@ -228,6 +231,14 @@ function routineDemand(state: CellularState) {
             return { atp: 0.005, ros: 0.0017, lactate: 0.005, aminoAcid: 0 };
         case 'heat-dehydration':
             return { atp: 0.009, ros: 0.0006, lactate: 0, aminoAcid: 0 };
+        case 'orthostatic-transition':
+            return { atp: 0.007, ros: 0.0004, lactate: 0.012, aminoAcid: 0 };
+        case 'hypercapnic-challenge':
+            return { atp: 0.008, ros: 0.0007, lactate: 0.018, aminoAcid: 0 };
+        case 'acute-water-load':
+            return { atp: 0.004, ros: 0.0002, lactate: 0, aminoAcid: 0 };
+        case 'nocturnal-hypoglycemia':
+            return { atp: 0.009, ros: 0.0005, lactate: 0.008, aminoAcid: 0 };
         default:
             return { atp: 0, ros: 0, lactate: 0, aminoAcid: 0 };
     }
@@ -236,10 +247,10 @@ function routineDemand(state: CellularState) {
 function applyRoutineOnset(state: CellularState) {
     if (!state.routine) return;
     const definition = getScenarioDefinition(state.routine.id);
-    if (definition) applyScenarioEffects(state, definition.onStart);
+    if (definition) mutateScenarioEffects(state, definition.onStart);
 }
 
-function applyScenarioEffects(state: CellularState, effects: ScenarioEffect[], multiplier = 1) {
+function mutateScenarioEffects(state: CellularState, effects: ScenarioEffect[], multiplier = 1) {
     for (const effect of effects) {
         const delta = effect.delta * multiplier;
         if (effect.target === 'cell.atp') state.cell.atpMmolL += delta;
@@ -266,7 +277,23 @@ function applyScenarioEffects(state: CellularState, effects: ScenarioEffect[], m
     syncAdenylates(state);
 }
 
-export function resolveRoutineDecision(state: CellularState, choiceId: string, effectMultiplier = 1): CellularActionResult {
+export function applyScenarioCellularEffects(
+    state: CellularState,
+    effects: ScenarioEffect[],
+    multiplier = 1,
+): CellularState {
+    const next = cloneState(state);
+    mutateScenarioEffects(next, effects, multiplier);
+    return next;
+}
+
+export function resolveRoutineDecision(
+    state: CellularState,
+    choiceId: string,
+    effectMultiplier = 1,
+    applyEffectsImmediately = true,
+    preparedSignals: readonly DecisionSignalId[] = [],
+): CellularActionResult {
     if (!state.routine || !state.routine.choices.some(choice => choice.id === choiceId)) {
         return actionFailure(state, 'Esta decisão não está disponível no cenário atual.');
     }
@@ -274,9 +301,9 @@ export function resolveRoutineDecision(state: CellularState, choiceId: string, e
     const scenarioId = state.routine.id;
     const choice = getScenarioChoice(scenarioId, choiceId);
     if (!choice) return actionFailure(state, 'A consequência desta decisão não está configurada.');
-    const availability = getScenarioChoiceAvailability(state, scenarioId, choiceId);
+    const availability = getScenarioChoiceAvailability(state, scenarioId, choiceId, preparedSignals);
     if (!availability.available) {
-        return actionFailure(state, `Recursos insuficientes: ${availability.missing.join(' · ')}.`);
+        return actionFailure(state, `Preparação incompleta: ${availability.missing.join(' · ')}.`);
     }
 
     const next = cloneState(state);
@@ -290,7 +317,7 @@ export function resolveRoutineDecision(state: CellularState, choiceId: string, e
         else if (requirement.resource === 'antioxidants') next.damage.antioxidantCapacity -= requirement.cost;
         else next.pools.captured[requirement.resource] -= requirement.cost;
     }
-    applyScenarioEffects(next, choice.cellularEffects, effectMultiplier);
+    if (applyEffectsImmediately) mutateScenarioEffects(next, choice.cellularEffects, effectMultiplier);
 
     next.routine = null;
     next.lastEvent = choice.result;
@@ -317,14 +344,27 @@ export function resolveRoutineDecision(state: CellularState, choiceId: string, e
     };
 }
 
-function autoCapture(state: CellularState, dt: number) {
+function autoCapture(state: CellularState, macro: PhysiologyState, dt: number) {
     const level = state.automation.transporters;
     // A célula já possui transportadores constitutivos. A progressão compra
     // expressão/recrutamento adicional, não cria a fisiologia basal do zero.
     const basalRates: SubstratePool = createPool(0.014, 0.085, 0.002, 0.003);
     const levelRates: SubstratePool = createPool(0.018, 0.07, 0.008, 0.009);
+    const insulinAction = clamp(
+        macro.hormones.insulin / 10 * macro.endocrine.insulinReceptorSensitivity,
+        0,
+        2,
+    );
+    const contractionRecruitment = clamp(macro.activityLevel / 100, 0, 1.2);
     (Object.keys(basalRates) as SubstrateKind[]).forEach(kind => {
-        const rate = basalRates[kind] + levelRates[kind] * level;
+        // GLUT4 responde à insulina e à contração muscular. O₂, por outro
+        // lado, atravessa por difusão e não recebe bônus de "transportador".
+        const transporterFactor = kind === 'glucose'
+            ? clamp(.3 + insulinAction * .45 + contractionRecruitment * .7, .2, 1.8)
+            : kind === 'oxygen'
+                ? 1
+                : 1 + level * .12;
+        const rate = (basalRates[kind] + levelRates[kind] * (kind === 'oxygen' ? 0 : level)) * transporterFactor;
         const amount = Math.min(
             state.pools.available[kind],
             Math.max(0, CAPTURED_POOL_CAPS[kind] - state.pools.captured[kind]),
@@ -517,7 +557,7 @@ function advanceStep(
         const delivered = deliveryRates[kind] * perfusionFactor * deliveryAvailability[kind] * dt;
         state.pools.available[kind] = Math.min(deliveryCaps[kind], state.pools.available[kind] + delivered);
     });
-    autoCapture(state, dt);
+    autoCapture(state, macro, dt);
 
     // Excesso de piruvato sem capacidade oxidativa é reduzido a lactato, regenerando NAD+.
     if (state.pools.pyruvate > 4) {
@@ -602,10 +642,9 @@ function advanceStep(
         state.transportSaturation[kind] = approach(state.transportSaturation[kind], occupancy, 3, dt);
     });
     const glucoseSaturation = clamp((state.transportSaturation.glucose - 75) / 25, 0, 1);
-    const oxygenSaturation = clamp((state.transportSaturation.oxygen - 82) / 18, 0, 1);
     const fattyAcidSaturation = clamp((state.transportSaturation.fattyAcid - 70) / 30, 0, 1);
     const aminoAcidSaturation = clamp((state.transportSaturation.aminoAcid - 80) / 20, 0, 1);
-    const saturationRos = glucoseSaturation * .006 + oxygenSaturation * .004 + fattyAcidSaturation * .008;
+    const saturationRos = glucoseSaturation * .006 + fattyAcidSaturation * .008;
     state.damage.membrane = clamp(state.damage.membrane + fattyAcidSaturation * .006 * dt, 0, 100);
     state.damage.proteins = clamp(state.damage.proteins + (fattyAcidSaturation * .004 + aminoAcidSaturation * .003) * dt, 0, 100);
     state.tissue.wasteLoad = clamp(state.tissue.wasteLoad + aminoAcidSaturation * .012 * dt, 0, 100);
@@ -834,9 +873,13 @@ export function advanceCellularSimulation(
             state.nextRoutineAt = state.simulationTime + 8;
             return;
         }
-        state.routine = createRoutineEvent(candidate.definition, candidate.eligibility.reason);
+        state.routine = createRoutineEvent(candidate.definition, candidate.eligibility.reason, state.simulationTime);
         applyRoutineOnset(state);
-        state.nextRoutineAt = state.simulationTime + 18;
+        // Intervalo variável determinístico: evita uma fila de tickets e dá
+        // tempo para observar a trajetória fisiológica da decisão anterior.
+        const intervalSeed = Math.sin(state.simulationTime * 1.713 + state.collection.score * .17 + 4.2) * 43758.5453;
+        const intervalRoll = intervalSeed - Math.floor(intervalSeed);
+        state.nextRoutineAt = state.simulationTime + 72 + intervalRoll * 38;
         state.scenarioCooldowns[candidate.definition.id] = state.simulationTime + candidate.definition.cooldownSeconds;
         state.lastEvent = state.routine.title;
         events.push({
@@ -887,6 +930,9 @@ function actionFailure(state: CellularState, reason: string): CellularActionResu
 }
 
 export function captureSubstrate(state: CellularState, kind: SubstrateKind): CellularActionResult {
+    if (kind === 'oxygen') {
+        return actionFailure(state, 'O₂ segue automaticamente o gradiente de PO₂, a perfusão e a demanda mitocondrial; ajuste ventilação e circulação.');
+    }
     const next = cloneState(state);
     const previousCollection = state.collection ?? createInitialCollectionProgress();
     const amount = CAPTURE_AMOUNTS[kind];
@@ -903,7 +949,6 @@ export function captureSubstrate(state: CellularState, kind: SubstrateKind): Cel
     next.transportSaturation[kind] = Math.max(next.transportSaturation[kind], occupancy);
     if (occupancy >= 80) {
         if (kind === 'glucose') next.damage.oxidativeStress = clamp(next.damage.oxidativeStress + 1.2, 0, 100);
-        else if (kind === 'oxygen') next.damage.oxidativeStress = clamp(next.damage.oxidativeStress + .8, 0, 100);
         else if (kind === 'fattyAcid') {
             next.damage.oxidativeStress = clamp(next.damage.oxidativeStress + 1.4, 0, 100);
             next.damage.membrane = clamp(next.damage.membrane + .7, 0, 100);

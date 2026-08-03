@@ -4,6 +4,9 @@
  * normalizados de fluxo para manter a interação legível.
  */
 
+import type { HormoneActionId } from './config/hormones';
+import type { HypothalamicSignalId } from './hypothalamus';
+
 export type SubstrateKind = 'glucose' | 'oxygen' | 'fattyAcid' | 'aminoAcid';
 export type OxidationSubstrate = 'pyruvate' | 'fattyAcid';
 export type RepairTarget = 'membrane' | 'proteins' | 'dna' | 'antioxidants';
@@ -112,6 +115,7 @@ export interface CellularRoutineChoice {
     description: string;
     tradeoff: string;
     requirements: DecisionResourceRequirement[];
+    signalRequirements?: DecisionSignalRequirement[];
 }
 
 export type DecisionResource = 'atp' | 'glucose' | 'oxygen' | 'fattyAcid' | 'aminoAcid' | 'pyruvate' | 'antioxidants';
@@ -120,6 +124,16 @@ export interface DecisionResourceRequirement {
     resource: DecisionResource;
     minimum: number;
     cost: number;
+}
+
+export type DecisionSignalId =
+    | `hormone:${HormoneActionId}`
+    | `central:${HypothalamicSignalId}`;
+
+export interface DecisionSignalRequirement {
+    /** Um dos sinais listados é suficiente para cumprir este requisito. */
+    anyOf: DecisionSignalId[];
+    label: string;
 }
 
 export type RoutineDecisionOutcome = 'adaptive' | 'harmful';
