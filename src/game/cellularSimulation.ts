@@ -22,6 +22,7 @@ import {
     selectEligibleScenario,
     type ScenarioEffect,
 } from './scenarios';
+import { advanceScenarioNarrative, createInitialScenarioNarrativeState, getScenarioNarrative } from './scenarioNarrative';
 
 const BASE_OSMOLARITY = 290;
 const TOTAL_ADENYLATE = 6;
@@ -187,6 +188,7 @@ export function initializeCellularState(): CellularState {
         // mas sem interromper a leitura inicial dos painéis.
         nextRoutineAt: 30,
         scenarioCooldowns: {},
+        narrative: createInitialScenarioNarrativeState(),
         simulationTime: 0,
     };
 }
@@ -212,6 +214,9 @@ function cloneState(state: CellularState): CellularState {
         atpAllocation: { ...state.atpAllocation },
         routine: state.routine ? { ...state.routine } : null,
         scenarioCooldowns: { ...(state.scenarioCooldowns ?? {}) },
+        narrative: state.narrative
+            ? { ...state.narrative, activeTags: [...state.narrative.activeTags] }
+            : createInitialScenarioNarrativeState(),
     };
 }
 
@@ -239,6 +244,28 @@ function routineDemand(state: CellularState) {
             return { atp: 0.004, ros: 0.0002, lactate: 0, aminoAcid: 0 };
         case 'nocturnal-hypoglycemia':
             return { atp: 0.009, ros: 0.0005, lactate: 0.008, aminoAcid: 0 };
+        case 'mitochondrial-uncoupling':
+            return { atp: 0.018, ros: 0.0024, lactate: 0.012, aminoAcid: 0 };
+        case 'mixed-ketoacidotic-fatigue':
+            return { atp: 0.016, ros: 0.0014, lactate: 0.02, aminoAcid: 0 };
+        case 'distributive-dysoxia':
+            return { atp: 0.017, ros: 0.0022, lactate: 0.026, aminoAcid: 0 };
+        case 'reperfusion-paradox':
+            return { atp: 0.015, ros: 0.0032, lactate: 0.01, aminoAcid: 0 };
+        case 'hyperosmolar-renal-conflict':
+            return { atp: 0.014, ros: 0.0015, lactate: 0.014, aminoAcid: 0 };
+        case 'whisky-party-hepatic-overload':
+            return { atp: 0.016, ros: 0.0024, lactate: 0.024, aminoAcid: 0 };
+        case 'alcohol-nocturnal-hypoglycemia':
+            return { atp: 0.019, ros: 0.0018, lactate: 0.018, aminoAcid: 0 };
+        case 'fasted-workout-free-fatty-acids':
+            return { atp: 0.022, ros: 0.0021, lactate: 0.03, aminoAcid: 0 };
+        case 'chronic-anxiety-sedentary':
+            return { atp: 0.013, ros: 0.0018, lactate: 0.01, aminoAcid: 0 };
+        case 'panic-hyperventilation':
+            return { atp: 0.015, ros: 0.0017, lactate: 0.012, aminoAcid: 0 };
+        case 'major-hemorrhage':
+            return { atp: 0.025, ros: 0.0025, lactate: 0.036, aminoAcid: 0 };
         default:
             return { atp: 0, ros: 0, lactate: 0, aminoAcid: 0 };
     }
@@ -254,26 +281,101 @@ function mutateScenarioEffects(state: CellularState, effects: ScenarioEffect[], 
     for (const effect of effects) {
         const delta = effect.delta * multiplier;
         if (effect.target === 'cell.atp') state.cell.atpMmolL += delta;
+        else if (effect.target === 'cell.pH') state.cell.pH += delta;
+        else if (effect.target === 'cell.osmolarity') state.cell.osmolarity += delta;
         else if (effect.target === 'cell.volume') state.cell.volumePercent += delta;
+        else if (effect.target === 'cell.membranePotential') state.cell.membranePotentialMv += delta;
+        else if (effect.target === 'cell.sodium') state.cell.sodium += delta;
+        else if (effect.target === 'cell.potassium') state.cell.potassium += delta;
+        else if (effect.target === 'cell.calcium') state.cell.calciumNm += delta;
+        else if (effect.target === 'cell.nadh') state.cell.nadhPercent += delta;
+        else if (effect.target === 'cell.viability') state.cell.viabilityPercent += delta;
+        else if (effect.target === 'tissue.perfusion') state.tissue.perfusionPercent += delta;
+        else if (effect.target === 'tissue.oxygen') state.tissue.oxygenMmHg += delta;
+        else if (effect.target === 'tissue.carbonDioxide') state.tissue.carbonDioxideMmHg += delta;
         else if (effect.target === 'tissue.glucose') state.tissue.glucoseMmolL += delta;
         else if (effect.target === 'tissue.lactate') state.tissue.lactateMmolL += delta;
+        else if (effect.target === 'tissue.pH') state.tissue.pH += delta;
         else if (effect.target === 'tissue.osmolarity') state.tissue.osmolarity += delta;
+        else if (effect.target === 'tissue.sodium') state.tissue.sodium += delta;
+        else if (effect.target === 'tissue.potassium') state.tissue.potassium += delta;
+        else if (effect.target === 'tissue.waste') state.tissue.wasteLoad += delta;
         else if (effect.target === 'available.glucose') state.pools.available.glucose += delta;
+        else if (effect.target === 'available.oxygen') state.pools.available.oxygen += delta;
         else if (effect.target === 'available.fattyAcid') state.pools.available.fattyAcid += delta;
+        else if (effect.target === 'available.aminoAcid') state.pools.available.aminoAcid += delta;
+        else if (effect.target === 'captured.glucose') state.pools.captured.glucose += delta;
+        else if (effect.target === 'captured.oxygen') state.pools.captured.oxygen += delta;
+        else if (effect.target === 'captured.fattyAcid') state.pools.captured.fattyAcid += delta;
+        else if (effect.target === 'captured.aminoAcid') state.pools.captured.aminoAcid += delta;
+        else if (effect.target === 'pool.pyruvate') state.pools.pyruvate += delta;
+        else if (effect.target === 'mitochondria.membranePotential') state.mitochondria.membranePotentialMv += delta;
+        else if (effect.target === 'mitochondria.etcFlux') state.mitochondria.etcFluxPercent += delta;
+        else if (effect.target === 'mitochondria.atpSynthase') state.mitochondria.atpSynthaseFlux += delta;
+        else if (effect.target === 'mitochondria.oxygenConsumption') state.mitochondria.oxygenConsumption += delta;
+        else if (effect.target === 'mitochondria.health') state.mitochondria.healthPercent += delta;
+        else if (effect.target === 'processing.pyruvate') state.mitochondria.processing.pyruvatePerMin += delta;
+        else if (effect.target === 'processing.fattyAcid') state.mitochondria.processing.fattyAcidPerMin += delta;
+        else if (effect.target === 'processing.nadh') state.mitochondria.processing.nadhPerMin += delta;
+        else if (effect.target === 'processing.fadh2') state.mitochondria.processing.fadh2PerMin += delta;
+        else if (effect.target === 'processing.oxygen') state.mitochondria.processing.oxygenPerMin += delta;
+        else if (effect.target === 'processing.protons') state.mitochondria.processing.protonsPerMin += delta;
+        else if (effect.target === 'processing.adp') state.mitochondria.processing.adpPerMin += delta;
+        else if (effect.target === 'processing.atp') state.mitochondria.processing.atpPerMin += delta;
+        else if (effect.target === 'processing.water') state.mitochondria.processing.waterPerMin += delta;
         else if (effect.target === 'damage.oxidative') state.damage.oxidativeStress += delta;
         else if (effect.target === 'damage.membrane') state.damage.membrane += delta;
         else if (effect.target === 'damage.proteins') state.damage.proteins += delta;
+        else if (effect.target === 'damage.dna') state.damage.dna += delta;
+        else if (effect.target === 'damage.antioxidants') state.damage.antioxidantCapacity += delta;
+        else if (effect.target === 'fate.apoptoticCommitment') state.fate.apoptoticCommitment += delta;
+        else if (effect.target === 'fate.infectionSusceptibility') state.fate.infectionSusceptibility += delta;
     }
     state.cell.atpMmolL = clamp(state.cell.atpMmolL, .2, MAX_ATP);
+    state.cell.pH = clamp(state.cell.pH, 6.4, 7.8);
+    state.cell.osmolarity = clamp(state.cell.osmolarity, 240, 380);
     state.cell.volumePercent = clamp(state.cell.volumePercent, 70, 140);
+    state.cell.membranePotentialMv = clamp(state.cell.membranePotentialMv, -110, -20);
+    state.cell.sodium = clamp(state.cell.sodium, 4, 60);
+    state.cell.potassium = clamp(state.cell.potassium, 70, 170);
+    state.cell.calciumNm = clamp(state.cell.calciumNm, 30, 1500);
+    state.cell.nadhPercent = clamp(state.cell.nadhPercent, 0, 100);
+    state.cell.viabilityPercent = clamp(state.cell.viabilityPercent, 0, 100);
+    state.tissue.perfusionPercent = clamp(state.tissue.perfusionPercent, 0, 140);
+    state.tissue.oxygenMmHg = clamp(state.tissue.oxygenMmHg, 0, 120);
+    state.tissue.carbonDioxideMmHg = clamp(state.tissue.carbonDioxideMmHg, 15, 120);
     state.tissue.glucoseMmolL = clamp(state.tissue.glucoseMmolL, 1, 20);
     state.tissue.lactateMmolL = clamp(state.tissue.lactateMmolL, 0, 20);
+    state.tissue.pH = clamp(state.tissue.pH, 6.5, 7.7);
     state.tissue.osmolarity = clamp(state.tissue.osmolarity, 260, 340);
+    state.tissue.sodium = clamp(state.tissue.sodium, 115, 175);
+    state.tissue.potassium = clamp(state.tissue.potassium, 2, 12);
+    state.tissue.wasteLoad = clamp(state.tissue.wasteLoad, 0, 100);
     state.pools.available.glucose = clamp(state.pools.available.glucose, 0, 8);
+    state.pools.available.oxygen = clamp(state.pools.available.oxygen, 0, 30);
     state.pools.available.fattyAcid = clamp(state.pools.available.fattyAcid, 0, 5);
+    state.pools.available.aminoAcid = clamp(state.pools.available.aminoAcid, 0, 5);
+    state.pools.captured.glucose = clamp(state.pools.captured.glucose, 0, CAPTURED_POOL_CAPS.glucose);
+    state.pools.captured.oxygen = clamp(state.pools.captured.oxygen, 0, CAPTURED_POOL_CAPS.oxygen);
+    state.pools.captured.fattyAcid = clamp(state.pools.captured.fattyAcid, 0, CAPTURED_POOL_CAPS.fattyAcid);
+    state.pools.captured.aminoAcid = clamp(state.pools.captured.aminoAcid, 0, CAPTURED_POOL_CAPS.aminoAcid);
+    state.pools.pyruvate = clamp(state.pools.pyruvate, 0, 12);
+    state.mitochondria.membranePotentialMv = clamp(state.mitochondria.membranePotentialMv, -210, -70);
+    state.mitochondria.etcFluxPercent = clamp(state.mitochondria.etcFluxPercent, 0, 100);
+    state.mitochondria.atpSynthaseFlux = clamp(state.mitochondria.atpSynthaseFlux, 0, 100);
+    state.mitochondria.oxygenConsumption = clamp(state.mitochondria.oxygenConsumption, 0, 30);
+    state.mitochondria.healthPercent = clamp(state.mitochondria.healthPercent, 0, 100);
+    Object.keys(state.mitochondria.processing).forEach(key => {
+        const processingKey = key as keyof typeof state.mitochondria.processing;
+        state.mitochondria.processing[processingKey] = clamp(state.mitochondria.processing[processingKey], 0, 100);
+    });
     state.damage.oxidativeStress = clamp(state.damage.oxidativeStress, 0, 100);
     state.damage.membrane = clamp(state.damage.membrane, 0, 100);
     state.damage.proteins = clamp(state.damage.proteins, 0, 100);
+    state.damage.dna = clamp(state.damage.dna, 0, 100);
+    state.damage.antioxidantCapacity = clamp(state.damage.antioxidantCapacity, 0, 100);
+    state.fate.apoptoticCommitment = clamp(state.fate.apoptoticCommitment, 0, 100);
+    state.fate.infectionSusceptibility = clamp(state.fate.infectionSusceptibility, 0, 100);
     syncAdenylates(state);
 }
 
@@ -868,12 +970,13 @@ export function advanceCellularSimulation(
 
     const startRoutineIfDue = () => {
         if (state.routine || state.simulationTime < state.nextRoutineAt) return;
-        const candidate = selectEligibleScenario(state, macro);
+        const candidate = selectEligibleScenario(state, macro, controls.difficulty ?? 'easy');
         if (!candidate) {
             state.nextRoutineAt = state.simulationTime + 8;
             return;
         }
         state.routine = createRoutineEvent(candidate.definition, candidate.eligibility.reason, state.simulationTime);
+        state.narrative = advanceScenarioNarrative(state.narrative, candidate.definition.id);
         applyRoutineOnset(state);
         // Intervalo variável determinístico: evita uma fila de tickets e dá
         // tempo para observar a trajetória fisiológica da decisão anterior.
@@ -883,7 +986,7 @@ export function advanceCellularSimulation(
         state.scenarioCooldowns[candidate.definition.id] = state.simulationTime + candidate.definition.cooldownSeconds;
         state.lastEvent = state.routine.title;
         events.push({
-            message: `${state.routine.title}: ${state.routine.triggerReason}.`,
+            message: `${getScenarioNarrative(state.routine.id).eyebrow} — ${state.routine.title}: ${state.routine.triggerReason}.`,
             severity: state.routine.severity,
             affectedSystems: ['tissue', 'cellular-energy'],
         });

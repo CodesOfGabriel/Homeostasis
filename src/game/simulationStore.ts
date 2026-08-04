@@ -37,6 +37,7 @@ import type {
     DecisionSignalId,
     OxidationSubstrate,
     RepairTarget,
+    SimulationDifficulty,
     SubstrateKind,
 } from './cellularTypes';
 import { getActionDefinition, isActionSafe } from './actions';
@@ -66,6 +67,7 @@ import {
     mergeIatrogenicEpisodes,
     type IatrogenicEpisode,
 } from './iatrogenic';
+import { createScenarioMetricSnapshot, type ScenarioMetricSnapshot } from './scenarioMetrics';
 
 // ============================================================================
 // STATE INTERFACE
@@ -98,28 +100,6 @@ export interface DecisionFeedback {
     timestamp: number;
 }
 
-export interface ScenarioOnsetSnapshot {
-    time: number;
-    heartRate: number;
-    meanArterialPressure: number;
-    perfusionIndex: number;
-    spo2: number;
-    respiratoryRate: number;
-    paco2: number;
-    glucose: number;
-    lactate: number;
-    pH: number;
-    hydration: number;
-    sodium: number;
-    temperature: number;
-    cellularAtp: number;
-    tissueOxygen: number;
-    oxidativeStress: number;
-    inflammation: number;
-    infection: number;
-    cellVolume: number;
-}
-
 export interface ScenarioResponseState {
     scenarioId: string;
     choiceId: string;
@@ -140,6 +120,7 @@ interface SimulationStore {
     // Controle de Simulação
     isRunning: boolean;
     timeSpeed: number;               // 0.5x, 1x, 2x, 5x
+    simulationDifficulty: SimulationDifficulty;
     resumeAfterDecision: boolean;
     lastTickTime: number;
     lastHistoryRecordTime: number;
@@ -191,7 +172,7 @@ interface SimulationStore {
     lastReinforcementAt: number;
     lastDecision: DecisionFeedback | null;
     activeScenarioId: string | null;
-    scenarioOnset: ScenarioOnsetSnapshot | null;
+    scenarioOnset: ScenarioMetricSnapshot | null;
     scenarioResponse: ScenarioResponseState | null;
     iatrogenicEpisodes: IatrogenicEpisode[];
 
@@ -204,6 +185,7 @@ interface SimulationStore {
     pause: () => void;
     reset: () => void;
     setTimeSpeed: (speed: number) => void;
+    setSimulationDifficulty: (difficulty: SimulationDifficulty) => void;
 
     // Ações do Jogador
     releaseHormone: (actionId: string) => CommandResult;
@@ -305,6 +287,7 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
     cellular: initializeCellularState(),
     isRunning: false,
     timeSpeed: 1,
+    simulationDifficulty: 'easy',
     resumeAfterDecision: false,
     lastTickTime: Date.now(),
     lastHistoryRecordTime: 0,
@@ -346,6 +329,7 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
     },
 
     reset: () => {
+        const difficulty = get().simulationDifficulty;
         // Criar evento de inicialização
         const initEvent: PhysiologicalEvent = {
             type: 'system',
@@ -360,6 +344,7 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
             cellular: initializeCellularState(),
             isRunning: true,
             timeSpeed: 1,
+            simulationDifficulty: difficulty,
             resumeAfterDecision: false,
             lastTickTime: Date.now(),
             lastHistoryRecordTime: 0,
@@ -385,6 +370,10 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
 
     setTimeSpeed: (speed: number) => {
         set({ timeSpeed: speed });
+    },
+
+    setSimulationDifficulty: (difficulty) => {
+        set({ simulationDifficulty: difficulty });
     },
 
     // ============================================================================
@@ -462,6 +451,7 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
                 ventilationDrive: nextInterventions.ventilationDrive,
                 renalWaterReabsorption: nextInterventions.renalWaterReabsorption,
                 pendingWaterMl: nextInterventions.pendingWaterMl,
+                difficulty: state.simulationDifficulty,
             },
             adjustedDeltaTime,
         );
@@ -666,7 +656,7 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
                     ? null
                     : state.activeScenarioId,
             scenarioOnset: startedScenario
-                ? createScenarioOnsetSnapshot(resultingPhysiology, resultingCellular)
+                ? createScenarioMetricSnapshot(resultingPhysiology, resultingCellular)
                 : completedDecision
                     ? null
                     : state.scenarioOnset,
@@ -925,33 +915,6 @@ function cellularEventToPhysiological(
         message: event.message,
         timestamp,
         affectedSystems: event.affectedSystems,
-    };
-}
-
-function createScenarioOnsetSnapshot(
-    physiology: PhysiologyState,
-    cellular: CellularState,
-): ScenarioOnsetSnapshot {
-    return {
-        time: physiology.timeElapsed,
-        heartRate: physiology.cardiovascular.heartRate,
-        meanArterialPressure: physiology.cardiovascular.meanArterialPressure,
-        perfusionIndex: physiology.cardiovascular.perfusionIndex,
-        spo2: physiology.respiratory.spo2,
-        respiratoryRate: physiology.respiratory.respiratoryRate,
-        paco2: physiology.respiratory.paco2,
-        glucose: physiology.nutrients.bloodGlucose,
-        lactate: physiology.energy.lactateLevel,
-        pH: physiology.acidBase.pH,
-        hydration: physiology.nutrients.hydration,
-        sodium: physiology.nutrients.sodium,
-        temperature: physiology.bodyTemperature,
-        cellularAtp: cellular.cell.atpMmolL,
-        tissueOxygen: cellular.tissue.oxygenMmHg,
-        oxidativeStress: cellular.damage.oxidativeStress,
-        inflammation: physiology.allostaticLoad.inflammationLevel,
-        infection: physiology.pathophysiology.infectionSeverity,
-        cellVolume: cellular.cell.volumePercent,
     };
 }
 

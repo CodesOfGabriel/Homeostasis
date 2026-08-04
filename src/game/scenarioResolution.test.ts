@@ -56,4 +56,39 @@ describe('somatória entre evento, hormônios e condição do organismo', () => 
     expect(protectedResolution.protectiveScore).toBeGreaterThan(neutral.protectiveScore);
     expect(protectedResolution.effectMultiplier).toBeGreaterThan(neutral.effectMultiplier);
   });
+
+  it('faz reservas, adaptações, pools e acoplamento alterarem uma crise difícil', () => {
+    const physiology = initializePhysiologyState();
+    const baselineCellular = initializeCellularState();
+    const baseline = evaluateScenarioResolution(
+      'mitochondrial-uncoupling',
+      'adaptive',
+      physiology,
+      baselineCellular,
+      createInitialHypothalamicState(),
+    );
+    const prepared = initializeCellularState();
+    prepared.pools.captured = { glucose: 5, oxygen: 18, fattyAcid: 3, aminoAcid: 3 };
+    prepared.pools.pyruvate = 8;
+    prepared.adaptations = {
+      enzymaticEfficiency: 3,
+      antioxidantDefense: 3,
+      metabolicFlexibility: 3,
+      bufferCapacity: 3,
+      hypoxiaTolerance: 3,
+    };
+    prepared.automation = { transporters: 3, mitochondrialShuttle: 3, repair: 2 };
+    prepared.damage.antioxidantCapacity = 100;
+    prepared.mitochondria.etcFluxPercent = prepared.mitochondria.atpSynthaseFlux;
+
+    const resilient = evaluateScenarioResolution(
+      'mitochondrial-uncoupling',
+      'adaptive',
+      physiology,
+      prepared,
+      createInitialHypothalamicState(),
+    );
+    expect(resilient.protectiveScore).toBeGreaterThan(baseline.protectiveScore);
+    expect(resilient.effectMultiplier).toBeGreaterThan(baseline.effectMultiplier);
+  });
 });

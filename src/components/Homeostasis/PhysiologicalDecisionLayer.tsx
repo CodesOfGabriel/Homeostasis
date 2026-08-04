@@ -21,6 +21,13 @@ import {
   getScenarioDefinition,
 } from '../../game/scenarios';
 import { collectPreparedDecisionSignals, useSimulationStore } from '../../game/simulationStore';
+import { getScenarioNarrative } from '../../game/scenarioNarrative';
+import {
+  SCENARIO_METRIC_CATALOG,
+  getScenarioMetricKeysByGroup,
+  type ScenarioMetricGroup,
+  type ScenarioMetricKey,
+} from '../../game/scenarioMetrics';
 import { GlassPanel, PanelLabel, ProgressBar, cn } from './ui';
 
 interface PhysiologicalDecisionLayerProps {
@@ -45,20 +52,30 @@ const scenarioSteps: Record<string, StepKey[]> = {
   'hypercapnic-challenge': ['vitals', 'tissue'],
   'acute-water-load': ['vitals', 'defense'],
   'nocturnal-hypoglycemia': ['vitals', 'tissue', 'mitochondria'],
+  'mitochondrial-uncoupling': ['mitochondria', 'defense', 'vitals', 'tissue'],
+  'mixed-ketoacidotic-fatigue': ['vitals', 'tissue', 'mitochondria', 'defense'],
+  'distributive-dysoxia': ['vitals', 'tissue', 'mitochondria', 'defense'],
+  'reperfusion-paradox': ['mitochondria', 'defense', 'tissue', 'vitals'],
+  'hyperosmolar-renal-conflict': ['vitals', 'defense', 'tissue', 'mitochondria'],
+  'whisky-party-hepatic-overload': ['vitals', 'mitochondria', 'tissue', 'defense'],
+  'alcohol-nocturnal-hypoglycemia': ['vitals', 'tissue', 'mitochondria', 'defense'],
+  'fasted-workout-free-fatty-acids': ['vitals', 'tissue', 'mitochondria', 'defense'],
+  'chronic-anxiety-sedentary': ['vitals', 'mitochondria', 'defense', 'tissue'],
+  'panic-hyperventilation': ['vitals', 'tissue', 'defense'],
+  'major-hemorrhage': ['vitals', 'tissue', 'mitochondria', 'defense'],
 };
 
-const scenarioMetrics: Record<string, string[]> = {
-  'stair-climb': ['heartRate', 'respiratoryRate', 'spo2', 'tissueOxygen', 'lactate', 'cellularAtp'],
-  'meal-surge': ['glucose', 'cellularAtp', 'oxidativeStress', 'lactate', 'pH'],
-  'morning-fast': ['glucose', 'cellularAtp', 'tissueOxygen', 'lactate', 'pH'],
-  'micro-injury': ['inflammation', 'cellularAtp', 'oxidativeStress', 'lactate', 'temperature'],
-  'immune-challenge': ['infection', 'temperature', 'inflammation', 'oxidativeStress', 'cellularAtp'],
-  'heat-dehydration': ['temperature', 'hydration', 'meanArterialPressure', 'heartRate', 'cellVolume'],
-  'orthostatic-transition': ['meanArterialPressure', 'perfusionIndex', 'heartRate', 'tissueOxygen', 'lactate'],
-  'hypercapnic-challenge': ['paco2', 'pH', 'respiratoryRate', 'spo2', 'lactate'],
-  'acute-water-load': ['sodium', 'hydration', 'cellVolume', 'meanArterialPressure'],
-  'nocturnal-hypoglycemia': ['glucose', 'cellularAtp', 'heartRate', 'lactate', 'pH'],
-};
+type MetricScope = 'priority' | ScenarioMetricGroup;
+
+const metricScopes: Array<{ id: MetricScope; label: string }> = [
+  { id: 'priority', label: 'Prioritárias' },
+  { id: 'system', label: 'Sistema' },
+  { id: 'endocrine', label: 'Hormônios' },
+  { id: 'tissue', label: 'Tecido' },
+  { id: 'cell', label: 'Célula' },
+  { id: 'mitochondria', label: 'Mitocôndria' },
+  { id: 'pools', label: 'Pools' },
+];
 
 export function PhysiologicalDecisionLayer({ onNavigate }: PhysiologicalDecisionLayerProps) {
   const cellular = useSimulationStore(state => state.cellular);
@@ -74,8 +91,13 @@ export function PhysiologicalDecisionLayer({ onNavigate }: PhysiologicalDecision
   const resolve = useSimulationStore(state => state.resolveCellularRoutine);
   const [error, setError] = useState('');
   const [collapsed, setCollapsed] = useState(false);
+  const [metricScope, setMetricScope] = useState<MetricScope>('priority');
   const scenarioId = routine?.id ?? response?.scenarioId;
   const definition = scenarioId ? getScenarioDefinition(scenarioId) : undefined;
+  const narrative = scenarioId ? getScenarioNarrative(scenarioId) : undefined;
+  const previousDefinition = cellular.narrative?.previousScenarioId
+    ? getScenarioDefinition(cellular.narrative.previousScenarioId)
+    : undefined;
   const preparedSignals = collectPreparedDecisionSignals(pendingCommands, activeHormonalActions, hypothalamus);
   const preparedSignalSet = new Set(preparedSignals);
 
@@ -83,6 +105,7 @@ export function PhysiologicalDecisionLayer({ onNavigate }: PhysiologicalDecision
     if (!scenarioId) return;
     setError('');
     setCollapsed(false);
+    setMetricScope('priority');
   }, [scenarioId]);
 
   if (!scenarioId || !definition) {
@@ -102,28 +125,14 @@ export function PhysiologicalDecisionLayer({ onNavigate }: PhysiologicalDecision
 
   const observing = Boolean(response && !routine);
   const selectedChoice = response ? definition.choices.find(choice => choice.id === response.choiceId) : undefined;
-  const metricCatalog = {
-    heartRate: metric('Frequência cardíaca', physiology.cardiovascular.heartRate, onset?.heartRate, 'bpm', 0),
-    meanArterialPressure: metric('Pressão arterial média', physiology.cardiovascular.meanArterialPressure, onset?.meanArterialPressure, 'mmHg', 0),
-    perfusionIndex: metric('Índice de perfusão', physiology.cardiovascular.perfusionIndex, onset?.perfusionIndex, '%', 0),
-    spo2: metric('Saturação de O₂', physiology.respiratory.spo2, onset?.spo2, '%', 1),
-    respiratoryRate: metric('Frequência respiratória', physiology.respiratory.respiratoryRate, onset?.respiratoryRate, '/min', 1),
-    paco2: metric('PaCO₂', physiology.respiratory.paco2, onset?.paco2, 'mmHg', 0),
-    glucose: metric('Glicose sanguínea', physiology.nutrients.bloodGlucose, onset?.glucose, 'mg/dL', 0),
-    lactate: metric('Lactato', physiology.energy.lactateLevel, onset?.lactate, 'mmol/L', 1),
-    pH: metric('pH arterial', physiology.acidBase.pH, onset?.pH, '', 2),
-    hydration: metric('Água corporal', physiology.nutrients.hydration, onset?.hydration, 'L', 1),
-    sodium: metric('Sódio plasmático', physiology.nutrients.sodium, onset?.sodium, 'mmol/L', 1),
-    temperature: metric('Temperatura central', physiology.bodyTemperature, onset?.temperature, '°C', 1),
-    cellularAtp: metric('ATP celular', cellular.cell.atpMmolL, onset?.cellularAtp, 'mmol/L', 2),
-    tissueOxygen: metric('PO₂ tecidual', cellular.tissue.oxygenMmHg, onset?.tissueOxygen, 'mmHg', 0),
-    oxidativeStress: metric('Estresse oxidativo', cellular.damage.oxidativeStress, onset?.oxidativeStress, '%', 0),
-    inflammation: metric('Inflamação sistêmica', physiology.allostaticLoad.inflammationLevel, onset?.inflammation, '%', 0),
-    infection: metric('Carga infecciosa', physiology.pathophysiology.infectionSeverity, onset?.infection, '%', 0),
-    cellVolume: metric('Volume celular', cellular.cell.volumePercent, onset?.cellVolume, '%', 1),
-  };
-  const visibleMetrics = (scenarioMetrics[scenarioId] ?? scenarioMetrics['stair-climb'])
-    .map(key => metricCatalog[key as keyof typeof metricCatalog]);
+  const availableMetricSet = new Set<ScenarioMetricKey>(definition.metricKeys);
+  const visibleMetricKeys = metricScope === 'priority'
+    ? definition.priorityMetricKeys
+    : getScenarioMetricKeysByGroup(metricScope).filter(key => availableMetricSet.has(key));
+  const visibleMetrics = visibleMetricKeys.map(key => {
+    const definition = SCENARIO_METRIC_CATALOG[key];
+    return metric(definition, definition.read(physiology, cellular), onset?.values[key]);
+  });
   const relevantSteps = scenarioSteps[scenarioId] ?? ['vitals', 'tissue'];
   const progress = response ? (1 - response.remainingSeconds / response.totalSeconds) * 100 : 0;
 
@@ -141,7 +150,7 @@ export function PhysiologicalDecisionLayer({ onNavigate }: PhysiologicalDecision
             {definition.severity === 'critical' ? <AlertTriangle className="size-4.5"/> : <HeartPulse className="size-4.5"/>}
           </span>
           <div className="min-w-0 flex-1">
-            <PanelLabel icon={observing ? <Eye className="size-3.5"/> : <GitFork className="size-3.5"/>}>{observing ? 'Resposta em observação' : 'Situação fisiológica'}</PanelLabel>
+            <PanelLabel icon={observing ? <Eye className="size-3.5"/> : <GitFork className="size-3.5"/>}>{observing ? 'Resposta em observação' : definition.difficulty === 'hard' ? 'Decisão sistêmica · Difícil' : 'Situação fisiológica'}</PanelLabel>
             <h2 className="mt-1.5 truncate font-display text-lg text-foreground">{definition.title}</h2>
           </div>
           <button type="button" onClick={() => setCollapsed(value => !value)} aria-label={collapsed ? 'Expandir evento' : 'Recolher evento'} className="grid size-10 place-items-center rounded-lg text-muted-foreground hover:bg-white/5 hover:text-foreground lg:hidden"><ChevronDown className={cn('size-4 transition', collapsed && 'rotate-180')}/></button>
@@ -155,13 +164,33 @@ export function PhysiologicalDecisionLayer({ onNavigate }: PhysiologicalDecision
             })}
           </div>
 
-          <div className="mt-3 rounded-xl border border-primary/15 bg-primary/5 p-3">
-            <p className="text-[11px] leading-relaxed text-foreground/85">{definition.description}</p>
-            <p className="mt-2 text-[9px] leading-relaxed text-muted-foreground">{definition.contextSummary}</p>
+          <div className="mt-3 overflow-hidden rounded-xl border border-primary/25 bg-gradient-to-br from-primary/[.09] via-black/15 to-black/25">
+            <div className="border-b border-white/8 px-3 py-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[8px] uppercase tracking-[.18em] text-primary">{narrative?.eyebrow}</span>
+                <span className="text-[8px] uppercase tracking-wider text-muted-foreground">Capítulo {cellular.narrative?.chapter || 1}</span>
+              </div>
+              {previousDefinition && <p className="mt-1.5 text-[9px] text-muted-foreground"><Route className="mr-1 inline size-3 text-primary"/>Continuação de <strong className="text-foreground/75">{previousDefinition.title}</strong></p>}
+            </div>
+            <div className="p-3">
+              <p className="font-display text-[13px] leading-relaxed text-foreground">{narrative?.scene ?? definition.description}</p>
+              <p className="mt-2 text-[10px] leading-relaxed text-foreground/65">{definition.description}</p>
+              <div className="mt-3 rounded-lg border border-warning/20 bg-warning/[.06] px-3 py-2">
+                <span className="text-[8px] uppercase tracking-[.16em] text-warning">Sua missão</span>
+                <p className="mt-1 text-[10px] leading-relaxed text-foreground/85">{narrative?.objective}</p>
+              </div>
+              <p className="mt-2 text-[9px] leading-relaxed text-muted-foreground">{definition.contextSummary}</p>
+            </div>
           </div>
 
           <section className="mt-4" aria-labelledby="event-metrics-title">
             <div className="flex items-center justify-between gap-2"><div id="event-metrics-title"><PanelLabel icon={<Activity className="size-3.5"/>}>Métricas para investigar</PanelLabel></div><span className="text-[8px] uppercase tracking-wider text-muted-foreground">Δ desde detecção</span></div>
+            {definition.difficulty === 'hard' && <>
+              <p className="mt-1.5 text-[9px] leading-relaxed text-muted-foreground">{definition.metricKeys.length} marcadores integrados. Cruze escalas: um valor isolado pode parecer normal e ainda ocultar falha de entrega, utilização ou compensação.</p>
+              <div className="scrollbar-thin mt-2 flex gap-1 overflow-x-auto pb-1" role="tablist" aria-label="Escala das métricas do evento">
+                {metricScopes.map(scope => <button type="button" role="tab" aria-selected={metricScope === scope.id} key={scope.id} onClick={() => setMetricScope(scope.id)} className={cn('min-h-8 flex-none rounded-md border px-2 text-[8px] uppercase tracking-wider transition', metricScope === scope.id ? 'border-primary/45 bg-primary/10 text-primary' : 'border-white/8 bg-black/15 text-muted-foreground hover:border-primary/25 hover:text-foreground')}>{scope.label}</button>)}
+              </div>
+            </>}
             <div className="mt-2 grid grid-cols-2 gap-1.5">
               {visibleMetrics.map(item => <div key={item.label} className="rounded-lg border border-white/8 bg-black/15 px-2.5 py-2"><span className="block truncate text-[8px] uppercase tracking-wider text-muted-foreground">{item.label}</span><div className="mt-1 flex items-baseline justify-between gap-2"><strong className="font-mono text-[12px] text-foreground">{item.value} <small className="text-[8px] font-normal text-muted-foreground">{item.unit}</small></strong><span className={cn('font-mono text-[9px]', item.delta === '—' ? 'text-muted-foreground' : 'text-primary')}>{item.delta}</span></div></div>)}
             </div>
@@ -195,6 +224,7 @@ export function PhysiologicalDecisionLayer({ onNavigate }: PhysiologicalDecision
                     <span className="text-[8px] uppercase tracking-[.16em] text-muted-foreground">Estratégia {index + 1}</span>
                     <strong className="mt-1.5 block text-[11px] text-foreground group-hover:text-primary">{choice.label}</strong>
                     <span className="mt-1 block text-[10px] leading-relaxed text-muted-foreground">{choice.description}</span>
+                    {definition.difficulty === 'hard' && <span className="mt-1.5 block text-[9px] leading-relaxed text-foreground/65"><span className="text-primary">Implicação:</span> {choice.tradeoff}</span>}
                     {hasRequirements && <span className="mt-2 block border-t border-white/8 pt-2 text-[9px] leading-relaxed"><strong className={availability.available ? 'text-primary' : 'text-warning'}>{availability.available ? 'Preparação compatível' : `Faltam: ${availability.missing.join(' · ')}`}</strong>{choice.requirements.map(requirement => <span key={requirement.resource} className="mt-1 block text-muted-foreground">{DECISION_RESOURCE_LABELS[requirement.resource]} {getDecisionResourceAmount(cellular, requirement.resource).toFixed(requirement.resource === 'antioxidants' ? 0 : 1)} / {requirement.minimum.toFixed(requirement.resource === 'antioxidants' ? 0 : 1)}{requirement.cost > 0 ? ` · uso ${requirement.cost}` : ''}</span>)}{(choice.signalRequirements ?? []).map(requirement => { const ready = requirement.anyOf.some(signal => preparedSignalSet.has(signal)); return <span key={requirement.label} className={cn('mt-1 block', ready ? 'text-primary' : 'text-muted-foreground')}><Zap className="mr-1 inline size-3"/>{requirement.label} · {ready ? 'preparado' : 'aguardando sinal'}</span>; })}</span>}
                   </button>;
                 })}
@@ -208,17 +238,17 @@ export function PhysiologicalDecisionLayer({ onNavigate }: PhysiologicalDecision
   );
 }
 
-function metric(label: string, current: number, initial: number | undefined, unit: string, digits: number) {
+function metric(definition: typeof SCENARIO_METRIC_CATALOG[ScenarioMetricKey], current: number, initial: number | undefined) {
   const difference = initial === undefined ? null : current - initial;
-  const threshold = 10 ** -digits / 2;
+  const threshold = 10 ** -definition.digits / 2;
   return {
-    label,
-    value: current.toFixed(digits),
-    unit,
+    label: definition.label,
+    value: current.toFixed(definition.digits),
+    unit: definition.unit,
     delta: difference === null
       ? '—'
       : Math.abs(difference) < threshold
         ? '→ 0'
-        : `${difference > 0 ? '↑ +' : '↓ '}${difference.toFixed(digits)}`,
+        : `${difference > 0 ? '↑ +' : '↓ '}${difference.toFixed(definition.digits)}`,
   };
 }

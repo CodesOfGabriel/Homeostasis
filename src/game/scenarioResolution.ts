@@ -49,6 +49,76 @@ export function evaluateScenarioResolution(
         + (100 - cellular.cell.viabilityPercent) / 100 * .35
         + cellular.fate.apoptoticCommitment / 100 * .3;
 
+    // Reserva transversal: progresso celular e métricas de outras abas não são
+    // decorativos. Preparação metabólica, acoplamento mitocondrial, defesa,
+    // perfusão e capacidade adaptativa modulam qualquer crise difícil.
+    const adaptationReserve = clamp(
+        Object.values(cellular.adaptations).reduce((sum, level) => sum + level, 0) / 15,
+        0,
+        1,
+    );
+    const automationReserve = clamp(
+        Object.values(cellular.automation).reduce((sum, level) => sum + level, 0) / 8,
+        0,
+        1,
+    );
+    const substrateReserve = clamp(
+        cellular.pools.captured.glucose / 6 * .2
+        + cellular.pools.captured.oxygen / 20 * .35
+        + cellular.pools.captured.fattyAcid / 4 * .15
+        + cellular.pools.captured.aminoAcid / 4 * .15
+        + cellular.pools.pyruvate / 12 * .15,
+        0,
+        1,
+    );
+    const couplingReserve = clamp(
+        cellular.mitochondria.healthPercent / 100 * .45
+        + (1 - Math.abs(cellular.mitochondria.etcFluxPercent - cellular.mitochondria.atpSynthaseFlux) / 100) * .3
+        + (1 - Math.abs(Math.abs(cellular.mitochondria.membranePotentialMv) - 155) / 90) * .25,
+        0,
+        1,
+    );
+    const systemicReserve = clamp(
+        physiology.energy.atpPool / physiology.energy.maxATP * .2
+        + physiology.cardiovascular.perfusionIndex / 100 * .2
+        + physiology.respiratory.spo2 / 100 * .15
+        + physiology.renal.gfr / 120 * .15
+        + (1 - Math.abs(physiology.acidBase.pH - 7.4) / .45) * .15
+        + physiology.allostaticLoad.adaptationCapacity / 100 * .15,
+        0,
+        1,
+    );
+    const cellularReserve = clamp(
+        cellular.cell.atpMmolL / 5.8 * .25
+        + cellular.cell.viabilityPercent / 100 * .2
+        + cellular.damage.antioxidantCapacity / 100 * .2
+        + cellular.tissue.perfusionPercent / 100 * .15
+        + cellular.tissue.oxygenMmHg / 40 * .1
+        + (1 - Math.abs(cellular.cell.pH - 7.2) / .45) * .1,
+        0,
+        1,
+    );
+    const crossScaleReserve = systemicReserve * .24
+        + cellularReserve * .24
+        + couplingReserve * .2
+        + substrateReserve * .12
+        + adaptationReserve * .12
+        + automationReserve * .08;
+    const crossScalePressure = clamp(
+        cellular.damage.oxidativeStress / 100 * .18
+        + (cellular.damage.membrane + cellular.damage.proteins + cellular.damage.dna) / 300 * .16
+        + Math.abs(cellular.cell.volumePercent - 100) / 35 * .1
+        + Math.abs(cellular.cell.membranePotentialMv + 70) / 45 * .1
+        + Math.max(0, cellular.cell.calciumNm - 150) / 850 * .1
+        + cellular.tissue.wasteLoad / 100 * .1
+        + Math.max(0, cellular.tissue.lactateMmolL - 2) / 10 * .12
+        + physiology.energy.energyDeficit / 100 * .14,
+        0,
+        1.5,
+    );
+    protectiveScore += crossScaleReserve * .28;
+    pressureScore += crossScalePressure * .42;
+
     if (scenarioId === 'stair-climb') {
         protectiveScore += clamp(physiology.respiratory.spo2 / 98, 0, 1.1) * .45
             + clamp(cellular.cell.atpMmolL / 5, 0, 1) * .35;
@@ -92,6 +162,46 @@ export function evaluateScenarioResolution(
         protectiveScore += glucagonDrive * .48 + clamp(catecholamineExcess, 0, 1) * .35;
         pressureScore += insulinAction * .58
             + Math.max(0, 72 - physiology.nutrients.bloodGlucose) / 28;
+    } else if (scenarioId === 'mitochondrial-uncoupling') {
+        protectiveScore += Math.max(0, -hypothalamus.autonomicTone) * .45
+            + cellular.damage.antioxidantCapacity / 100 * .4
+            + clamp(cellular.mitochondria.healthPercent / 100, 0, 1) * .2;
+        pressureScore += catecholamineExcess * .45
+            + thyroidExcess * .55
+            + cellular.damage.oxidativeStress / 100 * .55
+            + Math.max(0, physiology.bodyTemperature - 37.2) * .35;
+    } else if (scenarioId === 'mixed-ketoacidotic-fatigue') {
+        protectiveScore += insulinAction * .38
+            + Math.max(0, hypothalamus.respiratoryDrive) * .5;
+        pressureScore += Math.max(0, physiology.acidBase.anionGap - 16) / 18
+            + Math.max(0, 7.3 - physiology.acidBase.pH) * 4
+            + Math.max(0, physiology.respiratory.paco2 - 32) / 24
+            + cortisolExcess * .25;
+    } else if (scenarioId === 'distributive-dysoxia') {
+        protectiveScore += Math.max(0, hypothalamus.autonomicTone) * .48
+            + cellular.damage.antioxidantCapacity / 100 * .28
+            + physiology.capacities.immuneActivation * .22;
+        pressureScore += physiology.pathophysiology.infectionSeverity / 100 * .62
+            + physiology.pathophysiology.capillaryLeak * .8
+            + Math.max(0, 70 - physiology.cardiovascular.meanArterialPressure) / 35
+            + cellular.damage.oxidativeStress / 100 * .35
+            + cortisolExcess * .35;
+    } else if (scenarioId === 'reperfusion-paradox') {
+        protectiveScore += Math.max(0, -hypothalamus.autonomicTone) * .42
+            + cellular.damage.antioxidantCapacity / 100 * .5;
+        pressureScore += cellular.damage.oxidativeStress / 100 * .75
+            + Math.max(0, cellular.cell.calciumNm - 150) / 700
+            + Math.max(0, cellular.cell.nadhPercent - 60) / 55
+            + catecholamineExcess * .4
+            + anabolicDrive * .2;
+    } else if (scenarioId === 'hyperosmolar-renal-conflict') {
+        protectiveScore += insulinAction * .35
+            + Math.max(0, hypothalamus.osmoticDrive) * .42
+            + clamp(physiology.renal.gfr / 110, 0, 1) * .15;
+        pressureScore += Math.max(0, physiology.nutrients.bloodGlucose - 150) / 180
+            + Math.max(0, physiology.nutrients.sodium - 145) / 18
+            + Math.max(0, 40 - physiology.nutrients.hydration) / 8
+            + Math.max(0, -hypothalamus.osmoticDrive) * .55;
     }
 
     protectiveScore = clamp(protectiveScore, 0, 2);

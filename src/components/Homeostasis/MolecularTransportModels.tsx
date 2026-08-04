@@ -23,7 +23,7 @@ import {
   MOLECULE_RENDER_SCALE,
 } from './flowAnimation';
 
-export type VisualMoleculeKind = SubstrateKind | 'carbonDioxide' | 'lactate' | 'waste';
+export type VisualMoleculeKind = SubstrateKind | 'carbonDioxide' | 'lactate';
 
 interface AtomDefinition {
   position: [number, number, number];
@@ -76,11 +76,6 @@ const atomModels: Record<VisualMoleculeKind, AtomDefinition[]> = {
     { position: [.038, .025, 0], color: oxygen, radius: .016 },
     { position: [.04, -.02, 0], color: oxygen, radius: .014 },
   ],
-  waste: [
-    { position: [0, 0, 0], color: '#dc6658', radius: .024 },
-    { position: [.028, .018, 0], color: '#b16ed1', radius: .014 },
-    { position: [-.026, -.018, 0], color: '#9e504a', radius: .013 },
-  ],
 };
 
 // Stokes-Einstein em leitura qualitativa: moléculas menores exploram o LEC
@@ -92,7 +87,6 @@ const visualDiffusionCoefficients: Record<VisualMoleculeKind, number> = {
   aminoAcid: .00039,
   lactate: .00052,
   fattyAcid: .00028,
-  waste: .00024,
 };
 
 interface BrownianVisualState {
@@ -182,9 +176,9 @@ export function MolecularFlow({
   const materials = useMemo(() => atoms.map(definition => new MeshBasicMaterial({
     color: new Color(definition.color),
     transparent: true,
-    opacity: kind === 'waste' ? .78 : .96,
+    opacity: .96,
     depthWrite: false,
-  })), [atoms, kind]);
+  })), [atoms]);
   const points = useMemo(() => curve.getPoints(42), [curve]);
 
   useEffect(() => () => {
@@ -460,21 +454,5 @@ export function EndocyticVesicle({ position, running, active }: { position: [num
       <mesh><icosahedronGeometry args={[.026, 1]}/><meshBasicMaterial color="#ffd98a" transparent opacity={.9}/></mesh>
       {Array.from({ length: 6 }, (_, index) => <mesh key={index} position={[0, Math.cos(index * Math.PI / 3) * .062, Math.sin(index * Math.PI / 3) * .062]}><coneGeometry args={[.007, .019, 5]}/><meshBasicMaterial color="#9d7b3c" transparent opacity={.58}/></mesh>)}
     </group>
-  </group>;
-}
-
-export function ExocyticVesicle({ position, running, activity }: { position: [number, number, number]; running: boolean; activity: number }) {
-  const ref = useRef<Group>(null);
-  useFrame(({ clock }) => {
-    if (!ref.current) return;
-    const phase = running ? (clock.elapsedTime * (.1 + Math.min(1, activity / 100) * .12)) % 1 : .48;
-    ref.current.position.x = position[0] - phase * .2;
-    ref.current.position.y = position[1] + Math.sin(phase * Math.PI) * .04;
-    const fusion = phase > .75 ? Math.max(.06, (1 - phase) / .25) : .78 + Math.sin(phase * Math.PI) * .22;
-    ref.current.scale.setScalar(fusion);
-  });
-  return <group ref={ref} position={position}>
-    <mesh rotation={[0, Math.PI / 2, 0]}><torusGeometry args={[.045, .008, 9, 26]}/><meshBasicMaterial color="#dc6658" transparent opacity={.72}/></mesh>
-    <mesh><dodecahedronGeometry args={[.023, 0]}/><meshBasicMaterial color="#b16ed1" transparent opacity={.82}/></mesh>
   </group>;
 }

@@ -14,7 +14,6 @@ import {
 import {
   DetailedMembraneTransporter,
   EndocyticVesicle,
-  ExocyticVesicle,
   IonChannelModel,
   MolecularFlow,
 } from './MolecularTransportModels';
@@ -222,7 +221,6 @@ export function CellularFlowScene(props: CellularFlowSceneProps) {
 
         <FlowAnnotation position={[630, 270]} tone="#78d1dc" title="CANAL IÔNICO · Kv" detail="K⁺ atravessa um poro aquoso; substratos não usam este canal"/>
         <FlowAnnotation position={[665, 612]} tone="#e2a54f" title="LDLR · ENDOCITOSE" detail="LDL → clatrina → vesícula; rota distinta do ácido graxo livre"/>
-        <FlowAnnotation position={[730, 744]} tone="#dc6658" title="EXOCITOSE" detail="vesícula funde à membrana e libera resíduos no LEC"/>
         <FlowAnnotation position={[535, 515]} tone="#9db1b7" title="CO₂ · DIFUSÃO PARA FORA" detail="citosol → LEC → sangue, seguindo o gradiente"/>
         <FlowAnnotation position={[550, 625]} tone="#b16ed1" title="MCT4 · EFLUXO" detail="lactato + H⁺ deixam a célula por cotransporte"/>
       </div>
@@ -256,8 +254,6 @@ function FlowAnnotation({ position: [x, y], tone, title, detail }: { position: I
 function FlowWorld({
   available,
   captured,
-  wasteLoad,
-  oxidativeStress,
   membranePotentialMv,
   perfusionPercent,
   lactateMmolL,
@@ -318,10 +314,7 @@ function FlowWorld({
 
     <IonChannelModel position={imagePoint([630, 270], .22).toArray()} membranePotentialMv={membranePotentialMv} running={running && !reducedMotion}/>
     <EndocyticVesicle position={imagePoint([640, 610], .25).toArray()} running={running && !reducedMotion} active={selectedKind === 'fattyAcid'}/>
-    <ExocyticVesicle position={imagePoint([760, 720], .26).toArray()} running={running && !reducedMotion} activity={wasteLoad}/>
     <EffluxWorld
-      wasteLoad={wasteLoad}
-      oxidativeStress={oxidativeStress}
       lactateMmolL={lactateMmolL}
       carbonDioxideMmHg={carbonDioxideMmHg}
       running={running}
@@ -331,9 +324,7 @@ function FlowWorld({
   </group>;
 }
 
-function EffluxWorld({ wasteLoad, oxidativeStress, lactateMmolL, carbonDioxideMmHg, running, reducedMotion, timeSpeed }: {
-  wasteLoad: number;
-  oxidativeStress: number;
+function EffluxWorld({ lactateMmolL, carbonDioxideMmHg, running, reducedMotion, timeSpeed }: {
   lactateMmolL: number;
   carbonDioxideMmHg: number;
   running: boolean;
@@ -342,7 +333,6 @@ function EffluxWorld({ wasteLoad, oxidativeStress, lactateMmolL, carbonDioxideMm
 }) {
   const co2Curve = useMemo(() => curveFrom([[790, 500], [700, 492], [610, 480], [520, 458], [430, 440]], .16), []);
   const lactateCurve = useMemo(() => curveFrom([[790, 625], [720, 616], [650, 601], [570, 575], [470, 545]], .17), []);
-  const wasteCurve = useMemo(() => curveFrom([[760, 720], [700, 718], [640, 700], [580, 677], [510, 650]], .2), []);
   return <group>
     <MolecularFlow
       kind="carbonDioxide"
@@ -370,21 +360,6 @@ function EffluxWorld({ wasteLoad, oxidativeStress, lactateMmolL, carbonDioxideMm
       pathColor="#b16ed1"
       pathOpacity={lactateMmolL > 3 ? .12 : .04}
       moleculeScale={.9}
-    />
-    <MolecularFlow
-      kind="waste"
-      curve={wasteCurve}
-      count={Math.max(1, Math.min(6, Math.round(1 + wasteLoad * .05 + oxidativeStress * .025)))}
-      maxParticles={6}
-      speed={(.03 + wasteLoad * .0007) * timeSpeed}
-      running={running}
-      reducedMotion={reducedMotion}
-      fadeStart={.68}
-      brownian
-      emphasized={oxidativeStress > 35}
-      pathColor="#dc6658"
-      pathOpacity={.055}
-      moleculeScale={.88}
     />
   </group>;
 }

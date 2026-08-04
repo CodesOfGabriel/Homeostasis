@@ -10,8 +10,12 @@ import {
   runGlycolysis,
 } from './cellularSimulation';
 import { initializePhysiologyState } from './physiology';
-import { getScenarioContext, getScenarioDefinition, SCENARIO_DEFINITIONS } from './scenarios';
+import { isActionSafe } from './actions';
+import { isHypothalamicSignalSafe, type HypothalamicSignalId } from './hypothalamus';
+import { applyScenarioPhysiologyEffects, getScenarioContext, getScenarioDefinition, SCENARIO_DEFINITIONS, selectEligibleScenario } from './scenarios';
 import { useSimulationStore } from './simulationStore';
+import { ALL_SCENARIO_METRIC_KEYS, createScenarioMetricSnapshot, SCENARIO_METRICS } from './scenarioMetrics';
+import { advanceScenarioNarrative, getScenarioNarrative } from './scenarioNarrative';
 
 function forceScenario<T extends ReturnType<typeof initializeCellularState>>(state: T, scenarioId: string): T {
   return {
@@ -32,6 +36,7 @@ function advanceStoreTicks(count: number) {
 
 describe('controles da simulação', () => {
   beforeEach(() => {
+    useSimulationStore.getState().setSimulationDifficulty('easy');
     useSimulationStore.getState().reset();
   });
 
@@ -42,6 +47,21 @@ describe('controles da simulação', () => {
     useSimulationStore.getState().start();
     expect(useSimulationStore.getState().isRunning).toBe(true);
     expect(useSimulationStore.getState().timeSpeed).toBe(4);
+  });
+
+  it('mantém a dificuldade escolhida ao reiniciar e usa esse modo na seleção', () => {
+    useSimulationStore.getState().setSimulationDifficulty('hard');
+    useSimulationStore.getState().reset();
+    expect(useSimulationStore.getState().simulationDifficulty).toBe('hard');
+
+    const cellular = useSimulationStore.getState().cellular;
+    useSimulationStore.setState({
+      cellular: forceScenario(cellular, 'mitochondrial-uncoupling'),
+      isRunning: true,
+      lastTickTime: Date.now() - 1000,
+    });
+    useSimulationStore.getState().tick();
+    expect(useSimulationStore.getState().cellular.routine?.id).toBe('mitochondrial-uncoupling');
   });
 
   it('aplica água e converte sinais hipotalâmicos em comandos internos', () => {
@@ -240,6 +260,128 @@ describe('ciclo de gameplay celular', () => {
       expect(definition?.choices).toHaveLength(2);
       expect(definition?.choices.every(choice => (choice.signalRequirements?.length ?? 0) > 0)).toBe(true);
     });
+  });
+
+  it('separa eventos fáceis de crises difíceis com três estratégias plausíveis', () => {
+    const cellular = initializeCellularState();
+    cellular.nextRoutineAt = 0;
+    const physiology = initializePhysiologyState();
+    const easy = selectEligibleScenario(cellular, physiology, 'easy');
+    const hard = selectEligibleScenario(cellular, physiology, 'hard');
+
+    expect(easy?.definition.difficulty).toBe('easy');
+    expect(hard?.definition.difficulty).toBe('hard');
+    SCENARIO_DEFINITIONS.filter(definition => definition.difficulty === 'hard').forEach(definition => {
+      expect(definition.choices).toHaveLength(3);
+      expect(definition.choices.filter(choice => choice.outcome === 'adaptive')).toHaveLength(1);
+      expect(definition.choices.every(choice => (choice.signalRequirements?.length ?? 0) > 0)).toBe(true);
+    });
+  });
+
+  it('integra todo marcador visível ao painel investigativo dos eventos difíceis', () => {
+    const uniqueKeys = new Set(SCENARIO_METRICS.map(metric => metric.key));
+    expect(uniqueKeys.size).toBe(SCENARIO_METRICS.length);
+    const hardScenarios = SCENARIO_DEFINITIONS.filter(definition => definition.difficulty === 'hard');
+    expect(hardScenarios.length).toBeGreaterThanOrEqual(11);
+    hardScenarios.forEach(definition => {
+      expect(new Set(definition.metricKeys)).toEqual(new Set(ALL_SCENARIO_METRIC_KEYS));
+      expect(definition.priorityMetricKeys.length).toBeGreaterThanOrEqual(12);
+    });
+
+    const snapshot = createScenarioMetricSnapshot(initializePhysiologyState(), initializeCellularState());
+    expect(Object.keys(snapshot.values)).toHaveLength(ALL_SCENARIO_METRIC_KEYS.length);
+    expect(Object.values(snapshot.values).every(Number.isFinite)).toBe(true);
+  });
+
+  it('mantém continuidade e bloqueia sedentarismo depois de um treino', () => {
+    const cellular = initializeCellularState();
+    cellular.narrative = advanceScenarioNarrative(cellular.narrative, 'fasted-workout-free-fatty-acids');
+    const selected = selectEligibleScenario(cellular, initializePhysiologyState(), 'hard');
+
+    expect(selected?.definition.id).toBe('mitochondrial-uncoupling');
+    expect(selected?.definition.id).not.toBe('chronic-anxiety-sedentary');
+  });
+
+  it('encadeia festa, ansiedade e trauma em capítulos fisiologicamente coerentes', () => {
+    const continuations = [
+      ['whisky-party-hepatic-overload', 'alcohol-nocturnal-hypoglycemia'],
+      ['chronic-anxiety-sedentary', 'panic-hyperventilation'],
+      ['major-hemorrhage', 'reperfusion-paradox'],
+    ] as const;
+
+    continuations.forEach(([previousId, expectedId]) => {
+      const cellular = initializeCellularState();
+      cellular.narrative = advanceScenarioNarrative(cellular.narrative, previousId);
+      const selected = selectEligibleScenario(cellular, initializePhysiologyState(), 'hard');
+      expect(selected?.definition.id).toBe(expectedId);
+    });
+  });
+
+  it('oferece storytelling e missão para todos os eventos cadastrados', () => {
+    SCENARIO_DEFINITIONS.forEach(definition => {
+      const narrative = getScenarioNarrative(definition.id);
+      expect(narrative.scene.length, definition.id).toBeGreaterThan(80);
+      expect(narrative.objective.length, definition.id).toBeGreaterThan(45);
+    });
+  });
+
+  it('mantém todas as estratégias difíceis executáveis no instante da decisão', () => {
+    SCENARIO_DEFINITIONS.filter(definition => definition.difficulty === 'hard').forEach(definition => {
+      const physiology = applyScenarioPhysiologyEffects(initializePhysiologyState(), definition.onStartPhysiology);
+      definition.choices.flatMap(choice => choice.signalRequirements ?? []).flatMap(requirement => requirement.anyOf).forEach(signal => {
+        const safety = signal.startsWith('hormone:')
+          ? isActionSafe(signal.slice('hormone:'.length), {
+            glucose: physiology.nutrients.bloodGlucose,
+            pH: physiology.acidBase.pH,
+            heartRate: physiology.cardiovascular.heartRate,
+            energyDeficit: physiology.energy.energyDeficit,
+            aminoAcids: physiology.nutrients.aminoAcids,
+            atpPool: physiology.energy.atpPool,
+          })
+          : isHypothalamicSignalSafe(signal.slice('central:'.length) as HypothalamicSignalId, physiology);
+        expect(safety.safe, `${definition.id}: ${signal} deveria estar disponível`).toBe(true);
+      });
+    });
+  });
+
+  it('produz a assinatura desacoplada mesmo com oxigenação arterial preservada', () => {
+    const initial = forceScenario(initializeCellularState(), 'mitochondrial-uncoupling');
+    const physiology = initializePhysiologyState();
+    const started = advanceCellularSimulation(initial, physiology, { ...controls, difficulty: 'hard' }, .25).state;
+
+    expect(started.routine?.id).toBe('mitochondrial-uncoupling');
+    expect(started.mitochondria.membranePotentialMv).toBeGreaterThan(initial.mitochondria.membranePotentialMv);
+    expect(started.mitochondria.etcFluxPercent).toBeGreaterThan(initial.mitochondria.etcFluxPercent);
+    expect(started.cell.atpMmolL).toBeLessThan(initial.cell.atpMmolL);
+    expect(started.damage.oxidativeStress).toBeGreaterThan(initial.damage.oxidativeStress);
+    expect(physiology.respiratory.spo2).toBe(98);
+  });
+
+  it('exige correção combinada na acidose cetótica com fadiga ventilatória', () => {
+    const initial = forceScenario(initializeCellularState(), 'mixed-ketoacidotic-fatigue');
+    const started = advanceCellularSimulation(initial, initializePhysiologyState(), { ...controls, difficulty: 'hard' }, .25).state;
+    expect(started.routine?.id).toBe('mixed-ketoacidotic-fatigue');
+
+    const partial = resolveRoutineDecision(started, 'ketoacidosis-dual-control', 1, true, ['hormone:release-insulin']);
+    expect(partial.ok).toBe(false);
+    expect(partial.reason).toContain('quimiorreflexo');
+
+    const combined = resolveRoutineDecision(started, 'ketoacidosis-dual-control', 1, true, ['hormone:release-insulin', 'central:chemoreflex-ventilation']);
+    expect(combined.ok).toBe(true);
+    expect(combined.decisionOutcome).toBe('adaptive');
+  });
+
+  it('aplica assinaturas sistêmicas derivadas e não apenas deltas celulares', () => {
+    const definition = getScenarioDefinition('mixed-ketoacidotic-fatigue');
+    const baseline = initializePhysiologyState();
+    const challenged = applyScenarioPhysiologyEffects(baseline, definition?.onStartPhysiology ?? []);
+
+    expect(challenged.nutrients.bloodGlucose).toBeGreaterThan(baseline.nutrients.bloodGlucose);
+    expect(challenged.nutrients.ketones).toBeGreaterThan(baseline.nutrients.ketones);
+    expect(challenged.acidBase.anionGap).toBeGreaterThan(baseline.acidBase.anionGap);
+    expect(challenged.acidBase.bicarbonate).toBeLessThan(baseline.acidBase.bicarbonate);
+    expect(challenged.respiratory.paco2).toBeGreaterThan(baseline.respiratory.paco2);
+    expect(challenged.renal.gfr).toBeLessThan(baseline.renal.gfr);
   });
 
   it('capta glicose, executa glicólise e oxida piruvato', () => {

@@ -6,6 +6,7 @@
 
 import type { HormoneActionId } from './config/hormones';
 import type { HypothalamicSignalId } from './hypothalamus';
+import type { ScenarioNarrativeState } from './scenarioNarrative';
 
 export type SubstrateKind = 'glucose' | 'oxygen' | 'fattyAcid' | 'aminoAcid';
 export type OxidationSubstrate = 'pyruvate' | 'fattyAcid';
@@ -13,6 +14,7 @@ export type RepairTarget = 'membrane' | 'proteins' | 'dna' | 'antioxidants';
 export type AutomationKind = 'transporters' | 'mitochondrialShuttle' | 'repair';
 export type AtpAllocationTarget = 'ionPumps' | 'repair' | 'biosynthesis';
 export type CellularAdaptationKind = 'enzymaticEfficiency' | 'antioxidantDefense' | 'metabolicFlexibility' | 'bufferCapacity' | 'hypoxiaTolerance';
+export type SimulationDifficulty = 'easy' | 'hard';
 
 export interface TissueEnvironment {
     perfusionPercent: number;
@@ -164,6 +166,7 @@ export interface CellularState {
     lastEvent: string;
     nextRoutineAt: number;
     scenarioCooldowns: Record<string, number>;
+    narrative: ScenarioNarrativeState;
     simulationTime: number;
 }
 
@@ -172,6 +175,7 @@ export interface CellularControls {
     ventilationDrive: number;
     renalWaterReabsorption: number;
     pendingWaterMl: number;
+    difficulty?: SimulationDifficulty;
 }
 
 export interface CellularEvent {

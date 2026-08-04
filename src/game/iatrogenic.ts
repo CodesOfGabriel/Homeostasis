@@ -68,6 +68,59 @@ const SCENARIO_MISMATCHES: Record<string, Partial<Record<DecisionSignalId, Misma
     'nocturnal-hypoglycemia': {
         'hormone:release-insulin': { score: .98, mechanism: 'hypoglycemia', reason: 'aprofunda uma queda crítica da glicose' },
     },
+    'mitochondrial-uncoupling': {
+        'hormone:release-adrenaline': { score: .88, mechanism: 'thermogenic-overload', reason: 'aumenta fluxo, consumo de O₂ e calor em uma cadeia desacoplada' },
+        'hormone:increase-t3': { score: .96, mechanism: 'thermogenic-overload', reason: 'amplia termogênese quando o gradiente mitocondrial já dissipa energia' },
+        'hormone:boost-mtor': { score: .76, mechanism: 'anabolic-overload', reason: 'desvia ATP para síntese antes de estabilizar gradiente e controle iônico' },
+    },
+    'mixed-ketoacidotic-fatigue': {
+        'hormone:release-cortisol': { score: .82, mechanism: 'hyperglycemia', reason: 'sustenta produção hepática de substrato durante cetogênese ativa' },
+        'central:parasympathetic-recovery': { score: .58, mechanism: 'hypoperfusion', reason: 'reduz suporte sistêmico durante acidemia e desidratação' },
+    },
+    'distributive-dysoxia': {
+        'hormone:release-cortisol': { score: .94, mechanism: 'immunosuppression', reason: 'suprime contenção imune antes do controle do foco infeccioso' },
+        'central:chemoreflex-ventilation': { score: .54, mechanism: 'hyperventilation', reason: 'trata oxigenação arterial preservada sem corrigir a falha microcirculatória' },
+    },
+    'reperfusion-paradox': {
+        'hormone:release-adrenaline': { score: .9, mechanism: 'adrenergic-overload', reason: 'acelera uma cadeia hiper-reduzida durante o pico de reperfusão' },
+        'hormone:boost-mtor': { score: .86, mechanism: 'anabolic-overload', reason: 'consome ATP necessário às bombas de Ca²⁺ e à defesa redox' },
+    },
+    'hyperosmolar-renal-conflict': {
+        'central:suppress-adh': { score: .96, mechanism: 'water-loss', reason: 'aumenta perda de água durante hipovolemia e diurese osmótica' },
+        'hormone:release-glucagon': { score: .9, mechanism: 'hyperglycemia', reason: 'mantém o gradiente glicêmico que sustenta a diurese osmótica' },
+    },
+    'whisky-party-hepatic-overload': {
+        'hormone:release-insulin': { score: .98, mechanism: 'hypoglycemia', reason: 'remove a glicose que o fígado intoxicado já não consegue repor normalmente' },
+        'hormone:release-adrenaline': { score: .86, mechanism: 'adrenergic-overload', reason: 'mascara depressão metabólica elevando demanda, lactato e estresse redox' },
+        'central:chemoreflex-ventilation': { score: .55, mechanism: 'hyperventilation', reason: 'aumenta trabalho respiratório sem corrigir o bloqueio redox hepático' },
+    },
+    'alcohol-nocturnal-hypoglycemia': {
+        'hormone:release-insulin': { score: 1, mechanism: 'hypoglycemia', reason: 'aprofunda neuroglicopenia durante baixa produção hepática de glicose' },
+        'hormone:release-adrenaline': { score: .88, mechanism: 'adrenergic-overload', reason: 'força despertar consumindo a glicose e o ATP ainda disponíveis' },
+        'central:sympathetic-arousal': { score: .8, mechanism: 'adrenergic-overload', reason: 'aumenta demanda sem resolver simultaneamente glicose e retenção de CO₂' },
+        'central:parasympathetic-recovery': { score: .52, mechanism: 'hypoperfusion', reason: 'reduz suporte circulatório enquanto cérebro e ventilação já estão deprimidos' },
+    },
+    'fasted-workout-free-fatty-acids': {
+        'hormone:release-insulin': { score: .97, mechanism: 'hypoglycemia', reason: 'desvia glicose ao músculo quando a oferta cerebral já está ameaçada' },
+        'hormone:release-adrenaline': { score: .9, mechanism: 'adrenergic-overload', reason: 'eleva lipólise e demanda acima da capacidade de oxidar AGL e O₂' },
+        'central:sympathetic-arousal': { score: .84, mechanism: 'adrenergic-overload', reason: 'mantém intensidade do esforço apesar da divergência entre substrato e ATP' },
+    },
+    'chronic-anxiety-sedentary': {
+        'hormone:release-adrenaline': { score: .96, mechanism: 'adrenergic-overload', reason: 'reforça exposição catecolaminérgica já cronicamente elevada em repouso' },
+        'central:sympathetic-arousal': { score: .98, mechanism: 'adrenergic-overload', reason: 'prolonga o falso estado de emergência e a queda de HRV' },
+        'hormone:release-cortisol': { score: .9, mechanism: 'immunosuppression', reason: 'amplia catabolismo e exposição HPA em um eixo que já não desliga' },
+        'hormone:increase-t3': { score: .84, mechanism: 'thermogenic-overload', reason: 'eleva gasto basal e sensibilidade adrenérgica sem demanda física correspondente' },
+    },
+    'panic-hyperventilation': {
+        'central:chemoreflex-ventilation': { score: 1, mechanism: 'hyperventilation', reason: 'derruba ainda mais PaCO₂ apesar de PaO₂ e SpO₂ preservadas' },
+        'hormone:release-adrenaline': { score: .94, mechanism: 'adrenergic-overload', reason: 'reforça o circuito de alerta sem corrigir vasoconstrição por hipocapnia' },
+        'central:sympathetic-arousal': { score: .92, mechanism: 'adrenergic-overload', reason: 'sustenta taquicardia e demanda em uma crise sem hipotensão primária' },
+    },
+    'major-hemorrhage': {
+        'central:parasympathetic-recovery': { score: 1, mechanism: 'hypoperfusion', reason: 'retira a taquicardia compensatória quando volume sistólico e PAM já caíram' },
+        'hormone:release-adrenaline': { score: .82, mechanism: 'adrenergic-overload', reason: 'eleva consumo miocárdico sem repor volume ou capacidade de transporte de O₂' },
+        'central:chemoreflex-ventilation': { score: .62, mechanism: 'hyperventilation', reason: 'melhora PaO₂ sem restaurar débito, hemoglobina ou perfusão tecidual' },
+    },
 };
 
 export function assessSignalMisuse(

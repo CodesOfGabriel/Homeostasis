@@ -1,5 +1,5 @@
 import { lazy, Suspense, useMemo, useState } from 'react';
-import { RotateCcw, X } from 'lucide-react';
+import { BrainCircuit, CheckCircle2, RotateCcw, ShieldCheck, X } from 'lucide-react';
 import { useSimulationLoop, useSimulationStore } from '../../game/simulationStore';
 import { Playback, Stepper, TopNav, type SimulatorTab, type StepKey } from './navigation';
 import { ActionButton, GlassPanel, PanelLabel, cn } from './ui';
@@ -44,10 +44,12 @@ export function Simulator() {
   const events = useSimulationStore(state => state.recentEvents);
   const running = useSimulationStore(state => state.isRunning);
   const speed = useSimulationStore(state => state.timeSpeed);
+  const difficulty = useSimulationStore(state => state.simulationDifficulty);
   const start = useSimulationStore(state => state.start);
   const pause = useSimulationStore(state => state.pause);
   const reset = useSimulationStore(state => state.reset);
   const setSpeed = useSimulationStore(state => state.setTimeSpeed);
+  const setDifficulty = useSimulationStore(state => state.setSimulationDifficulty);
   const time = simulationClock(physiology.timeElapsed);
   const decisionVisible = Boolean(cellular.routine || scenarioResponse);
 
@@ -105,15 +107,46 @@ export function Simulator() {
         <div className="absolute bottom-3 right-4 z-40 sm:hidden"><Playback running={running} speed={speed} onToggle={() => running ? pause() : start()} onSpeed={cycleSpeed} /></div>
       </div>
 
-      {!started && <Overlay title="Iniciar simulação" onClose={undefined}>
+      {!started && <Overlay title="Iniciar simulador" onClose={undefined}>
         <p className="text-sm leading-relaxed text-muted-foreground">Mantenha a homeostase aplicando intervenções sistêmicas e administrando o metabolismo celular. O organismo responde continuamente às suas decisões.</p>
         <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3"><Info label="Objetivo" text="Preservar a viabilidade"/><Info label="Feedback" text="Eventos e alertas reais"/><Info label="Mecânica" text="Tecido, célula e sistema"/></div>
-        <ActionButton className="mt-5 w-full border-primary/60 bg-primary/10" onClick={startSimulation}>Iniciar simulação</ActionButton>
+        <section className="mt-5 rounded-2xl border-2 border-primary/35 bg-gradient-to-br from-primary/[.12] via-black/30 to-danger/[.08] p-3 shadow-[0_16px_50px_rgba(0,0,0,.35)]" aria-labelledby="difficulty-title">
+          <div className="flex items-center justify-between gap-3 px-1 pb-3">
+            <div><PanelLabel>Escolha a intensidade</PanelLabel><h3 id="difficulty-title" className="mt-1 font-display text-base text-foreground">Dificuldade: Fácil / Difícil</h3></div>
+            <span className="rounded-full border border-primary/35 bg-primary/10 px-2.5 py-1 text-[9px] uppercase tracking-widest text-primary">Antes de iniciar</span>
+          </div>
+          <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Dificuldade da simulação">
+            <button
+              type="button"
+              role="radio"
+              aria-checked={difficulty === 'easy'}
+              onClick={() => setDifficulty('easy')}
+              className={cn('relative min-h-[88px] rounded-xl border-2 p-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/80', difficulty === 'easy' ? 'border-primary bg-primary/15 shadow-[0_0_28px_rgba(77,188,176,.2)]' : 'border-white/10 bg-black/25 hover:border-primary/45')}
+            >
+              <span className="flex items-center justify-between"><ShieldCheck className={cn('size-5', difficulty === 'easy' ? 'text-primary' : 'text-muted-foreground')}/>{difficulty === 'easy' && <CheckCircle2 className="size-4 text-primary"/>}</span>
+              <strong className="mt-2 block font-display text-sm text-foreground">Fácil</strong>
+              <small className="mt-1 block text-[9px] leading-snug text-muted-foreground">Relações guiadas e diretas</small>
+            </button>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={difficulty === 'hard'}
+              onClick={() => setDifficulty('hard')}
+              className={cn('relative min-h-[88px] rounded-xl border-2 p-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger/80', difficulty === 'hard' ? 'border-danger bg-danger/15 shadow-[0_0_32px_rgba(220,102,88,.24)]' : 'border-white/10 bg-black/25 hover:border-danger/50')}
+            >
+              <span className="flex items-center justify-between"><BrainCircuit className={cn('size-5', difficulty === 'hard' ? 'text-danger' : 'text-muted-foreground')}/>{difficulty === 'hard' && <CheckCircle2 className="size-4 text-danger"/>}</span>
+              <strong className="mt-2 block font-display text-sm text-foreground">Difícil</strong>
+              <small className="mt-1 block text-[9px] leading-snug text-muted-foreground">Crises encadeadas e 102 marcadores</small>
+            </button>
+          </div>
+          <p className={cn('mt-3 rounded-lg border px-3 py-2 text-[10px] leading-relaxed', difficulty === 'easy' ? 'border-primary/20 bg-primary/5 text-muted-foreground' : 'border-danger/25 bg-danger/[.07] text-foreground/80')}>{difficulty === 'easy' ? 'Eventos guiados, com relações fisiológicas mais diretas.' : 'Alternativas plausíveis, sinais combinados e histórias persistentes: uma decisão altera o próximo capítulo.'}</p>
+        </section>
+        <ActionButton className="mt-5 w-full border-primary/60 bg-primary/10" onClick={startSimulation}>Iniciar simulador</ActionButton>
       </Overlay>}
 
       {settingsOpen && <Overlay title="Configurações da simulação" onClose={() => setSettingsOpen(false)}>
         <p className="text-sm leading-relaxed text-muted-foreground">Este é um modelo educacional simplificado e não deve orientar diagnóstico ou tratamento.</p>
-        <div className="mt-4 rounded-lg border border-warning/20 bg-warning/5 px-3 py-2.5 text-[11px] leading-relaxed text-muted-foreground">Exercício, estresse, nutrição, sono, temperatura e desafios fisiopatológicos pertencem aos eventos e não podem ser configurados pelo jogador. Quando uma situação surgir, a simulação pausará e exigirá uma decisão antes de continuar.</div>
+        <div className="mt-4 rounded-lg border border-warning/20 bg-warning/5 px-3 py-2.5 text-[11px] leading-relaxed text-muted-foreground">Dificuldade atual: <strong className="text-foreground">{difficulty === 'easy' ? 'Fácil' : 'Difícil'}</strong>. Exercício, estresse, nutrição, sono, temperatura e desafios fisiopatológicos pertencem aos eventos. Quando uma situação surgir, a simulação pausará e exigirá uma decisão antes de continuar.</div>
         <div className="mt-5 grid grid-cols-2 gap-2"><ActionButton onClick={() => setSettingsOpen(false)}>Continuar</ActionButton><ActionButton onClick={restartSimulation}><RotateCcw className="mr-2 inline size-3.5"/>Reiniciar</ActionButton></div>
       </Overlay>}
 
