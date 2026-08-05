@@ -85,4 +85,28 @@ describe('somatória entre evento, hormônios e condição do organismo', () => 
     expect(resilient.protectiveScore).toBeGreaterThan(baseline.protectiveScore);
     expect(resilient.effectMultiplier).toBeGreaterThan(baseline.effectMultiplier);
   });
+
+  it('usa os eixos POMC/CART e NPY/AgRP na resolução metabólica', () => {
+    const physiology = initializePhysiologyState();
+    physiology.hormones.leptin = 28;
+    physiology.hormones.adiponectin = 4;
+    physiology.endocrine.leptinSensitivity = .4;
+    const cellular = initializeCellularState();
+    const npy = evaluateScenarioResolution(
+      'leptin-resistance-satiety',
+      physiology,
+      cellular,
+      { ...createInitialHypothalamicState(), feedingDrive: .8 },
+    );
+    physiology.hormones.adiponectin = 16;
+    physiology.endocrine.leptinSensitivity = .7;
+    const pomc = evaluateScenarioResolution(
+      'leptin-resistance-satiety',
+      physiology,
+      cellular,
+      { ...createInitialHypothalamicState(), feedingDrive: -.8 },
+    );
+    expect(pomc.protectiveScore).toBeGreaterThan(npy.protectiveScore);
+    expect(pomc.pressureScore).toBeLessThan(npy.pressureScore);
+  });
 });

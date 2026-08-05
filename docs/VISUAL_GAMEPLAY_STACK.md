@@ -28,11 +28,12 @@ As cenas são transparentes e preservam `cell-background.png` como contexto anat
 - **Construção:** o receptor adrenérgico representa integralmente a coluna de transportadores; navette mitocondrial e complexo de reparo montam uma peça nova a cada compra.
 - **Cadeia respiratória:** contadores mostram moléculas processadas em equivalentes/min; partículas de elétrons preservam sua fase e recebem novos elementos gradualmente quando o fluxo aumenta.
 - **Navegação:** o stepper inferior é um overlay com fade transparente; apenas os círculos recebem brilho e o conteúdo das demais abas rola por trás da faixa.
-- **Sistema:** sinais vitais e sinalização hormonal são uma única escala de observação; a barra inferior mantém apenas uma entrada para ela. Gasometria, perfusão, metabolismo e eletrólitos ficam como marcadores complementares.
+- **Organismo:** a avaliação primária mantém coração e ECG animados, agrupa PA/PAM e SpO₂/FR e limita o primeiro plano a três alertas. Gasometria, metabolismo, eletrólitos e rim usam divulgação progressiva em **Investigar**.
 - **Ritmo cardíaco:** `human_heart.glb`, ECG e o único valor de BPM ficam integrados à frequência cardíaca. O coração pulsa com a FC, pode ser rotacionado diretamente com o cursor e sobrepõe de forma controlada o canto do bloco de sinais vitais; a faixa P–QRS–T muda de velocidade sem reiniciar sua fase.
-- **Monitorização clínica:** sinais vitais, gasometria, eletrólitos e metabolismo usam rótulos completos, faixas de referência, histórico e indicadores explícitos de aumento, redução ou estabilidade. FC, ventilação e retenção renal são apenas respostas observadas; o jogador atua pelos modos Hormônios e Hipotálamo da mesma central flutuante.
+- **Monitorização clínica:** rótulos completos, faixas de referência e tendências conectam Organismo, Tecido e Célula. FC, ventilação e retenção renal são respostas observadas; ações distinguem respostas endógenas de intervenções clínicas.
 - **Economia das decisões:** o modal obrigatório mostra ATP, pools captados, ocupação dos transportadores, ações de preparação e requisitos `atual / mínimo`; caminhos sem recursos ficam bloqueados sem avançar a timeline.
-- **Destino celular:** Defesa e Genoma são uma única etapa, com compromisso apoptótico, suscetibilidade à infecção e transições de homeostase, estresse, apoptose ou necrose.
+- **Célula:** um esquema clicável conecta membrana, citosol, núcleo e proteostase a variáveis, sensores, efetores, custo em ATP e consequência sistêmica; homeostase, integridade e destino permanecem zonas distintas.
+- **Metaprogressão:** mapa de domínio, pontuação clínica multidimensional, coleção de mecanismos, automações por competência e fenótipos de prestígio ficam acessíveis nas configurações.
 - **Transportadores:** `adrenergic_receptor.glb` substitui a coluna procedural da bancada, permanece rigidamente ancorado no centro da base escura, sem flutuação ou rotação automática, e recebe progressivamente a cor ciano conforme o nível de automação.
 
 ## Próximas ferramentas com maior retorno

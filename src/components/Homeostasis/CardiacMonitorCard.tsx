@@ -15,8 +15,11 @@ interface CardiacMonitorCardProps {
 
 const rhythmLabels: Record<CardiovascularState['rhythm'], string> = {
   sinus: 'Ritmo sinusal',
-  arrhythmia: 'Ritmo irregular',
-  fibrillation: 'Fibrilação ventricular',
+  bradycardia: 'Bradicardia',
+  'supraventricular-tachycardia': 'Taquicardia supraventricular',
+  'atrial-fibrillation': 'Fibrilação atrial',
+  'ventricular-tachycardia': 'Taquicardia ventricular',
+  'ventricular-fibrillation': 'Fibrilação ventricular',
 };
 
 export function CardiacMonitorCard({ bpm, rhythm, variabilityMs }: CardiacMonitorCardProps) {
@@ -26,12 +29,12 @@ export function CardiacMonitorCard({ bpm, rhythm, variabilityMs }: CardiacMonito
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-white/5 px-4 py-3">
         <div>
           <PanelLabel icon={<HeartPulse className="size-4"/>}>Cardioscópio</PanelLabel>
-          <p className="mt-1 text-[9px] text-muted-foreground">Modelo anatômico e derivação II sintética</p>
+          <p className="mt-1 text-[11px] text-muted-foreground">Modelo anatômico e derivação II sintética</p>
         </div>
         <div className="flex items-center gap-3">
           <span className={cn('size-1.5 rounded-full', stable ? 'bg-good shadow-[0_0_7px_var(--good)]' : 'bg-warning shadow-[0_0_7px_var(--warning)]')}/>
-          <span className="text-[9px] uppercase tracking-wider text-muted-foreground">{rhythmLabels[rhythm]}</span>
-          <strong className="font-mono text-lg font-medium tabular-nums text-foreground">{bpm.toFixed(0)}<small className="ml-1 text-[8px] font-normal text-muted-foreground">bpm</small></strong>
+          <span className="text-[11px] uppercase tracking-wider text-muted-foreground">{rhythmLabels[rhythm]}</span>
+          <strong className="font-mono text-lg font-medium tabular-nums text-foreground">{bpm.toFixed(0)}<small className="ml-1 text-[11px] font-normal text-muted-foreground">bpm</small></strong>
         </div>
       </header>
 
@@ -48,7 +51,7 @@ export function CardiacMonitorCard({ bpm, rhythm, variabilityMs }: CardiacMonito
             </Suspense>
             <OrbitControls enablePan={false} enableZoom={false} autoRotate autoRotateSpeed={.45}/>
           </Canvas>
-          <span className="pointer-events-none absolute bottom-2 left-3 text-[8px] uppercase tracking-widest text-muted-foreground/60">human_heart.glb</span>
+          <span className="pointer-events-none absolute bottom-2 left-3 text-[11px] uppercase tracking-widest text-muted-foreground/60">human_heart.glb</span>
         </div>
         <EcgTrace bpm={bpm} rhythm={rhythm} variabilityMs={variabilityMs}/>
       </div>
@@ -65,9 +68,9 @@ export function CardiacRhythmInline({ bpm, rhythm, variabilityMs, bpmHistory }: 
         <Suspense fallback={<HeartFallback/>}><Center><HeartModel bpm={bpm}/></Center></Suspense>
         <OrbitControls enablePan={false} enableZoom={false} enableDamping dampingFactor={.08} rotateSpeed={.65}/>
       </Canvas>
-      <span className="pointer-events-none absolute bottom-1 right-2 flex items-center gap-1 rounded-full border border-white/10 bg-black/35 px-2 py-1 text-[8px] text-muted-foreground backdrop-blur-sm"><RotateCw className="size-2.5"/>Arraste para rotacionar</span>
+      <span className="pointer-events-none absolute bottom-1 right-2 flex items-center gap-1 rounded-full border border-white/10 bg-black/35 px-2 py-1 text-[11px] text-muted-foreground backdrop-blur-sm"><RotateCw className="size-2.5"/>Arraste para rotacionar</span>
     </div>
-    <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-x-2 gap-y-1"><span className={cn('size-1.5 rounded-full', stable ? 'bg-good shadow-[0_0_7px_var(--good)]' : 'bg-warning shadow-[0_0_7px_var(--warning)]')}/><strong className="font-mono text-2xl font-medium tabular-nums text-foreground">{bpm.toFixed(0)}<small className="ml-1 text-[9px] font-normal text-muted-foreground">bpm</small></strong><span className="text-[9px] uppercase tracking-wider text-muted-foreground">{rhythmLabels[rhythm]}</span></div><div className="mt-1 flex items-center justify-between gap-3 text-[9px] text-muted-foreground"><span>Variabilidade da frequência cardíaca: {variabilityMs.toFixed(0)} ms</span><HeartRateTrend history={bpmHistory} current={bpm}/></div><div className="relative mt-2 h-10 overflow-hidden rounded-md border border-white/8 bg-background/10"><EcgWave bpm={bpm} rhythm={rhythm} variabilityMs={variabilityMs} compact/></div></div>
+    <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-x-2 gap-y-1"><span className={cn('size-1.5 rounded-full', stable ? 'bg-good shadow-[0_0_7px_var(--good)]' : 'bg-warning shadow-[0_0_7px_var(--warning)]')}/><strong className="font-mono text-2xl font-medium tabular-nums text-foreground">{bpm.toFixed(0)}<small className="ml-1 text-[11px] font-normal text-muted-foreground">bpm</small></strong><span className="text-[11px] uppercase tracking-wider text-muted-foreground">{rhythmLabels[rhythm]}</span></div><div className="mt-1 flex items-center justify-between gap-3 text-[11px] text-muted-foreground"><span>Variabilidade da frequência cardíaca: {variabilityMs.toFixed(0)} ms</span><HeartRateTrend history={bpmHistory} current={bpm}/></div><div className="relative mt-2 h-10 overflow-hidden rounded-md border border-white/8 bg-background/10"><EcgWave bpm={bpm} rhythm={rhythm} variabilityMs={variabilityMs} compact/></div></div>
   </div>;
 }
 
@@ -86,9 +89,9 @@ function HeartModel({ bpm }: { bpm: number }) {
   useFrame(({ clock }) => {
     if (!group.current) return;
     const elapsed = clock.getElapsedTime();
-    const beat = Math.pow(Math.max(0, Math.sin(elapsed * Math.PI * 2 * Math.max(.7, bpm / 60))), 7);
-    group.current.scale.setScalar(1.18 + beat * .075);
-    group.current.position.y = Math.sin(elapsed * .8) * .015;
+    const motion = getHeartBeatMotion(elapsed, bpm);
+    group.current.scale.setScalar(motion.scale);
+    group.current.position.y = motion.y;
   });
   return <group ref={group} rotation={[-.12, Math.PI, 0]} scale={1.18}><primitive object={scene}/></group>;
 }
@@ -102,11 +105,11 @@ function EcgTrace({ bpm, rhythm, variabilityMs }: CardiacMonitorCardProps) {
     <section className="relative min-h-[190px] overflow-hidden bg-gradient-to-br from-background/15 via-transparent to-danger/5" aria-label={`Eletrocardiograma: ${rhythmLabels[rhythm]}, ${bpm.toFixed(0)} batimentos por minuto`}>
       <div className="ecg-grid absolute inset-0 opacity-55"/>
       <div className="absolute inset-x-0 top-0 z-10 flex items-start justify-between bg-gradient-to-b from-background/65 to-transparent px-4 pb-8 pt-3">
-        <div><PanelLabel icon={<Activity className="size-3.5 text-danger"/>}>Eletrocardiograma</PanelLabel><p className="mt-1 text-[8px] text-muted-foreground">Derivação II · 25 mm/s · 10 mm/mV</p></div>
-        <span className="font-mono text-[9px] text-muted-foreground">Variabilidade {variabilityMs.toFixed(0)} ms</span>
+        <div><PanelLabel icon={<Activity className="size-3.5 text-danger"/>}>Eletrocardiograma</PanelLabel><p className="mt-1 text-[11px] text-muted-foreground">Derivação II · 25 mm/s · 10 mm/mV</p></div>
+        <span className="font-mono text-[11px] text-muted-foreground">Variabilidade {variabilityMs.toFixed(0)} ms</span>
       </div>
       <EcgWave bpm={bpm} rhythm={rhythm} variabilityMs={variabilityMs}/>
-      <div className="absolute inset-x-0 bottom-0 flex items-center justify-between border-t border-white/5 bg-background/25 px-4 py-2 text-[8px] uppercase tracking-wider text-muted-foreground backdrop-blur-sm"><span>Ondas P–QRS–T</span><span>{rhythmLabels[rhythm]}</span></div>
+      <div className="absolute inset-x-0 bottom-0 flex items-center justify-between border-t border-white/5 bg-background/25 px-4 py-2 text-[11px] uppercase tracking-wider text-muted-foreground backdrop-blur-sm"><span>Ondas P–QRS–T</span><span>{rhythmLabels[rhythm]}</span></div>
     </section>
   );
 }
@@ -125,7 +128,7 @@ function EcgWave({ bpm, rhythm, variabilityMs, compact = false }: CardiacMonitor
       const delta = Math.min(.08, Math.max(0, (now - last) / 1000));
       last = now;
       // Cinco ciclos por faixa: a velocidade acompanha a FC sem reposicionar o traçado.
-      const pixelsPerSecond = Math.max(70, bpmRef.current * 800 / (5 * 60));
+      const pixelsPerSecond = getEcgPixelsPerSecond(bpmRef.current);
       phase -= pixelsPerSecond * delta;
       if (phase <= -800) phase += 800;
       strip.current?.setAttribute('transform', `translate(${phase.toFixed(2)} 0)`);
@@ -146,9 +149,18 @@ function EcgWave({ bpm, rhythm, variabilityMs, compact = false }: CardiacMonitor
   </svg>;
 }
 
-function createEcgPath(rhythm: CardiovascularState['rhythm'], variabilityMs: number) {
+export function getHeartBeatMotion(elapsed: number, bpm: number) {
+  const beat = Math.pow(Math.max(0, Math.sin(elapsed * Math.PI * 2 * Math.max(.7, bpm / 60))), 7);
+  return { scale: 1.18 + beat * .075, y: Math.sin(elapsed * .8) * .015 };
+}
+
+export function getEcgPixelsPerSecond(bpm: number) {
+  return Math.max(70, bpm * 800 / (5 * 60));
+}
+
+export function createEcgPath(rhythm: CardiovascularState['rhythm'], variabilityMs: number) {
   const baseline = 126;
-  if (rhythm === 'fibrillation') {
+  if (rhythm === 'ventricular-fibrillation') {
     const points = Array.from({ length: 161 }, (_, index) => {
       const x = index * 5;
       const y = baseline + Math.sin(index * .76) * 10 + Math.sin(index * 1.93) * 6 + Math.sin(index * .19) * 4;
@@ -158,15 +170,30 @@ function createEcgPath(rhythm: CardiovascularState['rhythm'], variabilityMs: num
   }
   const beats = 5;
   const width = 800 / beats;
-  const irregularity = rhythm === 'arrhythmia' ? Math.min(18, variabilityMs * .12) : 0;
+  const irregularity = rhythm === 'atrial-fibrillation' ? Math.min(28, 8 + variabilityMs * .16) : 0;
   const segments: string[] = [`M0 ${baseline}`];
   for (let beat = 0; beat < beats; beat += 1) {
     const start = beat * width + (beat % 2 ? irregularity : -irregularity) * .3;
-    const scale = rhythm === 'arrhythmia' && beat === 2 ? 1.22 : 1;
+    const scale = rhythm === 'atrial-fibrillation' && beat === 2 ? 1.18 : 1;
+    if (rhythm === 'ventricular-tachycardia') {
+      segments.push(
+        `L${start + 22} ${baseline}`,
+        `L${start + 40} ${baseline - 66}`,
+        `L${start + 66} ${baseline + 34}`,
+        `L${start + 92} ${baseline - 42}`,
+        `L${start + 122} ${baseline + 15}`,
+        `L${start + 158} ${baseline}`,
+      );
+      continue;
+    }
     segments.push(
       `L${start + 18} ${baseline}`,
-      `C${start + 25} ${baseline} ${start + 29} ${baseline - 11} ${start + 36} ${baseline - 11}`,
-      `C${start + 43} ${baseline - 11} ${start + 47} ${baseline} ${start + 55} ${baseline}`,
+      rhythm === 'atrial-fibrillation'
+        ? `C${start + 24} ${baseline - 2} ${start + 34} ${baseline + 3} ${start + 55} ${baseline}`
+        : `C${start + 25} ${baseline} ${start + 29} ${baseline - 11} ${start + 36} ${baseline - 11}`,
+      rhythm === 'atrial-fibrillation'
+        ? `L${start + 55} ${baseline}`
+        : `C${start + 43} ${baseline - 11} ${start + 47} ${baseline} ${start + 55} ${baseline}`,
       `L${start + 68} ${baseline}`,
       `L${start + 74} ${baseline + 8 * scale}`,
       `L${start + 82} ${baseline - 72 * scale}`,

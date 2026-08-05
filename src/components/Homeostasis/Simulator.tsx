@@ -7,6 +7,7 @@ import { ActionButton, GlassPanel, PanelLabel, cn } from './ui';
 import { GlobalPhysiologyDock } from './GlobalPhysiologyDock';
 import { PhysiologicalDecisionLayer } from './PhysiologicalDecisionLayer';
 import { AdaptationOpportunityLayer } from './AdaptationOpportunityLayer';
+import { MasteryProgressPanel } from './MasteryProgressPanel';
 
 const TissueView = lazy(() => import('./views').then(module => ({ default: module.TissueView })));
 const IntracellularView = lazy(() => import('./views').then(module => ({ default: module.IntracellularView })));
@@ -24,11 +25,12 @@ const stepTabs: Record<StepKey, SimulatorTab> = {
 
 export function Simulator() {
   useSimulationLoop();
-  const [activeTab, setActiveTab] = useState<SimulatorTab>('tissue');
-  const [activeStep, setActiveStep] = useState<StepKey>('tissue');
+  const [activeTab, setActiveTab] = useState<SimulatorTab>('system');
+  const [activeStep, setActiveStep] = useState<StepKey>('vitals');
   const [started, setStarted] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [decisionPanelExpanded, setDecisionPanelExpanded] = useState(false);
+  const [contextPanel, setContextPanel] = useState<'decision' | 'signaling' | null>(null);
   const physiology = useSimulationStore(state => state.physiology);
   const cellular = useSimulationStore(state => state.cellular);
   const iatrogenicEpisodes = useSimulationStore(state => state.iatrogenicEpisodes);
@@ -88,9 +90,12 @@ export function Simulator() {
             {activeTab === 'system' && <ClinicalSystemView focus="vitals" onNavigate={chooseStep} />}
           </Suspense>}
         </div>
-        {started && <GlobalPhysiologyDock />}
-        {started && <PhysiologicalDecisionLayer onExpandedChange={setDecisionPanelExpanded} />}
-        {started && <AdaptationOpportunityLayer />}
+        {started && <GlobalPhysiologyDock open={contextPanel === 'signaling'} onOpenChange={open => setContextPanel(open ? 'signaling' : null)} />}
+        {started && <PhysiologicalDecisionLayer collapseRequested={contextPanel === 'signaling'} onExpandedChange={expanded => {
+          setDecisionPanelExpanded(expanded);
+          setContextPanel(current => expanded ? 'decision' : current === 'decision' ? null : current);
+        }} />}
+        {started && <AdaptationOpportunityLayer hidden={contextPanel !== null} />}
         <footer className="pointer-events-none absolute inset-x-0 bottom-0 z-30 flex items-end justify-center gap-3 bg-gradient-to-t from-background/85 via-background/30 to-transparent px-4 pb-2 pt-10 lg:px-6">
           <Stepper active={activeStep} onChange={chooseStep} />
           <div className="pointer-events-auto hidden flex-none sm:block xl:absolute xl:bottom-2 xl:right-6"><Playback running={running} speed={speed} onToggle={() => running ? pause() : start()} onSpeed={cycleSpeed} /></div>
@@ -104,7 +109,7 @@ export function Simulator() {
         <section className="mt-5 rounded-2xl border-2 border-primary/35 bg-gradient-to-br from-primary/[.12] via-black/30 to-danger/[.08] p-3 shadow-[0_16px_50px_rgba(0,0,0,.35)]" aria-labelledby="difficulty-title">
           <div className="flex items-center justify-between gap-3 px-1 pb-3">
             <div><PanelLabel>Escolha a intensidade</PanelLabel><h3 id="difficulty-title" className="mt-1 font-display text-base text-foreground">Dificuldade: Fácil / Difícil</h3></div>
-            <span className="rounded-full border border-primary/35 bg-primary/10 px-2.5 py-1 text-[9px] uppercase tracking-widest text-primary">Antes de iniciar</span>
+            <span className="rounded-full border border-primary/35 bg-primary/10 px-2.5 py-1 text-[11px] uppercase tracking-widest text-primary">Antes de iniciar</span>
           </div>
           <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Dificuldade da simulação">
             <button
@@ -116,7 +121,7 @@ export function Simulator() {
             >
               <span className="flex items-center justify-between"><ShieldCheck className={cn('size-5', difficulty === 'easy' ? 'text-primary' : 'text-muted-foreground')}/>{difficulty === 'easy' && <CheckCircle2 className="size-4 text-primary"/>}</span>
               <strong className="mt-2 block font-display text-sm text-foreground">Fácil</strong>
-              <small className="mt-1 block text-[9px] leading-snug text-muted-foreground">Fisiologia cotidiana e primeiras condutas</small>
+              <small className="mt-1 block text-[11px] leading-snug text-muted-foreground">Fisiologia cotidiana e primeiras condutas</small>
             </button>
             <button
               type="button"
@@ -127,10 +132,10 @@ export function Simulator() {
             >
               <span className="flex items-center justify-between"><BrainCircuit className={cn('size-5', difficulty === 'hard' ? 'text-danger' : 'text-muted-foreground')}/>{difficulty === 'hard' && <CheckCircle2 className="size-4 text-danger"/>}</span>
               <strong className="mt-2 block font-display text-sm text-foreground">Difícil</strong>
-              <small className="mt-1 block text-[9px] leading-snug text-muted-foreground">Crises, fármacos e 102 marcadores</small>
+              <small className="mt-1 block text-[11px] leading-snug text-muted-foreground">Mais variáveis ocultas, compensações e consequências</small>
             </button>
           </div>
-          <p className={cn('mt-3 rounded-lg border px-3 py-2 text-[10px] leading-relaxed', difficulty === 'easy' ? 'border-primary/20 bg-primary/5 text-muted-foreground' : 'border-danger/25 bg-danger/[.07] text-foreground/80')}>{difficulty === 'easy' ? 'Eventos cotidianos guiados por sinais vitais, hormônios e manobras iniciais.' : 'Crises encadeadas com alternativas plausíveis, intervenções farmacológicas e consequências persistentes.'}</p>
+          <p className={cn('mt-3 rounded-lg border px-3 py-2 text-[11px] leading-relaxed', difficulty === 'easy' ? 'border-primary/20 bg-primary/5 text-muted-foreground' : 'border-danger/25 bg-danger/[.07] text-foreground/80')}>{difficulty === 'easy' ? 'Eventos cotidianos guiados por sinais vitais, hormônios e manobras iniciais.' : 'Crises encadeadas com alternativas plausíveis, intervenções farmacológicas e consequências persistentes.'}</p>
         </section>
         <ActionButton className="mt-5 w-full border-primary/60 bg-primary/10" onClick={startSimulation}>Iniciar simulador</ActionButton>
       </Overlay>}
@@ -138,7 +143,8 @@ export function Simulator() {
       {settingsOpen && <Overlay title="Configurações da simulação" onClose={() => setSettingsOpen(false)}>
         <p className="text-sm leading-relaxed text-muted-foreground">Este é um modelo educacional simplificado e não deve orientar diagnóstico ou tratamento.</p>
         <div className="mt-3 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2.5 text-[11px] leading-relaxed text-muted-foreground">Calendário comprimido: em 1×, 24 horas do simulador passam em aproximadamente 4 min 30 s reais. Crises e respostas celulares continuam usando segundos fisiológicos próprios.</div>
-        <div className="mt-4 rounded-lg border border-warning/20 bg-warning/5 px-3 py-2.5 text-[11px] leading-relaxed text-muted-foreground">Dificuldade atual: <strong className="text-foreground">{difficulty === 'easy' ? 'Fácil' : 'Difícil'}</strong>. Os eventos ensinam fisiologia, regulação endócrina e manejo clínico simplificado. Quando uma situação surgir, a simulação pausará para investigação antes da conduta.</div>
+        <div className="mt-4 rounded-lg border border-warning/20 bg-warning/5 px-3 py-2.5 text-[11px] leading-relaxed text-muted-foreground">Dificuldade atual: <strong className="text-foreground">{difficulty === 'easy' ? 'Fácil' : 'Difícil'}</strong>. Quando uma situação surgir, a simulação pausará para você revisar os sinais e escolher a conduta.</div>
+        <MasteryProgressPanel onPrestige={() => setSettingsOpen(false)}/>
         <div className="mt-5 grid grid-cols-2 gap-2"><ActionButton onClick={() => setSettingsOpen(false)}>Continuar</ActionButton><ActionButton onClick={restartSimulation}><RotateCcw className="mr-2 inline size-3.5"/>Reiniciar</ActionButton></div>
       </Overlay>}
 
@@ -155,5 +161,5 @@ function Info({ label, text }: { label: string; text: string }) {
 }
 
 function Overlay({ title, children, onClose, danger }: { title: string; children: React.ReactNode; onClose?: () => void; danger?: boolean }) {
-  return <div className="fixed inset-0 z-50 grid place-items-center bg-black/75 px-4 backdrop-blur-md"><GlassPanel className={`relative w-full max-w-xl p-6 ${danger ? 'border-danger/40' : ''}`}>{onClose && <button type="button" onClick={onClose} aria-label="Fechar" className="absolute right-4 top-4 text-muted-foreground hover:text-foreground"><X className="size-5"/></button>}<PanelLabel>{danger ? 'Estado terminal' : 'Homeostasis'}</PanelLabel><div className="gold-line my-4 h-px"/><h2 className={`font-display text-2xl ${danger ? 'text-danger' : 'text-foreground'}`}>{title}</h2><div className="mt-3">{children}</div></GlassPanel></div>;
+  return <div className="fixed inset-0 z-50 grid place-items-center bg-black/75 px-4 py-4 backdrop-blur-md"><GlassPanel className={`scrollbar-thin relative max-h-[calc(100dvh-2rem)] w-full max-w-4xl overflow-y-auto p-6 ${danger ? 'border-danger/40' : ''}`}>{onClose && <button type="button" onClick={onClose} aria-label="Fechar" className="absolute right-4 top-4 text-muted-foreground hover:text-foreground"><X className="size-5"/></button>}<PanelLabel>{danger ? 'Estado terminal' : 'Homeostasis'}</PanelLabel><div className="gold-line my-4 h-px"/><h2 className={`font-display text-2xl ${danger ? 'text-danger' : 'text-foreground'}`}>{title}</h2><div className="mt-3">{children}</div></GlassPanel></div>;
 }

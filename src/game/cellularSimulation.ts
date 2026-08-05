@@ -851,7 +851,7 @@ function advanceStep(
     const cortisolExcess = clamp((macro.hormones.cortisol - 18) / 32, 0, 1);
     const hyperglycemicStress = clamp((macro.nutrients.bloodGlucose - 140) / 180, 0, 1);
     const anabolicProtection = clamp(
-        (macro.hormones.igf1 / 180 + macro.hormones.mTORActivity / 50) / 2,
+        (macro.hormones.igf1 / 180 + macro.cellularSignaling.mTorActivity / 50) / 2,
         0,
         1.35,
     );

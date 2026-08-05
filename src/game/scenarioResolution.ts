@@ -1,5 +1,5 @@
 import type { CellularState } from './cellularTypes';
-import type { HypothalamicRegulationState } from './hypothalamus';
+import type { CentralRegulationState } from './centralRegulation';
 import type { PhysiologyState } from './types';
 
 export interface ScenarioResolutionModifier {
@@ -19,7 +19,7 @@ export function evaluateScenarioResolution(
     scenarioId: string,
     physiology: PhysiologyState,
     cellular: CellularState,
-    hypothalamus: HypothalamicRegulationState,
+    hypothalamus: CentralRegulationState,
 ): ScenarioResolutionModifier {
     const hormones = physiology.hormones;
     const catecholamineExcess = clamp(
@@ -33,11 +33,14 @@ export function evaluateScenarioResolution(
     const insulinAction = clamp(hormones.insulin / 10 * physiology.endocrine.insulinReceptorSensitivity, 0, 2.5);
     const glucagonDrive = clamp(hormones.glucagon / 80 * physiology.capacities.hepaticGlucoseResponsiveness, 0, 2.5);
     const anabolicDrive = clamp(
-        (hormones.gh / 1.2 + hormones.igf1 / 180 + hormones.mTORActivity / 50) / 3
+        (hormones.gh / 1.2 + hormones.igf1 / 180 + physiology.cellularSignaling.mTorActivity / 50) / 3
         * physiology.endocrine.anabolicSensitivity,
         0,
         2,
     );
+    const ghrelinDrive = clamp(hormones.ghrelin / 600, 0, 3);
+    const effectiveLeptin = clamp(hormones.leptin / 10 * physiology.endocrine.leptinSensitivity, 0, 2.5);
+    const adiponectinSupport = clamp(hormones.adiponectin / 10, .2, 2.5);
 
     let protectiveScore = 0;
     let pressureScore = catecholamineExcess * .18
@@ -249,6 +252,41 @@ export function evaluateScenarioResolution(
             + Math.max(0, 45 - physiology.nutrients.hydration) / 7
             + Math.max(0, physiology.energy.lactateLevel - 2) / 7
             + Math.max(0, 55 - cellular.tissue.perfusionPercent) / 45;
+    } else if (scenarioId === 'fasting-orexigenic-switch') {
+        protectiveScore += Math.max(0, hypothalamus.feedingDrive) * .48
+            + clamp(ghrelinDrive / 2, 0, 1) * .22
+            + clamp(physiology.nutrients.bloodGlucose / 85, 0, 1.1) * .18;
+        pressureScore += Math.max(0, -hypothalamus.feedingDrive) * .62
+            + Math.max(0, 72 - physiology.nutrients.bloodGlucose) / 28
+            + physiology.energy.energyDeficit / 100 * .3;
+    } else if (scenarioId === 'leptin-resistance-satiety') {
+        protectiveScore += Math.max(0, -hypothalamus.feedingDrive) * .48
+            + adiponectinSupport * .28
+            + physiology.endocrine.leptinSensitivity * .22;
+        pressureScore += Math.max(0, hypothalamus.feedingDrive) * .62
+            + ghrelinDrive * .18
+            + Math.max(0, physiology.nutrients.bloodGlucose - 125) / 100
+            + Math.max(0, effectiveLeptin - 1.2) * .12;
+    } else if (scenarioId === 'primary-hypothyroid-failure') {
+        protectiveScore += clamp((hormones.t4 - 2) / 5, 0, 1) * .58
+            + clamp((hormones.t3 - 45) / 75, 0, 1) * .28;
+        pressureScore += Math.max(0, 65 - hormones.t3) / 35
+            + catecholamineExcess * .42
+            + physiology.energy.energyDeficit / 100 * .3;
+    } else if (scenarioId === 'thyrotoxic-decompensation') {
+        protectiveScore += Math.max(0, -hypothalamus.autonomicTone) * .42
+            + clamp((260 - hormones.t3) / 140, 0, 1) * .5;
+        pressureScore += thyroidExcess * .72
+            + catecholamineExcess * .5
+            + Math.max(0, physiology.bodyTemperature - 38) * .42
+            + Math.max(0, physiology.cardiovascular.heartRate - 115) / 50;
+    } else if (scenarioId === 'cushing-metabolic-load') {
+        protectiveScore += insulinAction * .32
+            + clamp((55 - hormones.cortisol) / 35, 0, 1) * .55;
+        pressureScore += cortisolExcess * .72
+            + physiology.endocrine.cortisolExposure / 100 * .42
+            + Math.max(0, physiology.nutrients.bloodGlucose - 125) / 105
+            + Math.max(0, physiology.cardiovascular.meanArterialPressure - 105) / 55;
     }
 
     protectiveScore = clamp(protectiveScore, 0, 2);

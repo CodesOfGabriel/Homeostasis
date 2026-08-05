@@ -103,7 +103,7 @@ export function ElectronTransportChain({
             Elétrons de NADH e FADH₂ percorrem os complexos I–IV. O bombeamento de H⁺ cria o gradiente usado pela ATP sintase.
           </p>
         </div>
-        <div className="rounded-full border border-cyan/20 bg-cyan/5 px-3 py-1.5 font-mono text-[10px] text-cyan">
+        <div className="rounded-full border border-cyan/20 bg-cyan/5 px-3 py-1.5 font-mono text-[11px] text-cyan">
           FLUXO {fluxPercent.toFixed(0)}%
         </div>
       </div>
@@ -406,16 +406,16 @@ function ProcessCard({ color, title, reaction, rateValue, rateUnit, sourceLabel,
     >
       <header className="flex items-center gap-2">
         <span className="size-1.5 shrink-0 rounded-full shadow-[0_0_9px_currentColor]" style={{ color, backgroundColor: color }} />
-        <span className="text-[9px] font-semibold uppercase tracking-[.16em]" style={{ color }}>{title}</span>
+        <span className="text-[11px] font-semibold uppercase tracking-[.16em]" style={{ color }}>{title}</span>
       </header>
       <div className="mt-2 flex items-baseline gap-1.5">
         <strong className="font-mono text-lg font-semibold tabular-nums text-foreground">{rateValue}</strong>
-        <span className="font-mono text-[9px] text-muted-foreground">{rateUnit}</span>
+        <span className="font-mono text-[11px] text-muted-foreground">{rateUnit}</span>
       </div>
-      <p className="mt-1.5 min-h-8 text-[10px] font-medium leading-relaxed text-foreground/85">{reaction}</p>
+      <p className="mt-1.5 min-h-8 text-[11px] font-medium leading-relaxed text-foreground/85">{reaction}</p>
       <div className="mt-2 flex items-center justify-between gap-3 border-t border-white/8 pt-2">
-        <span className="min-w-0 text-[8px] uppercase tracking-wider text-muted-foreground">{sourceLabel}</span>
-        <strong className="shrink-0 font-mono text-[10px] font-medium tabular-nums text-foreground">{sourceValue}</strong>
+        <span className="min-w-0 text-[11px] uppercase tracking-wider text-muted-foreground">{sourceLabel}</span>
+        <strong className="shrink-0 font-mono text-[11px] font-medium tabular-nums text-foreground">{sourceValue}</strong>
       </div>
     </article>
   );
@@ -424,7 +424,7 @@ function ProcessCard({ color, title, reaction, rateValue, rateUnit, sourceLabel,
 function ChainMetric({ icon, label, value, progress }: { icon: ReactNode; label: string; value: string; progress: number }) {
   return (
     <div className="bg-black/15 p-3">
-      <div className="flex items-center gap-2 text-[9px] uppercase tracking-wider text-muted-foreground">{icon}<span>{label}</span></div>
+      <div className="flex items-center gap-2 text-[11px] uppercase tracking-wider text-muted-foreground">{icon}<span>{label}</span></div>
       <div className="mt-2 flex items-baseline justify-between gap-2">
         <strong className="font-mono text-xs font-medium text-foreground">{value}</strong>
         <Droplets className="size-3 text-cyan/50"/>

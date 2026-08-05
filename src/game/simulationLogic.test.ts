@@ -35,6 +35,8 @@ describe('trajetórias do motor sistêmico', () => {
     expect(state.acidBase.pH).toBeGreaterThan(7.35);
     expect(state.acidBase.pH).toBeLessThan(7.45);
     expect(state.nutrients.bloodGlucose).toBeGreaterThan(70);
+    expect(state.cardiovascular.perfusionIndex).toBeGreaterThan(95);
+    expect(state.cardiovascular.perfusionIndex).toBeLessThan(105);
     expect(Object.values(state.energy).every(value => Number.isFinite(value))).toBe(true);
   });
 
@@ -71,6 +73,25 @@ describe('trajetórias do motor sistêmico', () => {
     expect(stressed.hormones.adrenaline).toBeGreaterThan(60);
     expect(stressed.hormones.cortisol).toBeGreaterThan(12);
     expect(stressed.endocrine.hpaDrive).toBeGreaterThan(.4);
+  });
+
+  it('integra grelina, leptina e adiponectina aos drives de apetite e sensibilidade', () => {
+    const fasting = initializePhysiologyState();
+    fasting.nutrients.hoursSinceMeal = 14;
+    fasting.nutrients.fedState = false;
+    fasting.nutrients.bloodGlucose = 76;
+    const fasted = simulate(fasting, 15 * 60);
+
+    const adipose = initializePhysiologyState();
+    adipose.nutrients.adiposeTissue = 30;
+    adipose.nutrients.hoursSinceMeal = 1;
+    adipose.nutrients.fedState = true;
+    const fed = simulate(adipose, 15 * 60);
+
+    expect(fasted.hormones.ghrelin).toBeGreaterThan(fed.hormones.ghrelin);
+    expect(fasted.endocrine.orexigenicDrive).toBeGreaterThan(fed.endocrine.orexigenicDrive);
+    expect(fed.hormones.leptin).toBeGreaterThan(fasted.hormones.leptin);
+    expect(fed.hormones.adiponectin).toBeLessThan(fasted.hormones.adiponectin);
   });
 
   it('sincroniza a fase circadiana com o calendário comprimido', () => {
@@ -114,6 +135,24 @@ describe('fisiopatologia por capacidades', () => {
     expect(state.allostaticLoad.inflammationLevel).toBeGreaterThan(30);
     expect(state.cardiovascular.systemicVascularResistance).toBeLessThan(1000);
     expect(state.energy.lactateLevel).toBeGreaterThan(1);
+  });
+
+  it('mantém assinaturas opostas de falha tireoidiana e hipertireoidismo', () => {
+    const low = simulate(applyDiseasePreset(initializePhysiologyState(), 'hypothyroidism'), 20 * 60, {}, 2);
+    const high = simulate(applyDiseasePreset(initializePhysiologyState(), 'hyperthyroidism'), 20 * 60, {}, 2);
+    expect(low.hormones.t4).toBeLessThan(5);
+    expect(low.hormones.tsh).toBeGreaterThan(high.hormones.tsh);
+    expect(low.basalMetabolicRate).toBeLessThan(high.basalMetabolicRate);
+    expect(high.hormones.t3).toBeGreaterThan(180);
+  });
+
+  it('faz autonomia adrenal sustentar a carga metabólica de Cushing', () => {
+    const initial = applyDiseasePreset(initializePhysiologyState(), 'cushing-syndrome');
+    const state = simulate(initial, 20 * 60, {}, 2);
+    expect(state.hormones.cortisol).toBeGreaterThan(30);
+    expect(state.endocrine.cortisolExposure).toBeGreaterThan(40);
+    expect(state.nutrients.bloodGlucose).toBeGreaterThan(110);
+    expect(state.pathophysiology.diseaseBurden).toBeGreaterThan(35);
   });
 
   it('permite depuração ou progressão infecciosa conforme barreira e imunossupressão', () => {

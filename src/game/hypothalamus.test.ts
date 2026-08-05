@@ -38,4 +38,14 @@ describe('regulação hipotalâmica', () => {
     expect(safety.safe).toBe(false);
     expect(safety.reason).toContain('CO₂');
   });
+
+  it('representa POMC/CART e NPY/AgRP como drives opostos de apetite', () => {
+    const pomc = getHypothalamicSignal('activate-pomc-cart');
+    const npy = getHypothalamicSignal('activate-npy-agrp');
+    if (!pomc || !npy) throw new Error('Eixos de apetite ausentes');
+    const anorexigenic = applyHypothalamicSignal(createInitialHypothalamicState(), pomc);
+    const orexigenic = applyHypothalamicSignal(createInitialHypothalamicState(), npy);
+    expect(anorexigenic.feedingDrive).toBeLessThan(0);
+    expect(orexigenic.feedingDrive).toBeGreaterThan(0);
+  });
 });

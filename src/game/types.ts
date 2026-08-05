@@ -82,6 +82,13 @@ export interface NutrientState {
     hydration: number;            // L - Volume total de água corporal
     sodium: number;               // mmol/L - Sódio (135-145 normal)
     potassium: number;            // mmol/L - Potássio (3.5-5.0 normal)
+    chloride: number;              // mmol/L - Cloreto medido/modelado (98-106 normal)
+    calcium: number;               // mg/dL - Cálcio extracelular total
+    phosphate: number;             // mg/dL - Fosfato extracelular
+    magnesium: number;             // mg/dL - Magnésio extracelular
+    albumin: number;               // g/dL - Necessária para corrigir o ânion gap
+    hemoglobin: number;            // g/dL - Capacidade de transporte de O₂
+    hematocrit: number;            // % - Fração eritrocitária circulante
     ketones: number;              // mmol/L - Corpos cetônicos circulantes (<0.6 basal)
 
     // Estado metabólico
@@ -110,13 +117,24 @@ export interface HormonalProfile {
     adrenaline: number;           // pg/mL - Adrenalina (0-100 normal)
     noradrenaline: number;        // pg/mL - Noradrenalina (100-500 normal)
 
+    // Sinais gastrointestinais e adipocitários
+    ghrelin: number;              // pg/mL - Grelina simplificada
+    leptin: number;               // ng/mL - Sinal proporcional à reserva adiposa
+    adiponectin: number;          // μg/mL - Sensibilização metabólica periférica
+
     // Hormônios Tireoidianos
     t3: number;                   // ng/dL - Triiodotironina (80-200 normal)
     t4: number;                   // μg/dL - Tiroxina (5-12 normal)
     tsh: number;                  // μIU/mL - TSH (0.5-5.0 normal)
 
-    // Sinalização mTOR (calculado, não hormônio real)
-    mTORActivity: number;         // 0-100% - Atividade da via mTOR
+}
+
+/** Vias intracelulares integradoras; não são hormônios circulantes. */
+export interface CellularSignalingState {
+    mTorActivity: number;         // 0-100 - PI3K-AKT-mTOR
+    ampkActivity: number;         // 0-100 - sensor de baixa energia
+    autophagyActivity: number;    // 0-100 - reciclagem celular
+    unfoldedProteinResponse: number; // 0-100 - resposta ao estresse do RE
 }
 
 /**
@@ -144,7 +162,15 @@ export interface CardiovascularState {
     // Frequência e Ritmo
     heartRate: number;            // bpm - Frequência cardíaca (60-100 repouso)
     heartRateVariability: number; // ms - HRV (RMSSD)
-    rhythm: 'sinus' | 'arrhythmia' | 'fibrillation';
+    rhythm:
+        | 'sinus'
+        | 'bradycardia'
+        | 'supraventricular-tachycardia'
+        | 'atrial-fibrillation'
+        | 'ventricular-tachycardia'
+        | 'ventricular-fibrillation';
+    arrhythmiaRisk: number;       // 0-100 - substrato elétrico, não a FC isolada
+    baroreflexActivity: number;   // -100 vagal, +100 simpático compensatório
 
     // Pressão Arterial
     systolicBP: number;           // mmHg - Pressão sistólica (120 normal)
@@ -160,7 +186,7 @@ export interface CardiovascularState {
     systemicVascularResistance: number; // dyn·s/cm⁵ - RVS (800-1200 normal)
 
     // Perfusão
-    perfusionIndex: number;       // % - Índice de perfusão periférica
+    perfusionIndex: number;       // % - Perfusão sistêmica relativa ao basal
 }
 
 /**
@@ -195,7 +221,9 @@ export type DiseasePreset =
     | 'respiratory-failure'
     | 'renal-failure'
     | 'sepsis'
+    | 'hypothyroidism'
     | 'hyperthyroidism'
+    | 'cushing-syndrome'
     | 'adrenal-insufficiency';
 
 /** Reservas latentes: doenças alteram capacidades, não marcadores isolados. */
@@ -204,7 +232,9 @@ export interface PhysiologicalCapacities {
     insulinSensitivity: number;
     hepaticGlucoseResponsiveness: number;
     adrenalReserve: number;
+    adrenalCortisolAutonomy: number;
     thyroidGlandCapacity: number;
+    leptinSensitivity: number;
     renalFunction: number;
     ventilatoryCapacity: number;
     vascularToneResponsiveness: number;
@@ -215,12 +245,17 @@ export interface PhysiologicalCapacities {
 /** Estado dos eixos, exposição acumulada e sensibilidade efetora. */
 export interface EndocrineRegulationState {
     hpaDrive: number;
+    crhDrive: number;
+    acthDrive: number;
     sympatheticDrive: number;
     thyroidDrive: number;
     insulinReceptorSensitivity: number;
     adrenergicReceptorSensitivity: number;
     glucocorticoidSensitivity: number;
     anabolicSensitivity: number;
+    leptinSensitivity: number;
+    orexigenicDrive: number;
+    anorexigenicDrive: number;
     cortisolExposure: number;
     catecholamineExposure: number;
     thyroidExposure: number;
@@ -228,10 +263,21 @@ export interface EndocrineRegulationState {
 
 export interface RenalRegulationState {
     gfr: number;                  // mL/min
+    renalBloodFlow: number;       // mL/min
     urineFlow: number;            // mL/min
+    urineOsmolality: number;      // mOsm/kg
     adhActivity: number;          // 0-100
     aldosteroneActivity: number;  // 0-100
+    reninActivity: number;        // 0-100
+    angiotensinIIActivity: number;// 0-100
     raasActivity: number;         // 0-100
+    anpActivity: number;          // 0-100
+    proximalReabsorption: number; // % do filtrado, componente obrigatório
+    distalSodiumReabsorption: number; // % do Na filtrado, dependente de aldosterona
+    freeWaterReabsorption: number;// 0-100, ducto coletor dependente de ADH
+    pthActivity: number;          // 0-100
+    calcitriolActivity: number;   // 0-100
+    epoActivity: number;          // 0-100
 }
 
 export interface PathophysiologyState {
@@ -286,8 +332,14 @@ export interface AcidBaseBalance {
     pH: number;                   // pH sanguíneo arterial (7.35-7.45 normal)
     bicarbonate: number;          // mmol/L - HCO3- (22-26 normal)
     pco2: number;                 // mmHg - Pressão parcial de CO2 (35-45 normal)
-    baseExcess: number;           // mmol/L - Excesso de base (-2 a +2 normal)
+    baseExcess: number;           // mmol/L - Excesso de base estimado
     anionGap: number;             // mmol/L - Gap aniônico (8-16 normal)
+    correctedAnionGap: number;    // mmol/L - AG corrigido pela albumina
+    deltaRatio: number | null;    // relação delta para acidose com AG elevado
+    expectedCompensation: [number, number] | null;
+    expectedCompensationLabel: string;
+    interpretation: string;
+    mixedDisorder: boolean;
 
     // Estado
     state: 'normal' | 'acidosis-metabolic' | 'acidosis-respiratory' |
@@ -371,6 +423,7 @@ export interface PhysiologyState {
     energy: EnergyMatrix;
     nutrients: NutrientState;
     hormones: HormonalProfile;
+    cellularSignaling: CellularSignalingState;
     endocrine: EndocrineRegulationState;
     capacities: PhysiologicalCapacities;
     renal: RenalRegulationState;
@@ -418,7 +471,7 @@ export interface SimulationInput {
     interventions: {
         heartRateTarget: number;          // bpm - comando autonômico/pacing desejado
         ventilationDrive: number;         // % - drive ventilatório relativo ao basal
-        renalWaterReabsorption: number;   // % do filtrado reabsorvido
+        renalWaterReabsorption: number;   // comando osmótico convertido em água livre distal
         waterAbsorptionRate: number;      // mL/min absorvidos no trato gastrointestinal
     };
     cellularFeedback?: CellularFeedback;

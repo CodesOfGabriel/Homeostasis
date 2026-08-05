@@ -1,7 +1,7 @@
 import { getActionDefinition } from './actions';
 import { getCellularDamageBurden } from './cellularDamage';
 import type { CellularState, DecisionSignalId } from './cellularTypes';
-import { getHypothalamicSignal } from './hypothalamus';
+import { getCentralRegulatorySignal } from './centralRegulation';
 import type { PhysiologicalEvent, PhysiologyState } from './types';
 
 export type IatrogenicSeverity = 'moderate' | 'severe' | 'critical';
@@ -76,7 +76,6 @@ const SCENARIO_MISMATCHES: Record<string, Partial<Record<DecisionSignalId, Misma
     'mitochondrial-uncoupling': {
         'hormone:release-adrenaline': { score: .88, mechanism: 'thermogenic-overload', reason: 'aumenta fluxo, consumo de O₂ e calor em uma cadeia desacoplada' },
         'hormone:increase-t3': { score: .96, mechanism: 'thermogenic-overload', reason: 'amplia termogênese quando o gradiente mitocondrial já dissipa energia' },
-        'hormone:boost-mtor': { score: .76, mechanism: 'anabolic-overload', reason: 'desvia ATP para síntese antes de estabilizar gradiente e controle iônico' },
     },
     'mixed-ketoacidotic-fatigue': {
         'hormone:release-cortisol': { score: .82, mechanism: 'hyperglycemia', reason: 'sustenta produção hepática de substrato durante cetogênese ativa' },
@@ -88,7 +87,6 @@ const SCENARIO_MISMATCHES: Record<string, Partial<Record<DecisionSignalId, Misma
     },
     'reperfusion-paradox': {
         'hormone:release-adrenaline': { score: .9, mechanism: 'adrenergic-overload', reason: 'acelera uma cadeia hiper-reduzida durante o pico de reperfusão' },
-        'hormone:boost-mtor': { score: .86, mechanism: 'anabolic-overload', reason: 'consome ATP necessário às bombas de Ca²⁺ e à defesa redox' },
     },
     'hyperosmolar-renal-conflict': {
         'central:suppress-adh': { score: .96, mechanism: 'water-loss', reason: 'aumenta perda de água durante hipovolemia e diurese osmótica' },
@@ -125,6 +123,24 @@ const SCENARIO_MISMATCHES: Record<string, Partial<Record<DecisionSignalId, Misma
         'central:parasympathetic-recovery': { score: 1, mechanism: 'hypoperfusion', reason: 'retira a taquicardia compensatória quando volume sistólico e PAM já caíram' },
         'hormone:release-adrenaline': { score: .82, mechanism: 'adrenergic-overload', reason: 'eleva consumo miocárdico sem repor volume ou capacidade de transporte de O₂' },
         'central:chemoreflex-ventilation': { score: .62, mechanism: 'hyperventilation', reason: 'melhora PaO₂ sem restaurar débito, hemoglobina ou perfusão tecidual' },
+    },
+    'fasting-orexigenic-switch': {
+        'central:activate-pomc-cart': { score: .84, mechanism: 'hypoglycemia', reason: 'suprime o drive alimentar enquanto a oferta de glicose já está curta' },
+        'hormone:signal-leptin': { score: .72, mechanism: 'hypoglycemia', reason: 'reforça saciedade sem encerrar o jejum e sem repor substrato' },
+    },
+    'leptin-resistance-satiety': {
+        'hormone:signal-ghrelin': { score: .82, mechanism: 'hyperglycemia', reason: 'adiciona sinal de fome a um estado pós-prandial com glicose elevada' },
+        'central:activate-npy-agrp': { score: .86, mechanism: 'hyperglycemia', reason: 'mantém ingestão apesar da abundância de substrato e leptina' },
+    },
+    'primary-hypothyroid-failure': {
+        'hormone:release-adrenaline': { score: .78, mechanism: 'adrenergic-overload', reason: 'eleva demanda cardíaca sem restaurar T4, T3 ou capacidade metabólica' },
+    },
+    'thyrotoxic-decompensation': {
+        'hormone:increase-t3': { score: 1, mechanism: 'thermogenic-overload', reason: 'reforça diretamente o excesso tireoidiano, a hipertermia e a demanda de O₂' },
+        'hormone:release-adrenaline': { score: .96, mechanism: 'adrenergic-overload', reason: 'estimula um miocárdio já sensibilizado por T3 e T4 altos' },
+    },
+    'cushing-metabolic-load': {
+        'hormone:release-cortisol': { score: .98, mechanism: 'immunosuppression', reason: 'amplia a exposição glucocorticoide que já dirige hiperglicemia e catabolismo' },
     },
 };
 
@@ -171,8 +187,7 @@ export function assessSignalMisuse(
             clamp((glucose - 135) / 170, 0, 1),
         ), 'immunosuppression', 'o sinal glucocorticoide amplia catabolismo ou reduz defesa imune');
     } else if (signalId === 'hormone:release-gh'
-        || signalId === 'hormone:release-testosterone'
-        || signalId === 'hormone:boost-mtor') {
+        || signalId === 'hormone:release-testosterone') {
         consider(Math.max(
             physiology.energy.energyDeficit / 100,
             physiology.pathophysiology.infectionSeverity / 100 * .75,
@@ -182,6 +197,14 @@ export function assessSignalMisuse(
             clamp((temperature - 37.2) / 2.5, 0, 1),
             clamp((heartRate - 88) / 65, 0, 1),
         ), 'thermogenic-overload', 'T3 amplia termogênese e sensibilidade adrenérgica em contexto inadequado');
+    } else if (signalId === 'hormone:signal-ghrelin') {
+        consider(clamp((glucose - 125) / 90, 0, 1), 'hyperglycemia', 'grelina reforça busca por alimento com substrato já abundante');
+    } else if (signalId === 'hormone:signal-leptin') {
+        consider(clamp((78 - glucose) / 28, 0, 1), 'hypoglycemia', 'leptina reforça saciedade quando a glicose exige reposição');
+    } else if (signalId === 'hormone:suppress-thyroid') {
+        consider(clamp((100 - physiology.hormones.t3) / 70, 0, 1), 'hypoperfusion', 'reduzir T3 abaixo da necessidade de base diminui cronotropismo e produção energética');
+    } else if (signalId === 'hormone:inhibit-cortisol') {
+        consider(Math.max(clamp((8 - physiology.hormones.cortisol) / 6, 0, 1), clamp((75 - map) / 35, 0, 1)), 'hypoperfusion', 'suprimir cortisol sem excesso retira suporte vascular e metabólico');
     } else if (signalId === 'central:sympathetic-arousal') {
         consider(Math.max(
             clamp((heartRate - 90) / 65, 0, 1),
@@ -212,6 +235,10 @@ export function assessSignalMisuse(
             clamp((40 - hydration) / 8, 0, 1),
             clamp((sodium - 144) / 14, 0, 1),
         ), 'water-loss', 'suprimir ADH aumenta perda de água durante déficit hídrico');
+    } else if (signalId === 'central:activate-pomc-cart') {
+        consider(clamp((78 - glucose) / 30, 0, 1), 'hypoglycemia', 'POMC/CART reduz o drive alimentar durante baixa oferta de glicose');
+    } else if (signalId === 'central:activate-npy-agrp') {
+        consider(clamp((glucose - 125) / 95, 0, 1), 'hyperglycemia', 'NPY/AgRP favorece ingestão com glicose já elevada');
     }
 
     if (!mechanism || !reason || score < .25) return null;
@@ -219,7 +246,7 @@ export function assessSignalMisuse(
     const totalSeconds = misuseDuration(signalId, intensity);
     const label = signalId.startsWith('hormone:')
         ? getActionDefinition(signalId.slice('hormone:'.length))?.shortName ?? signalId
-        : getHypothalamicSignal(signalId.slice('central:'.length))?.shortLabel ?? signalId;
+        : getCentralRegulatorySignal(signalId.slice('central:'.length))?.shortLabel ?? signalId;
     return {
         id: `${Math.round(physiology.timeElapsed * 1000)}-${signalId}`,
         signalId,
@@ -466,9 +493,10 @@ function misuseDuration(signalId: DecisionSignalId, intensity: number): number {
                 : signalId === 'hormone:release-cortisol' ? 240
                     : signalId === 'hormone:release-gh' ? 300
                         : signalId === 'hormone:release-testosterone' ? 600
-                            : signalId === 'hormone:increase-t3' ? 600
-                                : signalId === 'hormone:boost-mtor' ? 240
-                                    : signalId === 'central:adh-retention' || signalId === 'central:suppress-adh' ? 120
+                            : signalId === 'hormone:increase-t3' || signalId === 'hormone:suppress-thyroid' ? 600
+                                : signalId === 'hormone:inhibit-cortisol' ? 240
+                                    : signalId === 'hormone:signal-ghrelin' || signalId === 'hormone:signal-leptin' ? 180
+                                : signalId === 'central:adh-retention' || signalId === 'central:suppress-adh' ? 120
                                         : 60;
     return Math.round(base * (.7 + intensity * .6));
 }

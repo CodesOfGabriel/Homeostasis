@@ -23,6 +23,8 @@ export interface HormoneSafetyContext {
     energyDeficit: number;
     aminoAcids?: number;
     atpPool?: number;
+    cortisol?: number;
+    t3?: number;
 }
 
 export function getActionsByCategory(category: HormoneCategory): HormoneActionDefinition[] {
@@ -52,6 +54,15 @@ export function isActionSafe(
         }
         if (rule === 'cardiac-thyroid' && state.heartRate > 120) {
             return { safe: false, reason: 'Taquicardia presente: elevar T3 aumentaria demanda e sensibilidade adrenérgica.' };
+        }
+        if (rule === 'glucose-for-satiety' && state.glucose < 70) {
+            return { safe: false, reason: 'Glicemia baixa: reforçar saciedade pode atrasar a reposição de substrato.' };
+        }
+        if (rule === 'thyroid-excess-for-suppression' && (state.t3 ?? 120) < 160) {
+            return { safe: false, reason: 'Supressão bloqueada: não há excesso tireoidiano efetor.' };
+        }
+        if (rule === 'cortisol-excess-for-suppression' && (state.cortisol ?? 12) < 22) {
+            return { safe: false, reason: 'Supressão bloqueada: cortisol não está elevado.' };
         }
     }
     return { safe: true };

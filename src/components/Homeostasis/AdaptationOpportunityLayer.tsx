@@ -13,7 +13,7 @@ const REWARD_LABELS = {
   none: 'Sem recompensa',
 } as const;
 
-export function AdaptationOpportunityLayer() {
+export function AdaptationOpportunityLayer({ hidden = false }: { hidden?: boolean }) {
   const physiology = useSimulationStore(state => state.physiology);
   const cellular = useSimulationStore(state => state.cellular);
   const opportunity = useSimulationStore(state => state.adaptationOpportunity);
@@ -38,6 +38,8 @@ export function AdaptationOpportunityLayer() {
     && !scenarioActive
     && quality >= .7
     && progress.nextOpportunityAt - cellular.simulationTime <= 18;
+
+  if (hidden) return null;
 
   return (
     <>
@@ -65,16 +67,16 @@ export function AdaptationOpportunityLayer() {
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
                   <PanelLabel icon={<Zap className="size-3.5" />}>Janela de adaptação</PanelLabel>
-                  <span className="font-mono text-[10px] text-warning"><Clock3 className="mr-1 inline size-3" />{opportunity.remainingSeconds.toFixed(1)} s</span>
+                  <span className="font-mono text-[11px] text-warning"><Clock3 className="mr-1 inline size-3" />{opportunity.remainingSeconds.toFixed(1)} s</span>
                 </div>
                 <h2 className="mt-1 font-display text-base text-foreground sm:text-lg">{opportunity.title}</h2>
-                <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">{opportunity.clue}</p>
+                <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{opportunity.clue}</p>
               </div>
             </header>
 
             <div className="p-3 sm:p-4">
               <div>
-                <div className="mb-1 flex items-center justify-between text-[8px] uppercase tracking-[.15em] text-muted-foreground">
+                <div className="mb-1 flex items-center justify-between text-[11px] uppercase tracking-[.15em] text-muted-foreground">
                   <span>Alteração transitória</span>
                   <span className="text-warning">o relógio continua</span>
                 </div>
@@ -84,15 +86,15 @@ export function AdaptationOpportunityLayer() {
               <div className="mt-3 grid grid-cols-3 gap-1.5">
                 {opportunity.indicators.map(indicator => (
                   <div key={indicator.label} className="rounded-lg border border-white/8 bg-black/20 px-2 py-2 text-center">
-                    <span className="block truncate text-[7px] uppercase tracking-wider text-muted-foreground">{indicator.label}</span>
-                    <strong className={cn('mt-1 block truncate font-mono text-[10px]', indicator.tone === 'danger' ? 'text-danger' : indicator.tone === 'warning' ? 'text-warning' : 'text-primary')}>{indicator.value}</strong>
+                    <span className="block truncate text-[11px] uppercase tracking-wider text-muted-foreground">{indicator.label}</span>
+                    <strong className={cn('mt-1 block truncate font-mono text-[11px]', indicator.tone === 'danger' ? 'text-danger' : indicator.tone === 'warning' ? 'text-warning' : 'text-primary')}>{indicator.value}</strong>
                   </div>
                 ))}
               </div>
 
               <div className="mt-3 rounded-lg border border-cyan/20 bg-cyan/[.05] px-3 py-2">
                 <PanelLabel icon={<BrainCircuit className="size-3.5" />}>Interprete o mecanismo</PanelLabel>
-                <p className="mt-1.5 text-[10px] leading-relaxed text-foreground/80">{opportunity.mechanismQuestion}</p>
+                <p className="mt-1.5 text-[11px] leading-relaxed text-foreground/80">{opportunity.mechanismQuestion}</p>
               </div>
 
               <div className="mt-3 grid grid-cols-2 gap-1.5">
@@ -103,13 +105,13 @@ export function AdaptationOpportunityLayer() {
                     onClick={() => resolve(choice.id)}
                     className="min-h-[68px] rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-left transition hover:border-primary/50 hover:bg-primary/[.08] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70"
                   >
-                    <strong className="block text-[10px] text-foreground">{choice.label}</strong>
-                    <span className="mt-1 block text-[8px] leading-relaxed text-muted-foreground">{choice.description}</span>
+                    <strong className="block text-[11px] text-foreground">{choice.label}</strong>
+                    <span className="mt-1 block text-[11px] leading-relaxed text-muted-foreground">{choice.description}</span>
                   </button>
                 ))}
               </div>
 
-              <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-white/8 pt-2 text-[8px] uppercase tracking-wider text-muted-foreground">
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-white/8 pt-2 text-[11px] uppercase tracking-wider text-muted-foreground">
                 <span>Qualidade da janela: <strong className="text-primary">{Math.round(opportunity.quality * 100)}%</strong></span>
                 <span>Conhecimento: <strong className="text-foreground">{progress.physiologicalKnowledge}</strong>{progress.knowledgeMultiplier > 1 ? ` · ×${progress.knowledgeMultiplier.toFixed(2)}` : ''}</span>
               </div>
@@ -127,8 +129,8 @@ export function AdaptationOpportunityLayer() {
                 : <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-good" />}
               <div>
                 <PanelLabel>{freshReward.title}</PanelLabel>
-                <p className="mt-1 text-[10px] leading-relaxed text-foreground/75">{freshReward.detail}</p>
-                <span className="mt-1.5 block text-[8px] uppercase tracking-wider text-primary">{REWARD_LABELS[freshReward.type]}</span>
+                <p className="mt-1 text-[11px] leading-relaxed text-foreground/75">{freshReward.detail}</p>
+                <span className="mt-1.5 block text-[11px] uppercase tracking-wider text-primary">{REWARD_LABELS[freshReward.type]}</span>
               </div>
             </div>
           </GlassPanel>
@@ -136,7 +138,7 @@ export function AdaptationOpportunityLayer() {
       )}
 
       {anticipation && (
-        <div className="pointer-events-none fixed left-1/2 top-[72px] z-[42] -translate-x-1/2 rounded-full border border-primary/20 bg-background/75 px-3 py-1.5 text-[8px] uppercase tracking-[.14em] text-primary/80 shadow-lg backdrop-blur-md" aria-live="polite">
+        <div className="pointer-events-none fixed left-1/2 top-[72px] z-[42] -translate-x-1/2 rounded-full border border-primary/20 bg-background/75 px-3 py-1.5 text-[11px] uppercase tracking-[.14em] text-primary/80 shadow-lg backdrop-blur-md" aria-live="polite">
           <Sparkles className="mr-1.5 inline size-3" />A estabilidade favorece uma janela adaptativa
         </div>
       )}

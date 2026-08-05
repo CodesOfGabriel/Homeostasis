@@ -1,4 +1,4 @@
-import { Activity, Atom, Hexagon, LifeBuoy, Pause, Play, Settings, ShieldHalf } from 'lucide-react';
+import { Activity, Atom, CircleDot, Hexagon, LifeBuoy, Pause, Play, Settings } from 'lucide-react';
 import type { CellularRoutineEvent } from '../../game/cellularTypes';
 import type { PhysiologicalEvent } from '../../game/types';
 import { cn, GlassPanel } from './ui';
@@ -7,10 +7,10 @@ export type SimulatorTab = 'tissue' | 'intracellular' | 'machinery' | 'system';
 export type StepKey = 'tissue' | 'mitochondria' | 'defense' | 'vitals';
 
 const STEPS: Array<{ id: StepKey; label: string; icon: typeof Activity }> = [
+  { id: 'vitals', label: 'Organismo', icon: Activity },
   { id: 'tissue', label: 'Tecido', icon: LifeBuoy },
+  { id: 'defense', label: 'Célula', icon: CircleDot },
   { id: 'mitochondria', label: 'Mitocôndria', icon: Atom },
-  { id: 'defense', label: 'Defesa', icon: ShieldHalf },
-  { id: 'vitals', label: 'Sinais vitais', icon: Activity },
 ];
 
 const routineEffects: Record<string, string> = {
@@ -55,7 +55,7 @@ export function TopNav({ day, clock, condition, healthy, events, routine, onSett
       </div>
 
       <div className="scrollbar-thin flex min-w-0 items-center gap-1.5 overflow-x-auto" aria-label="Eventos recentes">
-        <span className="hidden flex-none text-[8px] font-medium uppercase tracking-[.18em] text-muted-foreground lg:inline">Eventos</span>
+        <span className="hidden flex-none text-[11px] font-medium uppercase tracking-[.18em] text-muted-foreground lg:inline">Eventos</span>
         {routine && <div className={cn('event-chip border-warning/35', routine.severity === 'critical' && 'event-chip-critical')} title={routine.explanation}>
           <span className="event-dot bg-warning"/><span className="font-medium text-foreground">{routine.title}</span><span>{routineEffects[routine.id] ?? 'Estado↔ · ATP↔ · Resposta?'}</span>
         </div>}
@@ -64,7 +64,7 @@ export function TopNav({ day, clock, condition, healthy, events, routine, onSett
         </div>)}
       </div>
 
-      <div className="flex items-center gap-3 text-[9px] uppercase text-wide lg:gap-4">
+      <div className="flex items-center gap-3 text-[11px] uppercase text-wide lg:gap-4">
         <div className="hidden items-center gap-2 text-muted-foreground md:flex"><span>Dia {day}</span><span className="text-primary/50">|</span><span className="tabular-nums text-foreground">{clock}</span></div>
         <div className="hidden items-center gap-2 lg:flex"><span className="text-muted-foreground">Condição:</span><span className="text-foreground">{condition}</span><span className={cn('size-2 rounded-full', healthy ? 'bg-good shadow-[0_0_8px_var(--good)]' : 'bg-danger shadow-[0_0_8px_var(--danger)]')}/></div>
         <button type="button" aria-label="Abrir configurações" onClick={onSettings} className="text-muted-foreground hover:text-primary"><Settings className="size-5" strokeWidth={1.5}/></button>
@@ -80,5 +80,5 @@ export function Playback({ running, speed, onToggle, onSpeed }: { running: boole
 }
 
 export function Stepper({ active, onChange }: { active: StepKey; onChange: (step: StepKey) => void }) {
-  return <div className="scrollbar-thin pointer-events-auto max-w-full overflow-x-auto px-1"><div className="flex min-w-max items-center justify-center">{STEPS.map((step, index) => { const Icon = step.icon; const selected = step.id === active; return <div key={step.id} className="flex items-center">{index > 0 && <span className={cn('h-px w-5 sm:w-9', selected ? 'bg-primary/50' : 'bg-white/10')}/>}<button type="button" data-active={selected} onClick={() => onChange(step.id)} aria-label={step.label} aria-current={selected ? 'step' : undefined} title={step.label} className={cn('stepper-node relative grid size-10 place-items-center rounded-full border transition-all sm:size-11', selected ? 'border-primary/70 bg-primary/10 text-primary' : 'border-white/10 text-muted-foreground hover:border-primary/40 hover:text-foreground')}><Icon className="relative z-10 size-4" strokeWidth={1.5}/></button></div>; })}</div></div>;
+  return <nav className="scrollbar-thin pointer-events-auto max-w-full overflow-x-auto px-1" aria-label="Escalas fisiológicas"><div className="flex min-w-max items-center justify-center">{STEPS.map((step, index) => { const Icon = step.icon; const selected = step.id === active; return <div key={step.id} className="flex items-center">{index > 0 && <span className={cn('h-px w-2 sm:w-4', selected ? 'bg-primary/50' : 'bg-white/10')}/>}<button type="button" data-active={selected} onClick={() => onChange(step.id)} aria-current={selected ? 'step' : undefined} className={cn('stepper-node relative flex min-h-11 items-center gap-2 rounded-full border px-3 text-xs font-medium transition-all sm:px-4', selected ? 'border-primary/70 bg-primary/10 text-primary' : 'border-white/10 bg-background/55 text-muted-foreground hover:border-primary/40 hover:text-foreground')}><Icon className="relative z-10 size-4 shrink-0" strokeWidth={1.5}/><span>{step.label}</span></button></div>; })}</div></nav>;
 }

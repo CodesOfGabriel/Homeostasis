@@ -29,11 +29,11 @@ export function CellularMachineryScene({ automation, etcFlux, atp }: CellularMac
         <OrbitControls enablePan={false} enableZoom={false} minPolarAngle={Math.PI / 3.4} maxPolarAngle={Math.PI / 2.1} minAzimuthAngle={-.4} maxAzimuthAngle={.4}/>
       </Canvas>
       <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between bg-gradient-to-b from-black/75 to-transparent px-3 pb-8 pt-3">
-        <div><span className="text-[9px] font-semibold uppercase tracking-[.18em] text-foreground">Bancada de montagem celular</span><span className="mt-1 block text-[8px] text-muted-foreground">Cada compra adiciona uma peça funcional ao complexo</span></div>
-        <span className="rounded-full border border-primary/20 bg-black/35 px-2 py-1 font-mono text-[8px] text-primary">ATP {atp.toFixed(2)}</span>
+        <div><span className="text-[11px] font-semibold uppercase tracking-[.18em] text-foreground">Bancada de montagem celular</span><span className="mt-1 block text-[11px] text-muted-foreground">Cada compra adiciona uma peça funcional ao complexo</span></div>
+        <span className="rounded-full border border-primary/20 bg-black/35 px-2 py-1 font-mono text-[11px] text-primary">ATP {atp.toFixed(2)}</span>
       </div>
       <div className="pointer-events-none absolute inset-x-0 bottom-0 grid grid-cols-3 border-t border-white/5 bg-black/60">
-        {machineMeta.map(machine => <div key={machine.kind} className="border-r border-white/5 px-2 py-2 text-center last:border-r-0"><span className="block truncate text-[8px] uppercase tracking-wider text-muted-foreground">{machine.label}</span><strong className="mt-0.5 block font-mono text-[10px]" style={{ color: machine.color }}>NÍVEL {automation[machine.kind]}/4</strong></div>)}
+        {machineMeta.map(machine => <div key={machine.kind} className="border-r border-white/5 px-2 py-2 text-center last:border-r-0"><span className="block truncate text-[11px] uppercase tracking-wider text-muted-foreground">{machine.label}</span><strong className="mt-0.5 block font-mono text-[11px]" style={{ color: machine.color }}>NÍVEL {automation[machine.kind]}/4</strong></div>)}
       </div>
     </div>
   );

@@ -92,11 +92,13 @@ export type ScenarioPhysiologyTarget =
     | 'nutrients.potassium'
     | 'nutrients.ketones'
     | 'nutrients.hoursSinceMeal'
+    | 'nutrients.adiposeTissue'
     | 'allostatic.load'
     | 'allostatic.inflammation'
     | 'allostatic.oxidative'
     | 'pathophysiology.infection'
     | 'pathophysiology.capillaryLeak'
+    | 'pathophysiology.diseaseBurden'
     | 'cardiovascular.heartRate'
     | 'cardiovascular.hrv'
     | 'cardiovascular.systolic'
@@ -122,10 +124,25 @@ export type ScenarioPhysiologyTarget =
     | 'hormones.glucagon'
     | 'hormones.adrenaline'
     | 'hormones.cortisol'
+    | 'hormones.ghrelin'
+    | 'hormones.leptin'
+    | 'hormones.adiponectin'
+    | 'hormones.t3'
+    | 'hormones.t4'
+    | 'hormones.tsh'
     | 'endocrine.hpaDrive'
     | 'endocrine.sympatheticDrive'
     | 'endocrine.cortisolExposure'
     | 'endocrine.catecholamineExposure'
+    | 'endocrine.thyroidDrive'
+    | 'endocrine.thyroidExposure'
+    | 'endocrine.insulinSensitivity'
+    | 'endocrine.leptinSensitivity'
+    | 'endocrine.orexigenicDrive'
+    | 'endocrine.anorexigenicDrive'
+    | 'capacities.thyroidGlandCapacity'
+    | 'capacities.leptinSensitivity'
+    | 'capacities.adrenalCortisolAutonomy'
     | 'organs.liver.perfusion'
     | 'organs.liver.oxygenation'
     | 'organs.liver.damage'
@@ -228,6 +245,11 @@ export const SCENARIO_TIME_WINDOWS: Record<string, readonly SimulationTimeWindow
     'chronic-anxiety-sedentary': [{ startHour: 17, endHour: 23, label: 'fim do dia em repouso' }],
     'panic-hyperventilation': [{ startHour: 20, endHour: 2, label: 'noite em casa' }],
     'major-hemorrhage': ALL_DAY,
+    'fasting-orexigenic-switch': [{ startHour: 6, endHour: 11, label: 'manhã apó jejum prolongado' }],
+    'leptin-resistance-satiety': [{ startHour: 12, endHour: 22, label: 'período pós-prandial' }],
+    'primary-hypothyroid-failure': [{ startHour: 6, endHour: 12, label: 'início do dia' }],
+    'thyrotoxic-decompensation': ALL_DAY,
+    'cushing-metabolic-load': [{ startHour: 6, endHour: 18, label: 'período de maior exposição ao cortisol' }],
 };
 
 export function getScenarioTimeWindows(id: string): readonly SimulationTimeWindow[] {
@@ -368,7 +390,7 @@ export const SCENARIO_DEFINITIONS: ScenarioDefinition[] = [
                 description: 'Protege a área e permite reparo proporcional com hidratação, nutrição e retorno progressivo ao esforço.',
                 tradeoff: 'Reduz ATP transitório, protegendo a viabilidade futura.',
                 requirements: [{ resource: 'atp', minimum: 1.55, cost: .55 }, { resource: 'aminoAcid', minimum: .5, cost: .5 }],
-                signalRequirements: [{ anyOf: ['hormone:boost-mtor', 'hormone:release-gh'], label: 'Ativar mTOR ou eixo GH' }],
+                signalRequirements: [{ anyOf: ['hormone:release-gh'], label: 'Recrutar o eixo GH–IGF-1; mTOR responderá dentro da célula' }],
                 result: 'O reparo conteve o dano estrutural e reduziu o sinal inflamatório.',
                 cellularEffects: [{ target: 'damage.proteins', delta: -9 }, { target: 'damage.membrane', delta: -2 }],
                 physiologyEffects: [{ target: 'allostatic.inflammation', delta: -2 }, { target: 'allostatic.load', delta: -3 }],
@@ -661,7 +683,7 @@ export const SCENARIO_DEFINITIONS: ScenarioDefinition[] = [
                 description: 'Prioriza anabolismo enquanto hipertermia, instabilidade iônica e toxicidade permanecem ativas.',
                 tradeoff: 'Consome ATP antes de estabilizar temperatura, circulação e função mitocondrial.',
                 requirements: [{ resource: 'aminoAcid', minimum: .3, cost: .2 }],
-                signalRequirements: [{ anyOf: ['hormone:boost-mtor', 'hormone:release-gh'], label: 'Ativar mTOR ou eixo GH' }],
+                signalRequirements: [{ anyOf: ['hormone:release-gh'], label: 'Recrutar o eixo GH–IGF-1; mTOR responderá dentro da célula' }],
                 result: 'A síntese precoce desviou ATP do controle iônico; Ca²⁺, dano proteico e compromisso apoptótico aumentaram durante o desacoplamento.',
                 cellularEffects: [{ target: 'cell.atp', delta: -.85 }, { target: 'cell.calcium', delta: 120 }, { target: 'damage.proteins', delta: 10 }, { target: 'damage.oxidative', delta: 9 }, { target: 'fate.apoptoticCommitment', delta: 12 }],
                 physiologyEffects: [{ target: 'energy.deficit', delta: 9 }, { target: 'allostatic.load', delta: 8 }],
@@ -811,7 +833,7 @@ export const SCENARIO_DEFINITIONS: ScenarioDefinition[] = [
                 description: 'Ativa mTOR e oferta aminoácidos enquanto bombas iônicas e defesa antioxidante ainda estão sobrecarregadas.',
                 tradeoff: 'Desvia ATP do controle de Ca²⁺ e membrana durante a janela crítica de reperfusão.',
                 requirements: [{ resource: 'aminoAcid', minimum: .3, cost: .2 }],
-                signalRequirements: [{ anyOf: ['hormone:boost-mtor'], label: 'Ativar via mTOR' }],
+                signalRequirements: [{ anyOf: ['hormone:release-gh'], label: 'Recrutar GH; a célula integra o sinal em mTOR' }],
                 result: 'O reparo anabólico precoce consumiu ATP das bombas iônicas; Ca²⁺, dano de membrana e necrose secundária avançaram apesar do substrato disponível.',
                 cellularEffects: [{ target: 'cell.atp', delta: -.9 }, { target: 'cell.calcium', delta: 160 }, { target: 'damage.membrane', delta: 10 }, { target: 'damage.proteins', delta: 7 }, { target: 'cell.viability', delta: -7 }, { target: 'fate.apoptoticCommitment', delta: 10 }],
                 physiologyEffects: [{ target: 'energy.deficit', delta: 10 }, { target: 'allostatic.load', delta: 8 }],
@@ -1156,6 +1178,193 @@ export const SCENARIO_DEFINITIONS: ScenarioDefinition[] = [
         onTimeout: [{ target: 'tissue.perfusion', delta: -18 }, { target: 'tissue.oxygen', delta: -10 }, { target: 'cell.atp', delta: -1.1 }, { target: 'cell.viability', delta: -12 }, { target: 'fate.apoptoticCommitment', delta: 14 }],
         onTimeoutPhysiology: [{ target: 'nutrients.hydration', delta: -1.5 }, { target: 'cardiovascular.map', delta: -16 }, { target: 'cardiovascular.cardiacOutput', delta: -1 }, { target: 'cardiovascular.perfusion', delta: -18 }, { target: 'energy.lactate', delta: 2 }, { target: 'renal.gfr', delta: -20 }, { target: 'organs.brain.functionality', delta: -15 }, { target: 'organs.liver.damage', delta: 8 }],
     },
+    {
+        id: 'fasting-orexigenic-switch',
+        title: 'Jejum e recrutamento de NPY/AgRP',
+        description: 'Depois de uma noite longa sem alimento, a grelina subiu, a leptina efetiva caiu e o drive orexígeno passou a disputar glicose com a manutenção celular.',
+        explanation: 'Grelina e baixa sinalização de leptina recrutam NPY/AgRP. Reconhecer esse estado e oferecer alimento proporcional protege glicose e ATP; forçar POMC/CART prolonga o déficit.',
+        investigationPrompt: 'Observe horas desde a refeição, grelina, leptina, glicose e ATP. O organismo está recebendo um sinal de excesso ou de escassez energética?',
+        contextSummary: '14 h de jejum · grelina alta · leptina efetiva baixa · glicose limítrofe',
+        context: { exercise: 4, nutrition: 8, stress: 34, sleep: 68, temperature: 21 },
+        category: 'molecule', severity: 'warning', durationSeconds: 28, cooldownSeconds: 300, difficulty: 'easy',
+        metricKeys: ['bloodGlucose', 'ghrelin', 'leptin', 'orexigenicDrive', 'anorexigenicDrive', 'cellularAtp', 'energyDeficit'],
+        priorityMetricKeys: ['bloodGlucose', 'ghrelin', 'leptin', 'orexigenicDrive', 'cellularAtp', 'energyDeficit'],
+        choices: [
+            {
+                id: 'fasting-npy-refeed', label: 'Reconhecer NPY/AgRP e oferecer refeição equilibrada',
+                description: 'Usa o sinal orexígeno como indicação de reposição, sem transformar fome fisiológica em nova sobrecarga.',
+                tradeoff: 'A resposta deve ser proporcional; excesso de carboidrato simples pode gerar pico glicêmico rebote.',
+                requirements: [{ resource: 'atp', minimum: 1.2, cost: .1 }],
+                signalRequirements: [{ anyOf: ['hormone:signal-ghrelin'], label: 'Reconhecer sinal de grelina' }, { anyOf: ['central:activate-npy-agrp'], label: 'Recrutar NPY/AgRP' }],
+                result: 'A ingestão proporcional encerrou o jejum, preservou ATP e permitiu que a grelina e o drive orexígeno recuassem.',
+                cellularEffects: [{ target: 'available.glucose', delta: 1.5 }, { target: 'tissue.glucose', delta: .7 }, { target: 'cell.atp', delta: .45 }],
+                physiologyEffects: [{ target: 'nutrients.glucose', delta: 13 }, { target: 'nutrients.hoursSinceMeal', value: 0 }, { target: 'hormones.ghrelin', delta: -420 }, { target: 'endocrine.orexigenicDrive', delta: -.35 }, { target: 'energy.deficit', delta: -6 }],
+            },
+            {
+                id: 'fasting-pomc-suppress', label: 'Suprimir a fome com POMC/CART e prolongar o jejum',
+                description: 'Ignora o sinal periférico de escassez e mantém o organismo sem aporte.',
+                tradeoff: 'A glicose e o ATP podem cair enquanto a resposta contrarregulatória aumenta.',
+                requirements: [], signalRequirements: [{ anyOf: ['central:activate-pomc-cart'], label: 'Recrutar POMC/CART' }, { anyOf: ['hormone:signal-leptin'], label: 'Reforçar leptina' }],
+                result: 'O drive alimentar foi mascarado, mas a oferta de substrato continuou insuficiente e o déficit celular aumentou.',
+                cellularEffects: [{ target: 'available.glucose', delta: -1 }, { target: 'cell.atp', delta: -.5 }, { target: 'damage.oxidative', delta: 4 }],
+                physiologyEffects: [{ target: 'nutrients.glucose', delta: -12 }, { target: 'energy.deficit', delta: 8 }, { target: 'allostatic.load', delta: 6 }],
+            },
+        ],
+        isEligible: eligibleWhen(.96, 'o jejum elevou grelina e recrutou o circuito orexígeno antes de neuroglicopenia grave', (state, macro) => state.cell.viabilityPercent > 65 && macro.nutrients.hoursSinceMeal >= 6 && macro.nutrients.bloodGlucose > 68),
+        onStart: [{ target: 'available.glucose', delta: -1 }, { target: 'cell.atp', delta: -.25 }],
+        onStartPhysiology: [{ target: 'nutrients.hoursSinceMeal', value: 14 }, { target: 'nutrients.glucose', delta: -8 }, { target: 'hormones.ghrelin', delta: 650 }, { target: 'hormones.leptin', delta: -3 }, { target: 'endocrine.orexigenicDrive', value: .78 }, { target: 'endocrine.anorexigenicDrive', value: .18 }, { target: 'energy.deficit', delta: 4 }],
+        onTimeout: [{ target: 'cell.atp', delta: -.6 }, { target: 'damage.oxidative', delta: 4 }],
+        onTimeoutPhysiology: [{ target: 'nutrients.glucose', delta: -12 }, { target: 'energy.deficit', delta: 8 }, { target: 'allostatic.load', delta: 7 }],
+    },
+    {
+        id: 'leptin-resistance-satiety',
+        title: 'Leptina alta, saciedade baixa',
+        description: 'A reserva adiposa e a leptina estão altas, mas o hipotálamo responde pouco. Adiponectina baixa e resistência insulínica mantêm glicose e ácidos graxos circulantes.',
+        explanation: 'Mais leptina não corrige automaticamente resistência ao sinal. Reduzir nova carga alimentar, recuperar sensibilidade metabólica e recrutar POMC/CART é diferente de ativar NPY/AgRP apesar da abundância.',
+        investigationPrompt: 'Compare leptina com sensibilidade ao sinal, adiponectina, glicose e estado alimentado. A concentração de leptina está baixa ou sua informação deixou de produzir saciedade?',
+        contextSummary: 'Estado alimentado · leptina alta · adiponectina baixa · resistência periférica',
+        context: { exercise: 3, nutrition: 100, stress: 38, sleep: 55, temperature: 22 },
+        category: 'organ', severity: 'warning', durationSeconds: 32, cooldownSeconds: 360, difficulty: 'hard',
+        metricKeys: ALL_SCENARIO_METRIC_KEYS,
+        priorityMetricKeys: ['bloodGlucose', 'insulin', 'leptin', 'adiponectin', 'ghrelin', 'orexigenicDrive', 'anorexigenicDrive', 'allostaticLoad', 'ros', 'fattyAcidSaturation', 'cellularAtp', 'energyDeficit'],
+        choices: [
+            {
+                id: 'leptin-sensitivity-pomc', label: 'Interromper nova ingestão e recuperar o eixo POMC/CART',
+                description: 'Combina sinal anorexígeno com melhora da sensibilidade periférica, sem adicionar mais substrato.',
+                tradeoff: 'A melhora da resistência é lenta; a intervenção aguda apenas inicia a correção do fluxo.',
+                requirements: [{ resource: 'atp', minimum: 1.3, cost: .2 }, { resource: 'antioxidants', minimum: 15, cost: 4 }],
+                signalRequirements: [{ anyOf: ['hormone:increase-adiponectin'], label: 'Aumentar adiponectina' }, { anyOf: ['central:activate-pomc-cart'], label: 'Recrutar POMC/CART' }],
+                result: 'A nova carga cessou; POMC/CART ganhou predominância e a adiponectina melhorou a resposta periférica.',
+                cellularEffects: [{ target: 'tissue.glucose', delta: -.8 }, { target: 'available.fattyAcid', delta: -.5 }, { target: 'damage.oxidative', delta: -5 }],
+                physiologyEffects: [{ target: 'nutrients.glucose', delta: -18 }, { target: 'hormones.adiponectin', delta: 5 }, { target: 'endocrine.insulinSensitivity', delta: .2 }, { target: 'endocrine.leptinSensitivity', delta: .16 }, { target: 'endocrine.orexigenicDrive', delta: -.3 }, { target: 'endocrine.anorexigenicDrive', delta: .3 }, { target: 'allostatic.load', delta: -5 }],
+            },
+            {
+                id: 'leptin-ghrelin-npy', label: 'Estimular grelina e NPY/AgRP para comer novamente',
+                description: 'Soma um sinal de fome a um estado que já tem substrato e leptina abundantes.',
+                tradeoff: 'Amplia glicemia, lipotoxicidade e pressão redox sem corrigir a resistência à leptina.',
+                requirements: [], signalRequirements: [{ anyOf: ['hormone:signal-ghrelin'], label: 'Sinalizar grelina' }, { anyOf: ['central:activate-npy-agrp'], label: 'Recrutar NPY/AgRP' }],
+                result: 'A ingestão continuou apesar da abundância; glicose, AGL e estresse oxidativo aumentaram.',
+                cellularEffects: [{ target: 'tissue.glucose', delta: 1.2 }, { target: 'available.fattyAcid', delta: 1 }, { target: 'damage.oxidative', delta: 7 }],
+                physiologyEffects: [{ target: 'nutrients.glucose', delta: 22 }, { target: 'hormones.ghrelin', delta: 380 }, { target: 'endocrine.orexigenicDrive', delta: .25 }, { target: 'allostatic.load', delta: 8 }],
+            },
+        ],
+        isEligible: eligibleWhen(.82, 'leptina elevada perdeu eficácia enquanto adiponectina e sensibilidade insulínica caíram', (state, macro) => state.cell.viabilityPercent > 72 && macro.nutrients.bloodGlucose < 170),
+        onStart: [{ target: 'tissue.glucose', delta: 1 }, { target: 'available.fattyAcid', delta: 1 }, { target: 'damage.oxidative', delta: 5 }],
+        onStartPhysiology: [{ target: 'nutrients.hoursSinceMeal', value: .8 }, { target: 'nutrients.glucose', delta: 45 }, { target: 'nutrients.adiposeTissue', value: 25 }, { target: 'hormones.insulin', delta: 14 }, { target: 'hormones.leptin', value: 28 }, { target: 'hormones.adiponectin', value: 4 }, { target: 'hormones.ghrelin', value: 520 }, { target: 'capacities.leptinSensitivity', value: .38 }, { target: 'endocrine.leptinSensitivity', value: .4 }, { target: 'endocrine.insulinSensitivity', value: .48 }, { target: 'endocrine.orexigenicDrive', value: .62 }, { target: 'endocrine.anorexigenicDrive', value: .3 }, { target: 'allostatic.load', delta: 12 }],
+        onTimeout: [{ target: 'damage.oxidative', delta: 8 }, { target: 'cell.atp', delta: -.4 }],
+        onTimeoutPhysiology: [{ target: 'nutrients.glucose', delta: 18 }, { target: 'allostatic.load', delta: 8 }, { target: 'allostatic.oxidative', delta: 10 }],
+    },
+    {
+        id: 'primary-hypothyroid-failure',
+        title: 'Falha primária da tireoide',
+        description: 'T4 e T3 estão baixos apesar de TSH muito alto. O humano está bradicárdico, frio, lento e com pouca reserva metabólica.',
+        explanation: 'Na falha primária, a hipófise já aumentou TSH; mais estímulo central não cria hormônio em uma glândula incapaz. A reposição de T4 deve ser gradual e compatível com a reserva cardíaca.',
+        investigationPrompt: 'Leia TSH, T4 e T3 juntos: o problema é falta de estímulo hipofisário ou incapacidade da glândula de responder ao estímulo que já está alto?',
+        contextSummary: 'TSH alto · T4/T3 baixos · bradicardia · termogênese reduzida',
+        context: { exercise: 2, nutrition: 65, stress: 28, sleep: 88, temperature: 17 },
+        category: 'organ', severity: 'warning', durationSeconds: 34, cooldownSeconds: 420, difficulty: 'hard',
+        metricKeys: ALL_SCENARIO_METRIC_KEYS,
+        priorityMetricKeys: ['tsh', 't4', 't3', 'heartRate', 'temperature', 'systemicAtpReserve', 'cellularAtp', 'energyDeficit', 'perfusionIndex', 'cardiacOutput', 'mitochondrialOxygenConsumption', 'atpSynthaseFlux'],
+        choices: [
+            {
+                id: 'hypothyroid-t4-gradual', label: 'Repor T4 gradualmente e monitorar a reserva cardíaca',
+                description: 'Fornece substrato ao eixo e permite conversão periférica sem um salto adrenérgico.',
+                tradeoff: 'A correção é lenta; doses agressivas podem precipitar isquemia ou arritmia em coração vulnerável.',
+                requirements: [{ resource: 'atp', minimum: 1.1, cost: .15 }], signalRequirements: [{ anyOf: ['hormone:replace-t4'], label: 'Repor T4' }],
+                result: 'T4 começou a subir, permitindo recuperação gradual de T3, temperatura e ATP sem descarga catecolaminérgica.',
+                cellularEffects: [{ target: 'cell.atp', delta: .45 }, { target: 'mitochondria.atpSynthase', delta: 8 }, { target: 'damage.oxidative', delta: -2 }],
+                physiologyEffects: [{ target: 'hormones.t4', delta: 3 }, { target: 'hormones.t3', delta: 22 }, { target: 'hormones.tsh', delta: -2 }, { target: 'body.temperature', delta: .35 }, { target: 'cardiovascular.heartRate', delta: 7 }, { target: 'energy.deficit', delta: -5 }, { target: 'pathophysiology.diseaseBurden', delta: -8 }],
+            },
+            {
+                id: 'hypothyroid-adrenaline', label: 'Mascarar a lentidão com adrenalina',
+                description: 'Eleva a frequência sem restaurar T4, T3 ou capacidade metabólica.',
+                tradeoff: 'A demanda cardíaca sobe sobre uma cadeia energética ainda lenta.',
+                requirements: [], signalRequirements: [{ anyOf: ['hormone:release-adrenaline'], label: 'Liberar adrenalina' }],
+                result: 'A frequência subiu por pouco tempo, mas a reserva de ATP caiu e o eixo tireoidiano permaneceu falho.',
+                cellularEffects: [{ target: 'cell.atp', delta: -.55 }, { target: 'damage.oxidative', delta: 6 }],
+                physiologyEffects: [{ target: 'cardiovascular.heartRate', delta: 18 }, { target: 'energy.deficit', delta: 8 }, { target: 'allostatic.load', delta: 7 }],
+            },
+        ],
+        isEligible: eligibleWhen(.8, 'a capacidade da tireoide caiu apesar do aumento compensatório do TSH', (state, macro) => state.cell.viabilityPercent > 70 && macro.cardiovascular.heartRate > 50),
+        onStart: [{ target: 'cell.atp', delta: -.55 }, { target: 'mitochondria.atpSynthase', delta: -10 }],
+        onStartPhysiology: [{ target: 'capacities.thyroidGlandCapacity', value: .15 }, { target: 'hormones.t3', value: 52 }, { target: 'hormones.t4', value: 2.5 }, { target: 'hormones.tsh', value: 14 }, { target: 'endocrine.thyroidDrive', value: 1.8 }, { target: 'body.temperature', delta: -.8 }, { target: 'cardiovascular.heartRate', delta: -12 }, { target: 'energy.deficit', delta: 7 }, { target: 'pathophysiology.diseaseBurden', delta: 30 }],
+        onTimeout: [{ target: 'cell.atp', delta: -.65 }, { target: 'cell.viability', delta: -3 }],
+        onTimeoutPhysiology: [{ target: 'body.temperature', delta: -.35 }, { target: 'cardiovascular.heartRate', delta: -6 }, { target: 'energy.deficit', delta: 7 }],
+    },
+    {
+        id: 'thyrotoxic-decompensation',
+        title: 'Descompensação hipertireoidiana',
+        description: 'T3 e T4 altos suprimiram TSH e amplificaram termogênese, consumo de O₂ e sensibilidade às catecolaminas. O humano está febril e taquicárdico.',
+        explanation: 'O manejo precisa retirar a fonte de hormônio, reduzir síntese/exposição e controlar a sobrecarga cardiovascular. Mais T3 ou adrenalina acelera a mesma cascata.',
+        investigationPrompt: 'Cruze TSH suprimido com T4/T3 altos, temperatura, frequência e ATP. A demanda está alta porque falta hormônio ou porque o tecido está superexposto?',
+        contextSummary: 'T3/T4 altos · TSH suprimido · taquicardia · hipertermia',
+        context: { exercise: 0, nutrition: 70, stress: 82, sleep: 35, temperature: 25 },
+        category: 'organ', severity: 'critical', durationSeconds: 30, cooldownSeconds: 480, difficulty: 'hard',
+        metricKeys: ALL_SCENARIO_METRIC_KEYS,
+        priorityMetricKeys: ['tsh', 't4', 't3', 'heartRate', 'heartRateVariability', 'temperature', 'systemicAtpReserve', 'cellularAtp', 'ros', 'mitochondrialOxygenConsumption', 'atpSynthaseFlux', 'cellCalcium'],
+        choices: [
+            {
+                id: 'thyrotoxic-suppress-control', label: 'Reduzir sinal tireoidiano e controlar a sobrecarga autonômica',
+                description: 'Interrompe a amplificação hormonal e reduz demanda enquanto temperatura e ritmo são monitorados.',
+                tradeoff: 'A queda hormonal não é instantânea; suporte térmico e cardíaco continuam necessários.',
+                requirements: [{ resource: 'antioxidants', minimum: 18, cost: 5 }], signalRequirements: [{ anyOf: ['hormone:suppress-thyroid'], label: 'Reduzir exposição ao T3' }, { anyOf: ['central:parasympathetic-recovery'], label: 'Reduzir demanda autonômica' }],
+                result: 'T3, temperatura e frequência recuaram; a menor demanda permitiu recuperar ATP e conter ROS.',
+                cellularEffects: [{ target: 'cell.atp', delta: .5 }, { target: 'damage.oxidative', delta: -7 }, { target: 'mitochondria.oxygenConsumption', delta: -8 }],
+                physiologyEffects: [{ target: 'hormones.t3', delta: -55 }, { target: 'hormones.t4', delta: -3 }, { target: 'body.temperature', delta: -.8 }, { target: 'cardiovascular.heartRate', delta: -22 }, { target: 'cardiovascular.hrv', delta: 12 }, { target: 'energy.deficit', delta: -7 }, { target: 'pathophysiology.diseaseBurden', delta: -10 }],
+            },
+            {
+                id: 'thyrotoxic-t3-adrenaline', label: 'Aumentar T3 e adrenalina para sustentar energia',
+                description: 'Confunde gasto acelerado com falta de estímulo e reforça as duas vias que já dominam o quadro.',
+                tradeoff: 'Eleva risco de taquiarritmia, hipertermia e falência energética.',
+                requirements: [], signalRequirements: [{ anyOf: ['hormone:increase-t3'], label: 'Aumentar T3' }, { anyOf: ['hormone:release-adrenaline'], label: 'Liberar adrenalina' }],
+                result: 'A demanda e a termogênese ultrapassaram a produção de ATP; frequência e ROS subiram.',
+                cellularEffects: [{ target: 'cell.atp', delta: -.8 }, { target: 'damage.oxidative', delta: 11 }, { target: 'cell.calcium', delta: 90 }],
+                physiologyEffects: [{ target: 'hormones.t3', delta: 35 }, { target: 'body.temperature', delta: .7 }, { target: 'cardiovascular.heartRate', delta: 24 }, { target: 'energy.deficit', delta: 10 }, { target: 'allostatic.load', delta: 10 }],
+            },
+        ],
+        isEligible: eligibleWhen(.78, 'o excesso tireoidiano amplificou termogênese e sensibilidade adrenérgica até a descompensação', (state, macro) => state.cell.viabilityPercent > 72 && macro.cardiovascular.heartRate < 125),
+        onStart: [{ target: 'cell.atp', delta: -.7 }, { target: 'damage.oxidative', delta: 9 }, { target: 'mitochondria.oxygenConsumption', delta: 12 }],
+        onStartPhysiology: [{ target: 'capacities.thyroidGlandCapacity', value: 1.8 }, { target: 'hormones.t3', value: 250 }, { target: 'hormones.t4', value: 16 }, { target: 'hormones.tsh', value: .1 }, { target: 'endocrine.thyroidExposure', value: 75 }, { target: 'body.temperature', delta: 1.4 }, { target: 'cardiovascular.heartRate', delta: 42 }, { target: 'cardiovascular.hrv', delta: -28 }, { target: 'energy.deficit', delta: 10 }, { target: 'pathophysiology.diseaseBurden', delta: 42 }],
+        onTimeout: [{ target: 'cell.atp', delta: -.9 }, { target: 'damage.oxidative', delta: 12 }, { target: 'cell.viability', delta: -5 }],
+        onTimeoutPhysiology: [{ target: 'body.temperature', delta: .7 }, { target: 'cardiovascular.heartRate', delta: 18 }, { target: 'energy.deficit', delta: 10 }],
+    },
+    {
+        id: 'cushing-metabolic-load',
+        title: 'Carga metabólica da síndrome de Cushing',
+        description: 'Cortisol persistentemente alto elevou glicose, pressão e proteólise enquanto reduziu sensibilidade à insulina e recuperação tecidual.',
+        explanation: 'O quadro nasce da exposição glucocorticoide sustentada. Reduzir a fonte de cortisol e controlar glicose trata a cascata; acrescentar cortisol reforça hipertensão, catabolismo e imunossupressão.',
+        investigationPrompt: 'Compare cortisol e sua exposição acumulada com glicose, pressão, insulina, dano proteico e infecção. A resposta HPA está adaptativa ou autônoma e excessiva?',
+        contextSummary: 'Cortisol crônico alto · resistência insulínica · hipertensão · catabolismo',
+        context: { exercise: 2, nutrition: 85, stress: 76, sleep: 42, temperature: 22 },
+        category: 'organ', severity: 'critical', durationSeconds: 34, cooldownSeconds: 500, difficulty: 'hard',
+        metricKeys: ALL_SCENARIO_METRIC_KEYS,
+        priorityMetricKeys: ['cortisol', 'bloodGlucose', 'insulin', 'systolicBP', 'diastolicBP', 'meanArterialPressure', 'allostaticLoad', 'proteinDamage', 'infection', 'cellularAtp', 'energyDeficit', 'infectionSusceptibility'],
+        choices: [
+            {
+                id: 'cushing-source-glucose-control', label: 'Reduzir cortisol e controlar a hiperglicemia',
+                description: 'Interrompe o motor glucocorticoide da cascata e usa insulina com glicose alta para restaurar captação.',
+                tradeoff: 'Supressão abrupta apó exposição prolongada exige vigilância da reserva adrenal; a correção deve ser monitorada.',
+                requirements: [{ resource: 'atp', minimum: 1.2, cost: .2 }], signalRequirements: [{ anyOf: ['hormone:inhibit-cortisol'], label: 'Reduzir excesso de cortisol' }, { anyOf: ['hormone:release-insulin'], label: 'Controlar glicose com insulina' }],
+                result: 'A produção hepática e a pressão catabólica cederam; glicose, pressão e dano proteico começaram a recuar.',
+                cellularEffects: [{ target: 'tissue.glucose', delta: -.9 }, { target: 'damage.proteins', delta: -6 }, { target: 'cell.atp', delta: .35 }],
+                physiologyEffects: [{ target: 'hormones.cortisol', delta: -20 }, { target: 'endocrine.cortisolExposure', delta: -18 }, { target: 'capacities.adrenalCortisolAutonomy', delta: -.35 }, { target: 'nutrients.glucose', delta: -24 }, { target: 'cardiovascular.map', delta: -12 }, { target: 'cardiovascular.systolic', delta: -14 }, { target: 'cardiovascular.diastolic', delta: -8 }, { target: 'pathophysiology.diseaseBurden', delta: -12 }],
+            },
+            {
+                id: 'cushing-more-cortisol', label: 'Liberar mais cortisol para sustentar a pressão',
+                description: 'Trata a hipertensão e hiperglicemia como falta de resposta ao estresse.',
+                tradeoff: 'Aumenta gliconeogênese, proteólise, imunossupressão e efeito mineralocorticoide.',
+                requirements: [], signalRequirements: [{ anyOf: ['hormone:release-cortisol'], label: 'Liberar cortisol' }],
+                result: 'A exposição glucocorticoide aumentou; glicose, pressão, dano proteico e risco infeccioso pioraram.',
+                cellularEffects: [{ target: 'damage.proteins', delta: 8 }, { target: 'cell.atp', delta: -.45 }, { target: 'fate.infectionSusceptibility', delta: 8 }],
+                physiologyEffects: [{ target: 'hormones.cortisol', delta: 18 }, { target: 'endocrine.cortisolExposure', delta: 14 }, { target: 'nutrients.glucose', delta: 20 }, { target: 'cardiovascular.map', delta: 10 }, { target: 'allostatic.load', delta: 10 }],
+            },
+        ],
+        isEligible: eligibleWhen(.76, 'a exposição autônoma ao cortisol elevou glicose, pressão e catabolismo', (state, macro) => state.cell.viabilityPercent > 70 && macro.nutrients.bloodGlucose < 180),
+        onStart: [{ target: 'damage.proteins', delta: 9 }, { target: 'cell.atp', delta: -.45 }, { target: 'fate.infectionSusceptibility', delta: 7 }],
+        onStartPhysiology: [{ target: 'capacities.adrenalCortisolAutonomy', value: .8 }, { target: 'hormones.cortisol', value: 52 }, { target: 'endocrine.cortisolExposure', value: 84 }, { target: 'endocrine.insulinSensitivity', value: .5 }, { target: 'hormones.insulin', delta: 15 }, { target: 'nutrients.glucose', delta: 55 }, { target: 'cardiovascular.systolic', delta: 28 }, { target: 'cardiovascular.diastolic', delta: 16 }, { target: 'cardiovascular.map', delta: 20 }, { target: 'allostatic.load', delta: 20 }, { target: 'pathophysiology.diseaseBurden', delta: 48 }],
+        onTimeout: [{ target: 'damage.proteins', delta: 10 }, { target: 'cell.atp', delta: -.55 }, { target: 'fate.infectionSusceptibility', delta: 9 }],
+        onTimeoutPhysiology: [{ target: 'nutrients.glucose', delta: 18 }, { target: 'cardiovascular.map', delta: 10 }, { target: 'allostatic.load', delta: 10 }],
+    },
 ];
 
 export function selectEligibleScenario(
@@ -1287,6 +1496,7 @@ export function applyScenarioPhysiologyEffects(
         pathophysiology: { ...state.pathophysiology },
         hormones: { ...state.hormones },
         endocrine: { ...state.endocrine },
+        capacities: { ...state.capacities },
         organs: {
             ...state.organs,
             liver: { ...state.organs.liver },
@@ -1310,11 +1520,13 @@ export function applyScenarioPhysiologyEffects(
         else if (effect.target === 'nutrients.potassium') next.nutrients.potassium = change(next.nutrients.potassium, effect);
         else if (effect.target === 'nutrients.ketones') next.nutrients.ketones = change(next.nutrients.ketones, effect);
         else if (effect.target === 'nutrients.hoursSinceMeal') next.nutrients.hoursSinceMeal = change(next.nutrients.hoursSinceMeal, effect);
+        else if (effect.target === 'nutrients.adiposeTissue') next.nutrients.adiposeTissue = change(next.nutrients.adiposeTissue, effect);
         else if (effect.target === 'allostatic.load') next.allostaticLoad.currentLoad = change(next.allostaticLoad.currentLoad, effect);
         else if (effect.target === 'allostatic.inflammation') next.allostaticLoad.inflammationLevel = change(next.allostaticLoad.inflammationLevel, effect);
         else if (effect.target === 'allostatic.oxidative') next.allostaticLoad.oxidativeStress = change(next.allostaticLoad.oxidativeStress, effect);
         else if (effect.target === 'pathophysiology.infection') next.pathophysiology.infectionSeverity = change(next.pathophysiology.infectionSeverity, effect);
         else if (effect.target === 'pathophysiology.capillaryLeak') next.pathophysiology.capillaryLeak = change(next.pathophysiology.capillaryLeak, effect);
+        else if (effect.target === 'pathophysiology.diseaseBurden') next.pathophysiology.diseaseBurden = change(next.pathophysiology.diseaseBurden, effect);
         else if (effect.target === 'cardiovascular.heartRate') next.cardiovascular.heartRate = change(next.cardiovascular.heartRate, effect);
         else if (effect.target === 'cardiovascular.hrv') next.cardiovascular.heartRateVariability = change(next.cardiovascular.heartRateVariability, effect);
         else if (effect.target === 'cardiovascular.systolic') next.cardiovascular.systolicBP = change(next.cardiovascular.systolicBP, effect);
@@ -1340,10 +1552,25 @@ export function applyScenarioPhysiologyEffects(
         else if (effect.target === 'hormones.glucagon') next.hormones.glucagon = change(next.hormones.glucagon, effect);
         else if (effect.target === 'hormones.adrenaline') next.hormones.adrenaline = change(next.hormones.adrenaline, effect);
         else if (effect.target === 'hormones.cortisol') next.hormones.cortisol = change(next.hormones.cortisol, effect);
+        else if (effect.target === 'hormones.ghrelin') next.hormones.ghrelin = change(next.hormones.ghrelin, effect);
+        else if (effect.target === 'hormones.leptin') next.hormones.leptin = change(next.hormones.leptin, effect);
+        else if (effect.target === 'hormones.adiponectin') next.hormones.adiponectin = change(next.hormones.adiponectin, effect);
+        else if (effect.target === 'hormones.t3') next.hormones.t3 = change(next.hormones.t3, effect);
+        else if (effect.target === 'hormones.t4') next.hormones.t4 = change(next.hormones.t4, effect);
+        else if (effect.target === 'hormones.tsh') next.hormones.tsh = change(next.hormones.tsh, effect);
         else if (effect.target === 'endocrine.hpaDrive') next.endocrine.hpaDrive = change(next.endocrine.hpaDrive, effect);
         else if (effect.target === 'endocrine.sympatheticDrive') next.endocrine.sympatheticDrive = change(next.endocrine.sympatheticDrive, effect);
         else if (effect.target === 'endocrine.cortisolExposure') next.endocrine.cortisolExposure = change(next.endocrine.cortisolExposure, effect);
         else if (effect.target === 'endocrine.catecholamineExposure') next.endocrine.catecholamineExposure = change(next.endocrine.catecholamineExposure, effect);
+        else if (effect.target === 'endocrine.thyroidDrive') next.endocrine.thyroidDrive = change(next.endocrine.thyroidDrive, effect);
+        else if (effect.target === 'endocrine.thyroidExposure') next.endocrine.thyroidExposure = change(next.endocrine.thyroidExposure, effect);
+        else if (effect.target === 'endocrine.insulinSensitivity') next.endocrine.insulinReceptorSensitivity = change(next.endocrine.insulinReceptorSensitivity, effect);
+        else if (effect.target === 'endocrine.leptinSensitivity') next.endocrine.leptinSensitivity = change(next.endocrine.leptinSensitivity, effect);
+        else if (effect.target === 'endocrine.orexigenicDrive') next.endocrine.orexigenicDrive = change(next.endocrine.orexigenicDrive, effect);
+        else if (effect.target === 'endocrine.anorexigenicDrive') next.endocrine.anorexigenicDrive = change(next.endocrine.anorexigenicDrive, effect);
+        else if (effect.target === 'capacities.thyroidGlandCapacity') next.capacities.thyroidGlandCapacity = change(next.capacities.thyroidGlandCapacity, effect);
+        else if (effect.target === 'capacities.leptinSensitivity') next.capacities.leptinSensitivity = change(next.capacities.leptinSensitivity, effect);
+        else if (effect.target === 'capacities.adrenalCortisolAutonomy') next.capacities.adrenalCortisolAutonomy = change(next.capacities.adrenalCortisolAutonomy, effect);
         else if (effect.target === 'organs.liver.perfusion') next.organs.liver.perfusion = change(next.organs.liver.perfusion, effect);
         else if (effect.target === 'organs.liver.oxygenation') next.organs.liver.oxygenation = change(next.organs.liver.oxygenation, effect);
         else if (effect.target === 'organs.liver.damage') next.organs.liver.damage = change(next.organs.liver.damage, effect);
@@ -1368,12 +1595,14 @@ export function applyScenarioPhysiologyEffects(
     next.nutrients.potassium = clamp(next.nutrients.potassium, 2, 8);
     next.nutrients.ketones = clamp(next.nutrients.ketones, .1, 15);
     next.nutrients.hoursSinceMeal = clamp(next.nutrients.hoursSinceMeal, 0, 48);
+    next.nutrients.adiposeTissue = clamp(next.nutrients.adiposeTissue, 2, 80);
     next.nutrients.fedState = next.nutrients.hoursSinceMeal < 6;
     next.allostaticLoad.currentLoad = clamp(next.allostaticLoad.currentLoad, 0, 100);
     next.allostaticLoad.inflammationLevel = clamp(next.allostaticLoad.inflammationLevel, 0, 100);
     next.allostaticLoad.oxidativeStress = clamp(next.allostaticLoad.oxidativeStress, 0, 100);
     next.pathophysiology.infectionSeverity = clamp(next.pathophysiology.infectionSeverity, 0, 100);
     next.pathophysiology.capillaryLeak = clamp(next.pathophysiology.capillaryLeak, 0, .55);
+    next.pathophysiology.diseaseBurden = clamp(next.pathophysiology.diseaseBurden, 0, 100);
     next.cardiovascular.heartRate = clamp(next.cardiovascular.heartRate, 20, 260);
     next.cardiovascular.heartRateVariability = clamp(next.cardiovascular.heartRateVariability, 0, 200);
     next.cardiovascular.systolicBP = clamp(next.cardiovascular.systolicBP, 35, 260);
@@ -1399,10 +1628,25 @@ export function applyScenarioPhysiologyEffects(
     next.hormones.glucagon = clamp(next.hormones.glucagon, 0, 500);
     next.hormones.adrenaline = clamp(next.hormones.adrenaline, 0, 2000);
     next.hormones.cortisol = clamp(next.hormones.cortisol, 0, 100);
+    next.hormones.ghrelin = clamp(next.hormones.ghrelin, 0, 2500);
+    next.hormones.leptin = clamp(next.hormones.leptin, 0, 100);
+    next.hormones.adiponectin = clamp(next.hormones.adiponectin, 0, 50);
+    next.hormones.t3 = clamp(next.hormones.t3, 0, 800);
+    next.hormones.t4 = clamp(next.hormones.t4, 0, 60);
+    next.hormones.tsh = clamp(next.hormones.tsh, 0, 100);
     next.endocrine.hpaDrive = clamp(next.endocrine.hpaDrive, 0, 1);
     next.endocrine.sympatheticDrive = clamp(next.endocrine.sympatheticDrive, 0, 1);
     next.endocrine.cortisolExposure = clamp(next.endocrine.cortisolExposure, 0, 100);
     next.endocrine.catecholamineExposure = clamp(next.endocrine.catecholamineExposure, 0, 100);
+    next.endocrine.thyroidDrive = clamp(next.endocrine.thyroidDrive, 0, 2);
+    next.endocrine.thyroidExposure = clamp(next.endocrine.thyroidExposure, 0, 100);
+    next.endocrine.insulinReceptorSensitivity = clamp(next.endocrine.insulinReceptorSensitivity, .05, 1.5);
+    next.endocrine.leptinSensitivity = clamp(next.endocrine.leptinSensitivity, .05, 1.2);
+    next.endocrine.orexigenicDrive = clamp(next.endocrine.orexigenicDrive, 0, 1);
+    next.endocrine.anorexigenicDrive = clamp(next.endocrine.anorexigenicDrive, 0, 1);
+    next.capacities.thyroidGlandCapacity = clamp(next.capacities.thyroidGlandCapacity, .05, 2.5);
+    next.capacities.leptinSensitivity = clamp(next.capacities.leptinSensitivity, .05, 1.2);
+    next.capacities.adrenalCortisolAutonomy = clamp(next.capacities.adrenalCortisolAutonomy, 0, 1);
     for (const organ of [next.organs.liver, next.organs.brain, next.organs.muscles]) {
         organ.perfusion = clamp(organ.perfusion, 0, 140);
         organ.oxygenation = clamp(organ.oxygenation, 0, 100);

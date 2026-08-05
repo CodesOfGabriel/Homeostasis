@@ -171,6 +171,41 @@ const NARRATIVES: Record<string, ScenarioNarrativeDefinition> = {
         tags: ['major-trauma', 'major-hemorrhage', 'shock'],
         conflictsWith: ['active-training', 'sedentary-chronic', 'social-night'],
     },
+    'fasting-orexigenic-switch': {
+        eyebrow: 'Manhã tardia · estômago sinalizando escassez',
+        scene: 'A noite terminou sem café da manhã. A grelina subiu e os neurônios NPY/AgRP aumentaram o impulso por comida enquanto a glicose se aproxima da faixa em que o cérebro começa a perder margem.',
+        objective: 'Reconheça o sinal orexígeno de jejum e encerre a escassez com reposição proporcional, sem mascarar fome com saciedade artificial.',
+        tags: ['fasting', 'appetite-axis'],
+        conflictsWith: ['fed', 'major-trauma'],
+    },
+    'leptin-resistance-satiety': {
+        eyebrow: 'Depois da refeição · reserva alta, sinal baixo',
+        scene: 'A leptina circula em abundância, mas sua mensagem chega fraca ao hipotálamo. A adiponectina caiu, a insulina encontra resistência e a vontade de continuar comendo não combina com a carga que já está no sangue.',
+        objective: 'Diferencie falta de leptina de resistência ao sinal e recupere POMC/CART e sensibilidade metabólica sem adicionar nova carga.',
+        tags: ['fed', 'appetite-axis', 'insulin-resistance'],
+        conflictsWith: ['fasting', 'major-trauma'],
+    },
+    'primary-hypothyroid-failure': {
+        eyebrow: 'Manhã fria · o eixo chama, a glândula não responde',
+        scene: 'O humano acorda lento, frio e bradicárdico. A hipófise elevou TSH, mas T4 e T3 continuam baixos: o comando central chegou e encontrou pouca capacidade glandular.',
+        objective: 'Localize a falha primária e restaure hormônio gradualmente sem tentar substituir metabolismo com uma descarga de adrenalina.',
+        tags: ['thyroid-failure', 'endocrine-crisis'],
+        conflictsWith: ['thyroid-excess', 'major-trauma'],
+    },
+    'thyrotoxic-decompensation': {
+        eyebrow: 'Excesso tireoidiano · cada tecido acelerou ao mesmo tempo',
+        scene: 'A frequência e a temperatura sobem enquanto o ATP cai. TSH está suprimido, T3 e T4 estão altos e a adrenalina encontra um miocárdio sensibilizado demais.',
+        objective: 'Retire o impulso tireoidiano e reduza a sobrecarga autonômica antes que termogênese e arritmia consumam a reserva restante.',
+        tags: ['thyroid-excess', 'endocrine-crisis'],
+        conflictsWith: ['thyroid-failure', 'major-trauma'],
+    },
+    'cushing-metabolic-load': {
+        eyebrow: 'Cortisol sem freio · adaptação virou carga',
+        scene: 'O cortisol deixou de ser um pulso de resposta e passou a comandar o dia inteiro. Glicose e pressão sobem, proteínas são consumidas e a defesa imune perde margem enquanto a insulina tenta compensar.',
+        objective: 'Controle a fonte do excesso glucocorticoide e a hiperglicemia, evitando reforçar com mais cortisol uma cascata que já está ativa.',
+        tags: ['cortisol-excess', 'endocrine-crisis', 'insulin-resistance'],
+        conflictsWith: ['adrenal-failure', 'major-trauma'],
+    },
 };
 
 const FALLBACK_NARRATIVE: ScenarioNarrativeDefinition = {

@@ -2,6 +2,7 @@ import { detectActiveCombos, type HormonalCombo } from './actions';
 import { HORMONE_DEFINITIONS, type HormoneKey } from './config/hormones';
 import { getSimulationCalendar } from './simulationCalendar';
 import type {
+    CellularSignalingState,
     EndocrineRegulationState,
     HormonalAction,
     HormonalProfile,
@@ -11,6 +12,7 @@ import type {
 
 export interface EndocrineTickContext {
     profile: HormonalProfile;
+    cellularSignaling: CellularSignalingState;
     regulation: EndocrineRegulationState;
     capacities: PhysiologicalCapacities;
     nutrients: NutrientState;
@@ -28,6 +30,7 @@ export interface EndocrineTickContext {
 
 export interface EndocrineEffectsResult {
     newProfile: HormonalProfile;
+    cellularSignaling: CellularSignalingState;
     regulation: EndocrineRegulationState;
     glucoseUptakeRate: number;
     hepaticGlucoseDrive: number;
@@ -76,7 +79,10 @@ export function calculateEndocrineTick(context: EndocrineTickContext): Endocrine
         1,
     );
     const sympatheticDrive = approach(context.regulation.sympatheticDrive, sympatheticTarget, 25, dt);
-    const hpaDrive = approach(context.regulation.hpaDrive, hpaTarget, 4 * 60, dt);
+    const crhDrive = approach(context.regulation.crhDrive, hpaTarget, 2 * 60, dt);
+    const acthTarget = clamp(crhDrive - cortisolFeedback * .35, 0, 1);
+    const acthDrive = approach(context.regulation.acthDrive, acthTarget, 3 * 60, dt);
+    const hpaDrive = approach(context.regulation.hpaDrive, (crhDrive + acthDrive) / 2, 4 * 60, dt);
 
     const targets: Partial<Record<HormoneKey, number>> = {};
     targets.insulin = clamp(
@@ -95,7 +101,7 @@ export function calculateEndocrineTick(context: EndocrineTickContext): Endocrine
     targets.noradrenaline = 200 + 950 * sympatheticActivation * capacities.adrenalReserve;
     const circadianCortisol = 7 + morningDrive * 8;
     targets.cortisol = clamp(
-        circadianCortisol + hpaDrive * 30 * capacities.adrenalReserve,
+        circadianCortisol + hpaDrive * 30 * capacities.adrenalReserve + capacities.adrenalCortisolAutonomy * 50,
         capacities.adrenalReserve < .25 ? 2 : 4,
         70,
     );
@@ -112,13 +118,18 @@ export function calculateEndocrineTick(context: EndocrineTickContext): Endocrine
     const conversionInhibition = clamp((profile.cortisol - 12) / 100, 0, .45);
     targets.t3 = clamp(120 * capacities.thyroidGlandCapacity * (.55 + .45 * targets.t4 / 8) * (1 - conversionInhibition), 25, 350);
 
-    const ghPulse = clamp(sleepFraction * (circadianHour >= 22 || circadianHour <= 6 ? 1 : .2) + exerciseFraction * .45, 0, 1);
+    const adiposeSignal = clamp(nutrients.adiposeTissue / 15, .25, 4);
+    targets.ghrelin = clamp(420 + fasting * 900 + hypoglycemia * 650 - (nutrients.fedState ? 180 : 0), 180, 2100);
+    targets.leptin = clamp(7.5 * adiposeSignal * (.85 + (nutrients.fedState ? .25 : 0)), 2, 65);
+    targets.adiponectin = clamp(13 / Math.max(.65, adiposeSignal) * (1 - context.inflammation / 180), 2, 24);
+
+    const ghrelinPulse = clamp(profile.ghrelin / 600 - 1, 0, 1.5);
+    const ghPulse = clamp(sleepFraction * (circadianHour >= 22 || circadianHour <= 6 ? 1 : .2) + exerciseFraction * .45 + ghrelinPulse * .16, 0, 1.2);
     targets.gh = 1 + ghPulse * 8 * (1 - clamp(profile.cortisol / 120, 0, .55));
     targets.igf1 = clamp(160 + profile.gh * 16 * capacities.hepaticGlucoseResponsiveness, 60, 420);
     targets.testosterone = clamp(600 * (.7 + .3 * sleepFraction) * (1 - clamp((profile.cortisol - 18) / 180, 0, .35)), 180, 850);
 
     for (const hormone of HORMONE_KEYS) {
-        if (hormone === 'mTORActivity') continue;
         const definition = HORMONE_DEFINITIONS[hormone];
         const target = targets[hormone] ?? definition.baseline;
         const secretoryTau = secretoryTimeConstant(hormone);
@@ -158,8 +169,30 @@ export function calculateEndocrineTick(context: EndocrineTickContext): Endocrine
     );
     const insulinReceptorSensitivity = approach(
         context.regulation.insulinReceptorSensitivity,
-        clamp(capacities.insulinSensitivity * (1 - Math.max(0, profile.insulin - 25) / 500), .08, 1),
+        clamp(capacities.insulinSensitivity
+            * clamp(.72 + profile.adiponectin / 10 * .28, .55, 1.35)
+            * (1 - Math.max(0, profile.insulin - 25) / 500), .08, 1.25),
         20 * 60,
+        dt,
+    );
+    const leptinSensitivity = approach(
+        context.regulation.leptinSensitivity,
+        clamp(capacities.leptinSensitivity * (1 - Math.max(0, profile.leptin - 18) / 180), .12, 1),
+        30 * 60,
+        dt,
+    );
+    const effectiveLeptin = clamp(profile.leptin / 10 * leptinSensitivity, 0, 2);
+    const ghrelinSignal = clamp(profile.ghrelin / 600, .2, 3);
+    const orexigenicDrive = approach(
+        context.regulation.orexigenicDrive,
+        clamp(.12 + ghrelinSignal * .38 + hypoglycemia * .45 - effectiveLeptin * .28, 0, 1),
+        4 * 60,
+        dt,
+    );
+    const anorexigenicDrive = approach(
+        context.regulation.anorexigenicDrive,
+        clamp(.1 + effectiveLeptin * .42 + Math.max(0, profile.insulin / 10 - .5) * .12 - ghrelinSignal * .14, 0, 1),
+        5 * 60,
         dt,
     );
     const adrenergicReceptorSensitivity = approach(
@@ -211,21 +244,34 @@ export function calculateEndocrineTick(context: EndocrineTickContext): Endocrine
         0,
         100,
     );
-    let mTorActivity = approach(profile.mTORActivity, mTorTarget, 3 * 60, dt);
-    for (const action of context.actions) {
-        if (action.hormone !== 'mTORActivity' || action.duration <= 0) continue;
-        mTorActivity += action.amount * Math.min(dt, action.duration / 1000) / Math.max(1, action.totalDuration / 1000);
-    }
-    profile.mTORActivity = clamp(mTorActivity, 0, 100);
+    const mTorActivity = clamp(approach(context.cellularSignaling.mTorActivity, mTorTarget, 3 * 60, dt), 0, 100);
+    const energyPressure = clamp(context.energyDeficit / 45 + Math.max(0, 75 - nutrients.bloodGlucose) / 55, 0, 1);
+    const ampkTarget = clamp(18 + energyPressure * 72 + exerciseFraction * 24 - insulinEffect * 5, 0, 100);
+    const ampkActivity = approach(context.cellularSignaling.ampkActivity, ampkTarget, 75, dt);
+    const autophagyTarget = clamp(12 + fasting * 42 + ampkActivity * .32 - mTorActivity * .22, 0, 100);
+    const autophagyActivity = approach(context.cellularSignaling.autophagyActivity, autophagyTarget, 5 * 60, dt);
+    const proteinLoad = clamp(Math.max(0, context.inflammation - 35) * .7 + Math.max(0, mTorActivity - 70) * .5, 0, 100);
+    const unfoldedProteinResponse = approach(context.cellularSignaling.unfoldedProteinResponse, proteinLoad, 8 * 60, dt);
+    const cellularSignaling: CellularSignalingState = {
+        mTorActivity,
+        ampkActivity,
+        autophagyActivity,
+        unfoldedProteinResponse,
+    };
 
     const regulation: EndocrineRegulationState = {
         hpaDrive,
+        crhDrive,
+        acthDrive,
         sympatheticDrive,
         thyroidDrive,
         insulinReceptorSensitivity,
         adrenergicReceptorSensitivity,
         glucocorticoidSensitivity,
         anabolicSensitivity,
+        leptinSensitivity,
+        orexigenicDrive,
+        anorexigenicDrive,
         cortisolExposure,
         catecholamineExposure,
         thyroidExposure,
@@ -233,13 +279,14 @@ export function calculateEndocrineTick(context: EndocrineTickContext): Endocrine
 
     return {
         newProfile: profile,
+        cellularSignaling,
         regulation,
         glucoseUptakeRate: (insulinEffect * .16 + exerciseFraction * .35) * combo('anabolism'),
         hepaticGlucoseDrive: (glucagonEffect * .13 + adrenalineEffect * .08 + cortisolEffect * .045) * combo('energy-mobilization'),
         lipolysisRate: clamp((.002 + glucagonEffect * .009 + adrenalineEffect * .012 + ghEffect * .003 + cortisolEffect * .002) * combo('thermogenesis'), 0, .12),
         ketogenesisRate: clamp((glucagonEffect + cortisolEffect * .35) * (1 / Math.max(.15, insulinEffect)) * .006, 0, .08),
         proteolysisRate: clamp(cortisolEffect * .012 - androgenEffect * .004, -.004, .04),
-        proteinSynthesisRate: clamp(180 + profile.mTORActivity * 2.2 * anabolicSensitivity * combo('anabolism'), 60, 650),
+        proteinSynthesisRate: clamp(180 + mTorActivity * 2.2 * anabolicSensitivity * combo('anabolism'), 60, 650),
         glycogenSynthesisRate: insulinEffect * .12,
         thyroidMetabolicMultiplier: clamp(1 + thyroidEffect * .28, .72, 1.65),
         adrenergicCardiacDrive: adrenalineEffect * combo('stress-response') + thyroidEffect * .18,
@@ -253,6 +300,8 @@ export function calculateEndocrineTick(context: EndocrineTickContext): Endocrine
 function secretoryTimeConstant(hormone: HormoneKey): number {
     if (hormone === 'adrenaline' || hormone === 'noradrenaline') return 8;
     if (hormone === 'insulin' || hormone === 'glucagon') return 45;
+    if (hormone === 'ghrelin' || hormone === 'leptin') return 3 * 60;
+    if (hormone === 'adiponectin') return 30 * 60;
     if (hormone === 'cortisol' || hormone === 'gh') return 4 * 60;
     if (hormone === 'tsh') return 20 * 60;
     if (hormone === 't3' || hormone === 't4' || hormone === 'testosterone' || hormone === 'igf1') return 2 * 60 * 60;

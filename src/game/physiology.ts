@@ -37,6 +37,7 @@ export function initializePhysiologyState(): PhysiologyState {
         energy: initializeEnergyMatrix(),
         nutrients: initializeNutrientState(),
         hormones: initializeHormonalProfile(),
+        cellularSignaling: initializeCellularSignaling(),
         endocrine: createInitialEndocrineState(),
         capacities: createHealthyCapacities(),
         renal: createInitialRenalState(),
@@ -110,6 +111,13 @@ function initializeNutrientState(): NutrientState {
         hydration: 42,           // L - 60% do peso corporal (70kg)
         sodium: 140,             // mmol/L - Normal
         potassium: 4.0,          // mmol/L - Normal
+        chloride: 104,            // mmol/L - Medido/modelado explicitamente
+        calcium: 9.4,             // mg/dL - Cálcio total
+        phosphate: 3.5,           // mg/dL - Fosfato
+        magnesium: 2.0,           // mg/dL - Magnésio
+        albumin: 4.0,             // g/dL - Proteína plasmática basal
+        hemoglobin: 14.0,         // g/dL - Capacidade de transporte de O₂
+        hematocrit: 42,           // %
         ketones: 0.2,            // mmol/L - Cetose basal ausente
 
         // Estado
@@ -136,13 +144,25 @@ function initializeHormonalProfile(): HormonalProfile {
         adrenaline: HORMONE_DEFINITIONS.adrenaline.baseline,
         noradrenaline: HORMONE_DEFINITIONS.noradrenaline.baseline,
 
+        // Gastrointestinais e adipocitários
+        ghrelin: HORMONE_DEFINITIONS.ghrelin.baseline,
+        leptin: HORMONE_DEFINITIONS.leptin.baseline,
+        adiponectin: HORMONE_DEFINITIONS.adiponectin.baseline,
+
         // Tireoidianos
         t3: HORMONE_DEFINITIONS.t3.baseline,
         t4: HORMONE_DEFINITIONS.t4.baseline,
         tsh: HORMONE_DEFINITIONS.tsh.baseline,
 
-        // Sinalização
-        mTORActivity: HORMONE_DEFINITIONS.mTORActivity.baseline,
+    };
+}
+
+function initializeCellularSignaling() {
+    return {
+        mTorActivity: 50,
+        ampkActivity: 24,
+        autophagyActivity: 20,
+        unfoldedProteinResponse: 8,
     };
 }
 
@@ -156,6 +176,8 @@ function initializeCardiovascularState(): CardiovascularState {
         heartRate: 70,           // bpm - Repouso normal
         heartRateVariability: 50, // ms - RMSSD normal
         rhythm: 'sinus',
+        arrhythmiaRisk: 3,
+        baroreflexActivity: 0,
 
         // Pressão Arterial
         systolicBP: 120,         // mmHg - Normal
@@ -171,7 +193,7 @@ function initializeCardiovascularState(): CardiovascularState {
         systemicVascularResistance: 1000, // dyn·s/cm⁵ - Normal
 
         // Perfusão
-        perfusionIndex: 85,      // % - Boa perfusão periférica
+        perfusionIndex: 100,     // % - Perfusão sistêmica relativa ao basal
     };
 }
 
@@ -210,6 +232,12 @@ function initializeAcidBaseBalance(): AcidBaseBalance {
         pco2: 40,                // mmHg - Normal
         baseExcess: 0,           // mmol/L - Sem excesso ou déficit de base
         anionGap: 12,            // mmol/L - Normal
+        correctedAnionGap: 12,
+        deltaRatio: null,
+        expectedCompensation: null,
+        expectedCompensationLabel: 'Sem compensação esperada fora do basal',
+        interpretation: 'Sem distúrbio ácido-base primário detectável',
+        mixedDisorder: false,
         state: 'normal',
         compensationActive: false,
         compensationRate: 0,

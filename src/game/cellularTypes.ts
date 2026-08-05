@@ -5,7 +5,7 @@
  */
 
 import type { HormoneActionId } from './config/hormones';
-import type { HypothalamicSignalId } from './hypothalamus';
+import type { CentralRegulatorySignalId } from './centralRegulation';
 import type { ScenarioNarrativeState } from './scenarioNarrative';
 
 export type SubstrateKind = 'glucose' | 'oxygen' | 'fattyAcid' | 'aminoAcid';
@@ -130,7 +130,7 @@ export interface DecisionResourceRequirement {
 
 export type DecisionSignalId =
     | `hormone:${HormoneActionId}`
-    | `central:${HypothalamicSignalId}`;
+    | `central:${CentralRegulatorySignalId}`;
 
 export interface DecisionSignalRequirement {
     /** Um dos sinais listados é suficiente para cumprir este requisito. */

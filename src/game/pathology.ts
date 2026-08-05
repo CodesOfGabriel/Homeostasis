@@ -21,7 +21,9 @@ export const DISEASE_PRESETS: DiseasePresetDefinition[] = [
     { id: 'respiratory-failure', label: 'Falência respiratória', description: 'Baixa capacidade ventilatória com desigualdade V/Q e shunt.', mechanism: 'PAO₂ pode estar disponível, mas parte do sangue não é oxigenada.' },
     { id: 'renal-failure', label: 'Insuficiência renal', description: 'Queda de filtração e compensação hidroeletrolítica/ácido-base.', mechanism: 'GFR ↓ → retenção de K⁺/água e menor regeneração de bicarbonato.' },
     { id: 'sepsis', label: 'Sepse', description: 'Ativação imune, vasoplegia, leak capilar e disfunção mitocondrial.', mechanism: 'Infecção → inflamação → tônus/perfusão ↓, lactato e dano ↑.' },
+    { id: 'hypothyroidism', label: 'Hipotireoidismo primário', description: 'Falha da glândula com T4/T3 baixos e TSH compensatoriamente alto.', mechanism: 'Capacidade tireoidiana ↓ → T4/T3 ↓ → TSH ↑, TMB e termogênese ↓.' },
     { id: 'hyperthyroidism', label: 'Hipertireoidismo', description: 'Excesso sustentado do eixo tireoidiano.', mechanism: 'T3/T4 ↑ → TMB, consumo de O₂, termogênese e sensibilidade adrenérgica ↑.' },
+    { id: 'cushing-syndrome', label: 'Síndrome de Cushing', description: 'Produção autônoma ou exposição persistente a cortisol.', mechanism: 'Cortisol cronicamente ↑ → gliconeogênese, resistência insulínica, pressão e catabolismo ↑.' },
     { id: 'adrenal-insufficiency', label: 'Insuficiência adrenal', description: 'Baixa reserva de cortisol sob estresse.', mechanism: 'Cortisol ↓ → menor tônus permissivo e menor suporte glicêmico.' },
 ];
 
@@ -30,7 +32,9 @@ export const createHealthyCapacities = (): PhysiologicalCapacities => ({
     insulinSensitivity: 1,
     hepaticGlucoseResponsiveness: 1,
     adrenalReserve: 1,
+    adrenalCortisolAutonomy: 0,
     thyroidGlandCapacity: 1,
+    leptinSensitivity: 1,
     renalFunction: 1,
     ventilatoryCapacity: 1,
     vascularToneResponsiveness: 1,
@@ -42,12 +46,17 @@ export const createHealthyCapacities = (): PhysiologicalCapacities => ({
 
 export const createInitialEndocrineState = (): EndocrineRegulationState => ({
     hpaDrive: .15,
+    crhDrive: .15,
+    acthDrive: .15,
     sympatheticDrive: .12,
     thyroidDrive: 1,
     insulinReceptorSensitivity: 1,
     adrenergicReceptorSensitivity: 1,
     glucocorticoidSensitivity: 1,
     anabolicSensitivity: 1,
+    leptinSensitivity: 1,
+    orexigenicDrive: .25,
+    anorexigenicDrive: .35,
     cortisolExposure: 10,
     catecholamineExposure: 8,
     thyroidExposure: 20,
@@ -55,10 +64,21 @@ export const createInitialEndocrineState = (): EndocrineRegulationState => ({
 
 export const createInitialRenalState = (): RenalRegulationState => ({
     gfr: 125,
+    renalBloodFlow: 1100,
     urineFlow: 1,
+    urineOsmolality: 500,
     adhActivity: 35,
     aldosteroneActivity: 35,
+    reninActivity: 20,
+    angiotensinIIActivity: 20,
     raasActivity: 20,
+    anpActivity: 20,
+    proximalReabsorption: 65,
+    distalSodiumReabsorption: 2,
+    freeWaterReabsorption: 70,
+    pthActivity: 35,
+    calcitriolActivity: 55,
+    epoActivity: 35,
 });
 
 export const createInitialPathophysiology = (): PathophysiologyState => ({
@@ -103,10 +123,14 @@ export function applyDiseasePreset(state: PhysiologyState, preset: DiseasePreset
         case 'type2-diabetes':
             capacities.insulinSensitivity = .32;
             capacities.pancreaticBetaReserve = .68;
+            capacities.leptinSensitivity = .42;
             endocrine.insulinReceptorSensitivity = .35;
+            endocrine.leptinSensitivity = .45;
             pathophysiology.diseaseBurden = 35;
             next.nutrients.bloodGlucose = 125;
             next.hormones.insulin = 22;
+            next.hormones.leptin = 24;
+            next.hormones.adiponectin = 5;
             break;
         case 'respiratory-failure':
             capacities.ventilatoryCapacity = .55;
@@ -130,6 +154,16 @@ export function applyDiseasePreset(state: PhysiologyState, preset: DiseasePreset
             pathophysiology.capillaryLeak = .32;
             next.allostaticLoad.inflammationLevel = 45;
             break;
+        case 'hypothyroidism':
+            capacities.thyroidGlandCapacity = .14;
+            endocrine.thyroidDrive = 1.8;
+            pathophysiology.diseaseBurden = 48;
+            next.hormones.t3 = 48;
+            next.hormones.t4 = 2.2;
+            next.hormones.tsh = 14;
+            next.bodyTemperature = 35.9;
+            next.cardiovascular.heartRate = 56;
+            break;
         case 'hyperthyroidism':
             capacities.thyroidGlandCapacity = 1.75;
             endocrine.thyroidDrive = 1.45;
@@ -137,6 +171,19 @@ export function applyDiseasePreset(state: PhysiologyState, preset: DiseasePreset
             next.hormones.t3 = 210;
             next.hormones.t4 = 14;
             next.hormones.tsh = .2;
+            break;
+        case 'cushing-syndrome':
+            capacities.adrenalCortisolAutonomy = .82;
+            capacities.insulinSensitivity = .48;
+            endocrine.insulinReceptorSensitivity = .52;
+            endocrine.cortisolExposure = 82;
+            pathophysiology.diseaseBurden = 58;
+            next.hormones.cortisol = 48;
+            next.hormones.insulin = 24;
+            next.nutrients.bloodGlucose = 148;
+            next.cardiovascular.systolicBP = 148;
+            next.cardiovascular.diastolicBP = 94;
+            next.cardiovascular.meanArterialPressure = 112;
             break;
         case 'adrenal-insufficiency':
             capacities.adrenalReserve = .12;

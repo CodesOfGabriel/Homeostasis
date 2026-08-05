@@ -29,11 +29,6 @@ export interface ScenarioLearningDefinition {
     causalChain: string[];
 }
 
-export interface ScenarioReasoningSubmission {
-    hypothesisId: string;
-    predictions: Record<string, PredictionDirection>;
-}
-
 export interface ScenarioPredictionAssessment {
     id: string;
     metricKey: ScenarioMetricKey;
@@ -42,31 +37,19 @@ export interface ScenarioPredictionAssessment {
     digits: number;
     initialValue: number;
     finalValue: number;
-    predictedDirection: PredictionDirection;
     observedDirection: PredictionDirection;
     adaptiveDirection: PredictionDirection;
-    predictionMatched: boolean;
     adaptiveTargetMatched: boolean;
 }
 
 export interface ScenarioLearningAssessment {
     outcome: RoutineDecisionOutcome;
-    hypothesisMatched: boolean;
-    hypothesisLabel: string;
-    predictionMatches: number;
     adaptiveTargetsMatched: number;
-    reasoningScore: number;
     predictions: ScenarioPredictionAssessment[];
     summary: string;
 }
 
 type ResolutionRisk = 'recoverable' | 'unstable' | 'catastrophic';
-
-const directionLabels: Record<PredictionDirection, string> = {
-    increase: 'subir',
-    decrease: 'cair',
-    stable: 'permanecer estável',
-};
 
 const hypothesis = (id: string, label: string, correct = false): MechanismHypothesis => ({ id, label, correct });
 const prediction = (
@@ -78,9 +61,8 @@ const prediction = (
 ): ScenarioPredictionPrompt => ({ id, metricKey, prompt, adaptiveDirection, threshold });
 
 /**
- * Camada pedagógica deliberadamente separada dos deltas do cenário. A escolha
- * aplica mecanismos; estas metas descrevem o que uma recuperação funcional
- * precisa produzir. Assim, o desfecho nasce da trajetória observada.
+ * Metas de recuperação separadas dos deltas de cada escolha. A intervenção
+ * aplica mecanismos e o desfecho nasce da trajetória realmente observada.
  */
 export const SCENARIO_LEARNING: Record<string, ScenarioLearningDefinition> = {
     'stair-climb': {
@@ -177,7 +159,7 @@ export const SCENARIO_LEARNING: Record<string, ScenarioLearningDefinition> = {
         ],
         predictions: [
             prediction('map', 'meanArterialPressure', 'Com retorno venoso e tônus restaurados, a PAM tende a…', 'increase', 2),
-            prediction('perfusion', 'perfusionIndex', 'Quando o retorno venoso melhora, o índice de perfusão tende a…', 'increase', 2),
+            prediction('perfusion', 'perfusionIndex', 'Quando o retorno venoso melhora, a perfusão sistêmica relativa tende a…', 'increase', 2),
         ],
         causalChain: ['ortostase reduz retorno venoso', 'barorreceptores elevam tônus e frequência', 'PAM e entrega tecidual se recuperam'],
     },
@@ -377,25 +359,60 @@ export const SCENARIO_LEARNING: Record<string, ScenarioLearningDefinition> = {
         ],
         causalChain: ['sangramento reduz volume e hemoglobina', 'taquicardia e vasoconstrição compensam temporariamente', 'controle da fonte e transfusão restauram entrega'],
     },
+    'fasting-orexigenic-switch': {
+        controlledVariable: 'oferta de energia diante do sinal orexígeno de jejum',
+        hypothesisPrompt: 'Grelina e NPY/AgRP representam abundância ou escassez de substrato?',
+        hypotheses: [hypothesis('fasting-signal', 'Grelina alta e leptina baixa recrutam NPY/AgRP para encerrar a escassez.', true)],
+        predictions: [
+            prediction('glucose', 'bloodGlucose', 'Depois da reposição proporcional, a glicose tende a…', 'increase', 2),
+            prediction('deficit', 'energyDeficit', 'Com substrato novamente disponível, o déficit energético tende a…', 'decrease', .5),
+        ],
+        causalChain: ['jejum eleva grelina e reduz sinal de reserva', 'NPY/AgRP aumenta drive alimentar', 'ingestão proporcional preserva glicose e ATP'],
+    },
+    'leptin-resistance-satiety': {
+        controlledVariable: 'saciedade compatível com a reserva adiposa e a carga pós-prandial',
+        hypothesisPrompt: 'Leptina alta garante saciedade quando a sensibilidade ao sinal está baixa?',
+        hypotheses: [hypothesis('leptin-resistance', 'A concentração está alta, mas a resposta central e metabólica está resistente.', true)],
+        predictions: [
+            prediction('glucose', 'bloodGlucose', 'Ao interromper a carga e melhorar a sensibilidade, a glicose tende a…', 'decrease', 3),
+            prediction('pomc', 'anorexigenicDrive', 'Com POMC/CART recrutado, o drive anorexígeno tende a…', 'increase', 2),
+        ],
+        causalChain: ['reserva adiposa eleva leptina', 'resistência central desacopla leptina de saciedade', 'adiponectina e POMC/CART restauram parte da resposta'],
+    },
+    'primary-hypothyroid-failure': {
+        controlledVariable: 'produção tireoidiana suficiente para sustentar metabolismo e termogênese',
+        hypothesisPrompt: 'TSH alto com T4/T3 baixos localiza a falha em qual ponto do eixo?',
+        hypotheses: [hypothesis('primary-thyroid-failure', 'A hipófise estimula, mas a glândula não produz hormônio suficiente.', true)],
+        predictions: [
+            prediction('t4', 't4', 'Com reposição gradual, T4 tende a…', 'increase', .3),
+            prediction('deficit', 'energyDeficit', 'Quando a demanda e a produção voltam a se acoplar, o déficit tende a…', 'decrease', .5),
+        ],
+        causalChain: ['glândula falha e T4/T3 caem', 'TSH sobe por perda de feedback', 'reposição gradual recupera metabolismo sem descarga adrenérgica'],
+    },
+    'thyrotoxic-decompensation': {
+        controlledVariable: 'demanda metabólica e cardiovascular sob excesso tireoidiano',
+        hypothesisPrompt: 'TSH suprimido com T3/T4 altos representa falta ou excesso de hormônio?',
+        hypotheses: [hypothesis('thyroid-excess', 'O tecido está superexposto a hormônio tireoidiano e catecolaminas.', true)],
+        predictions: [
+            prediction('heart-rate', 'heartRate', 'Ao reduzir o sinal tireoidiano, a frequência tende a…', 'decrease', 2),
+            prediction('temperature', 'temperature', 'Com menor termogênese, a temperatura tende a…', 'decrease', .1),
+        ],
+        causalChain: ['T3/T4 elevados suprimem TSH', 'sensibilidade adrenérgica e termogênese sobem', 'supressão do eixo e controle autonômico reduzem demanda'],
+    },
+    'cushing-metabolic-load': {
+        controlledVariable: 'exposição ao cortisol sem hiperglicemia, hipertensão e catabolismo progressivos',
+        hypothesisPrompt: 'O cortisol alto ainda é uma resposta proporcional ou passou a dirigir a doença?',
+        hypotheses: [hypothesis('cortisol-autonomy', 'A exposição autônoma sustenta glicose, pressão e proteólise.', true)],
+        predictions: [
+            prediction('cortisol', 'cortisol', 'Ao controlar a fonte, o cortisol tende a…', 'decrease', 1),
+            prediction('glucose', 'bloodGlucose', 'Com menor gliconeogênese e insulina efetiva, a glicose tende a…', 'decrease', 3),
+        ],
+        causalChain: ['cortisol autônomo sustenta gliconeogênese', 'sensibilidade insulínica cai e pressão sobe', 'controle da fonte e da glicose interrompe a cascata'],
+    },
 };
 
 export function getScenarioLearning(scenarioId: string): ScenarioLearningDefinition | undefined {
     return SCENARIO_LEARNING[scenarioId];
-}
-
-export function validateScenarioReasoning(
-    scenarioId: string,
-    reasoning: ScenarioReasoningSubmission | undefined,
-): { valid: boolean; missing: string[] } {
-    const learning = getScenarioLearning(scenarioId);
-    if (!learning) return { valid: true, missing: [] };
-    if (!reasoning) return { valid: false, missing: ['hipótese', 'duas previsões'] };
-
-    const missing: string[] = [];
-    if (!learning.hypotheses.some(option => option.id === reasoning.hypothesisId)) missing.push('hipótese');
-    const missingPredictions = learning.predictions.filter(item => !reasoning.predictions[item.id]);
-    if (missingPredictions.length > 0) missing.push(`${missingPredictions.length} previsão(ões)`);
-    return { valid: missing.length === 0, missing };
 }
 
 export function getObservedDirection(
@@ -412,20 +429,16 @@ export function assessScenarioLearning(
     scenarioId: string,
     onset: ScenarioMetricSnapshot,
     final: ScenarioMetricSnapshot,
-    reasoning: ScenarioReasoningSubmission,
     risk: ResolutionRisk,
 ): ScenarioLearningAssessment {
     const learning = getScenarioLearning(scenarioId);
     if (!learning) throw new Error(`Aprendizado do cenário ${scenarioId} não configurado.`);
 
-    const selectedHypothesis = learning.hypotheses.find(option => option.id === reasoning.hypothesisId);
-    const hypothesisMatched = Boolean(selectedHypothesis?.correct);
     const predictions = learning.predictions.map(item => {
         const definition = SCENARIO_METRIC_CATALOG[item.metricKey];
         const initialValue = onset.values[item.metricKey];
         const finalValue = final.values[item.metricKey];
         const observedDirection = getObservedDirection(initialValue, finalValue, item.threshold);
-        const predictedDirection = reasoning.predictions[item.id];
         return {
             id: item.id,
             metricKey: item.metricKey,
@@ -434,14 +447,11 @@ export function assessScenarioLearning(
             digits: definition.digits,
             initialValue,
             finalValue,
-            predictedDirection,
             observedDirection,
             adaptiveDirection: item.adaptiveDirection,
-            predictionMatched: predictedDirection === observedDirection,
             adaptiveTargetMatched: item.adaptiveDirection === observedDirection,
         };
     });
-    const predictionMatches = predictions.filter(item => item.predictionMatched).length;
     const adaptiveTargetsMatched = predictions.filter(item => item.adaptiveTargetMatched).length;
     let outcome: RoutineDecisionOutcome = adaptiveTargetsMatched === predictions.length
         ? 'adaptive'
@@ -452,21 +462,12 @@ export function assessScenarioLearning(
     if (risk === 'catastrophic') {
         outcome = outcome === 'adaptive' ? 'partial' : 'harmful';
     }
-    const reasoningScore = (Number(hypothesisMatched) + predictionMatches) / (predictions.length + 1);
     const outcomeLabel = outcome === 'adaptive' ? 'recuperação funcional' : outcome === 'partial' ? 'resposta parcial' : 'descompensação';
-    const summary = `${outcomeLabel}: ${adaptiveTargetsMatched}/${predictions.length} metas fisiológicas seguiram a direção necessária. Hipótese ${hypothesisMatched ? 'compatível' : 'incompatível'}; ${predictionMatches}/${predictions.length} previsões coincidiram com a trajetória.`;
+    const summary = `${outcomeLabel}: ${adaptiveTargetsMatched}/${predictions.length} metas fisiológicas seguiram a direção necessária.`;
     return {
         outcome,
-        hypothesisMatched,
-        hypothesisLabel: selectedHypothesis?.label ?? 'Hipótese não reconhecida',
-        predictionMatches,
         adaptiveTargetsMatched,
-        reasoningScore,
         predictions,
         summary,
     };
-}
-
-export function getPredictionDirectionLabel(direction: PredictionDirection): string {
-    return directionLabels[direction];
 }

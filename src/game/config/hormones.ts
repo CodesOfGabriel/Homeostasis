@@ -7,7 +7,10 @@ export type SafetyRuleId =
     | 'cardiac-catecholamine'
     | 'energy-for-cortisol'
     | 'substrate-for-anabolism'
-    | 'cardiac-thyroid';
+    | 'cardiac-thyroid'
+    | 'glucose-for-satiety'
+    | 'thyroid-excess-for-suppression'
+    | 'cortisol-excess-for-suppression';
 export type HormoneEffectModelId =
     | 'insulin'
     | 'glucagon'
@@ -16,7 +19,8 @@ export type HormoneEffectModelId =
     | 'growth-axis'
     | 'androgen'
     | 'thyroid'
-    | 'mtor';
+    | 'appetite-axis'
+    | 'adipokine';
 
 export interface HormoneDefinition {
     label: string;
@@ -35,10 +39,12 @@ export const HORMONE_DEFINITIONS: Record<HormoneKey, HormoneDefinition> = {
     glucagon: { label: 'Glucagon', unit: 'pg/mL', baseline: 80, halfLifeSeconds: 6 * 60, upperLimit: 1000 },
     adrenaline: { label: 'Adrenalina', unit: 'pg/mL', baseline: 30, halfLifeSeconds: 2 * 60, upperLimit: 3000 },
     noradrenaline: { label: 'Noradrenalina', unit: 'pg/mL', baseline: 200, halfLifeSeconds: 2.5 * 60, upperLimit: 5000 },
+    ghrelin: { label: 'Grelina', unit: 'pg/mL', baseline: 600, halfLifeSeconds: 30 * 60, upperLimit: 2500 },
+    leptin: { label: 'Leptina', unit: 'ng/mL', baseline: 10, halfLifeSeconds: 28 * 60, upperLimit: 100 },
+    adiponectin: { label: 'Adiponectina', unit: 'μg/mL', baseline: 10, halfLifeSeconds: 2.5 * 60 * 60, upperLimit: 50 },
     t3: { label: 'Triiodotironina', unit: 'ng/dL', baseline: 120, halfLifeSeconds: 24 * 60 * 60, upperLimit: 800 },
     t4: { label: 'Tiroxina', unit: 'μg/dL', baseline: 8, halfLifeSeconds: 7 * 24 * 60 * 60, upperLimit: 60 },
     tsh: { label: 'TSH', unit: 'μIU/mL', baseline: 2, halfLifeSeconds: 50 * 60, upperLimit: 100 },
-    mTORActivity: { label: 'Atividade da via mTOR', unit: '%', baseline: 50, halfLifeSeconds: 15 * 60, upperLimit: 100 },
 };
 
 export interface HormoneActionDefinition {
@@ -52,6 +58,7 @@ export interface HormoneActionDefinition {
     infusionSeconds: number;
     cooldownSeconds: number;
     metabolicCost: number;
+    effectDirection?: 'increase' | 'decrease';
     category: HormoneCategory;
     safetyRules: SafetyRuleId[];
     effectModel: HormoneEffectModelId;
@@ -125,13 +132,58 @@ export const HORMONAL_ACTIONS = [
         expectedDirections: ['TMB ↑ lento', 'temperatura ↗', 'FC ↗'], latency: 'horas a dias biológicos',
     },
     {
-        id: 'boost-mtor', name: 'Ativar via mTOR', shortName: 'mTOR',
-        description: 'Ativa a via anabólica apenas quando aminoácidos, insulina e ATP permitem.',
-        hormone: 'mTORActivity', dose: 30, bolusFraction: .25, infusionSeconds: 90,
-        cooldownSeconds: 1800, metabolicCost: 1, category: 'anabolic',
-        safetyRules: ['substrate-for-anabolism'], effectModel: 'mtor',
-        implementedEffects: ['Síntese proteica dependente de energia', 'Sinal de crescimento muscular'],
-        expectedDirections: ['síntese proteica ↑', 'demanda de ATP ↑'], latency: 'minutos simulados',
+        id: 'signal-ghrelin', name: 'Sinalizar Grelina', shortName: 'Grelina',
+        description: 'Reforça o sinal pré-prandial que recruta NPY/AgRP e prepara ingestão e mobilização de energia.',
+        hormone: 'ghrelin', dose: 500, bolusFraction: .25, infusionSeconds: 90,
+        cooldownSeconds: 300, metabolicCost: .25, category: 'regulatory',
+        safetyRules: [], effectModel: 'appetite-axis',
+        implementedEffects: ['Drive orexígeno', 'Recrutamento de NPY/AgRP', 'Pulso permissivo de GH'],
+        expectedDirections: ['grelina ↑', 'fome ↑', 'NPY/AgRP ↑'], latency: 'minutos biológicos',
+    },
+    {
+        id: 'signal-leptin', name: 'Sinalizar Leptina', shortName: 'Leptina',
+        description: 'Informa suficiência da reserva adiposa e favorece POMC/CART quando há sensibilidade ao sinal.',
+        hormone: 'leptin', dose: 10, bolusFraction: .2, infusionSeconds: 180,
+        cooldownSeconds: 600, metabolicCost: .35, category: 'regulatory',
+        safetyRules: ['glucose-for-satiety'], effectModel: 'appetite-axis',
+        implementedEffects: ['Drive POMC/CART', 'Inibição relativa de NPY/AgRP', 'Sinal de reserva energética'],
+        expectedDirections: ['leptina ↑', 'saciedade ↑', 'drive orexígeno ↓'], latency: 'minutos a horas biológicas',
+    },
+    {
+        id: 'increase-adiponectin', name: 'Aumentar Adiponectina', shortName: 'Adiponectina',
+        description: 'Melhora a sensibilidade periférica à insulina e favorece o uso metabólico de ácidos graxos.',
+        hormone: 'adiponectin', dose: 8, bolusFraction: .15, infusionSeconds: 300,
+        cooldownSeconds: 900, metabolicCost: .45, category: 'regulatory',
+        safetyRules: [], effectModel: 'adipokine',
+        implementedEffects: ['Sensibilidade à insulina', 'Oxidação de ácidos graxos', 'Menor pressão lipotóxica'],
+        expectedDirections: ['adiponectina ↑', 'sensibilidade insulínica ↑', 'AGL ↘'], latency: 'horas biológicas',
+    },
+    {
+        id: 'replace-t4', name: 'Repor T4', shortName: 'T4',
+        description: 'Repõe gradualmente substrato tireoidiano quando a glândula falha, respeitando a reserva cardiovascular.',
+        hormone: 't4', dose: 5, bolusFraction: .08, infusionSeconds: 600,
+        cooldownSeconds: 3600, metabolicCost: .5, category: 'regulatory',
+        safetyRules: ['cardiac-thyroid'], effectModel: 'thyroid',
+        implementedEffects: ['Reposição de T4', 'Conversão periférica gradual para T3', 'Recuperação lenta da TMB'],
+        expectedDirections: ['T4 ↑ lento', 'T3 ↗ lento', 'TSH ↓ tardio'], latency: 'horas a dias biológicos',
+    },
+    {
+        id: 'suppress-thyroid', name: 'Reduzir sinal tireoidiano', shortName: 'T3 ↓',
+        description: 'Reduz a exposição efetora ao T3 durante excesso tireoidiano sustentado.',
+        hormone: 't3', dose: 70, bolusFraction: .12, infusionSeconds: 300, effectDirection: 'decrease',
+        cooldownSeconds: 1200, metabolicCost: .55, category: 'regulatory',
+        safetyRules: ['thyroid-excess-for-suppression'], effectModel: 'thyroid',
+        implementedEffects: ['Redução do sinal de T3', 'Menor termogênese', 'Menor sensibilização adrenérgica'],
+        expectedDirections: ['T3 ↓', 'temperatura ↓', 'demanda cardíaca ↓'], latency: 'minutos a horas simuladas',
+    },
+    {
+        id: 'inhibit-cortisol', name: 'Reduzir Cortisol', shortName: 'Cortisol ↓',
+        description: 'Reduz o excesso glucocorticoide quando a exposição sustentada domina glicose, pressão e catabolismo.',
+        hormone: 'cortisol', dose: 24, bolusFraction: .18, infusionSeconds: 240, effectDirection: 'decrease',
+        cooldownSeconds: 900, metabolicCost: .6, category: 'regulatory',
+        safetyRules: ['cortisol-excess-for-suppression'], effectModel: 'glucocorticoid',
+        implementedEffects: ['Redução de cortisol', 'Menor gliconeogênese', 'Menor proteólise e suporte mineralocorticoide'],
+        expectedDirections: ['cortisol ↓', 'glicose ↓', 'exposição HPA ↓'], latency: 'minutos a horas simuladas',
     },
 ] as const satisfies readonly HormoneActionDefinition[];
 

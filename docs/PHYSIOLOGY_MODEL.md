@@ -152,16 +152,16 @@ absorção gastrointestinal = min(300, água pendente × 0,9) mL/min
 
 A água não entra instantaneamente na água corporal total; toda a dose entra primeiro no reservatório gastrointestinal. O tempo é comprimido para feedback de gameplay em dezenas de segundos.
 
-### 4.2 GFR e reabsorção
+### 4.2 TFG, segmentos e água livre
 
 O basal usa 125 mL/min, mas a GFR agora depende de capacidade renal, PAM, débito e sepse:
 
 ```text
-GFR alvo = 125 × capacidade renal × fator de perfusão × penalidade séptica
-fluxo urinário = GFR × (1 - reabsorção efetiva/100)
+TFG alvo = 125 × capacidade renal × fator de perfusão × penalidade séptica
+fluxo urinário = TFG × (1 - reabsorção efetiva/100)
 ```
 
-Não há controle direto de reabsorção na interface. O modo **Hipotálamo** da central flutuante permite recrutar ou suprimir o circuito osmorreceptor/ADH; esse sinal gera internamente um comando de 98,6–99,78%, que ainda é combinado com ADH endógeno, cortisol e o clamp defensivo de 95–99,9%. RAAS, aldosterona, osmolaridade e perfusão têm estados explícitos.
+O modelo separa reabsorção proximal obrigatória, manejo distal de Na⁺ por aldosterona e água livre no ducto coletor por ADH/AQP2. TFG, fluxo renal, débito urinário e osmolaridade urinária permanecem grandezas distintas. A regulação central oferece os sinais osmóticos; renina → angiotensina II → aldosterona e ANP respondem endogenamente a perfusão e volume.
 
 ### 4.3 Balanço de água
 
@@ -427,7 +427,7 @@ A suscetibilidade à infecção cresce com perda de viabilidade, dano de membran
 
 A partir de 15 s o motor pode impor uma situação. Exercício, estresse, disponibilidade nutricional, sono e temperatura são entradas internas do evento: não existem sliders ou setters públicos para o jogador criar o contexto. Definições, contexto, cooldown, perturbação inicial e consequências ficam em [`scenarios.ts`](../src/game/scenarios.ts).
 
-Quando um evento começa, sua perturbação macro e celular é aplicada e o relógio congela. A sidebar de investigação permanece sobre qualquer aba e a simulação só continua depois da escolha de um caminho. Antes de intervir, o jogador precisa selecionar uma hipótese mecanística e registrar a direção prevista de duas métricas. Não existe expiração que permita ignorar o evento.
+Quando um evento começa, sua perturbação macro e celular é aplicada e o relógio congela. A sidebar de investigação permanece sobre qualquer aba e a simulação só continua depois da escolha de um caminho. O jogador pode escolher diretamente assim que os sinais e recursos exigidos estiverem preparados; não existe uma etapa obrigatória de hipótese ou previsão, nem expiração que permita ignorar o evento.
 
 Enquanto o relógio está congelado, o jogador pode navegar pelas escalas e preparar metabolismo e sinalização: captar substratos, executar glicólise, oxidar piruvato ou ácido graxo e recrutar respostas hormonais/centrais. Essa preparação altera pools e comandos pendentes, mas não avança o tempo nem cria outro evento. Cada escolha declara requisitos mínimos e custos de ATP, O₂, glicose, ácido graxo, aminoácido, piruvato ou antioxidantes. Se faltar qualquer recurso ou sinal, o caminho fica visivelmente bloqueado e informa o que falta; caminhos sem custo permanecem disponíveis para que a decisão obrigatória nunca se transforme em deadlock.
 
@@ -439,10 +439,15 @@ Enquanto o relógio está congelado, o jogador pode navegar pelas escalas e prep
 | Microlesão muscular | esforço excêntrico 72% | priorizar reparo proteico | continuar esforço e adiar reparo |
 | Desafio imune agudo | infecção, estresse 76%, sono ruim | defesa proporcional com antioxidantes | imunossupressão intensa precoce |
 | Onda de calor | ambiente 39 °C e perda hídrica | conservar água e dissipar calor | aumentar atividade e adrenalina |
+| Alternância orexígena do jejum | grelina alta e baixa disponibilidade energética | integrar grelina e NPY/AgRP à realimentação | impor POMC/CART e leptina durante o jejum |
+| Resistência à leptina | adiposidade, hiperleptinemia e resistência insulínica | elevar adiponectina e recrutar POMC/CART | intensificar grelina e NPY/AgRP |
+| Falência tireoidiana primária | T4/T3 baixos, TSH alto, bradicardia e hipotermia | reposição gradual de T4 | descarga adrenérgica isolada |
+| Descompensação tireotóxica | T3 alto, hipertermia e demanda cardíaca elevada | reduzir sinal tireoidiano e demanda autonômica | acrescentar T3 e adrenalina |
+| Síndrome de Cushing | autonomia de cortisol, resistência insulínica e hipertensão | reduzir cortisol e controlar hiperglicemia | ampliar a exposição a glicocorticoide |
 
-Cada opção possui efeitos celulares e sistêmicos explícitos, mas não declara antecipadamente um `outcome`. Antes de aplicá-los, [`scenarioResolution.ts`](../src/game/scenarioResolution.ts) soma a pressão do evento a catecolaminas, cortisol, T3, ação efetiva de insulina/glucagon, drive anabólico, eixo hipotalâmico, carga alostática, doença, reservas, viabilidade e compromisso apoptótico. Essa etapa calcula responsividade e risco reversível, instável ou catastrófico sem decidir o desfecho.
+Cada opção possui efeitos celulares e sistêmicos explícitos, mas não declara antecipadamente um `outcome`. Antes de aplicá-los, [`scenarioResolution.ts`](../src/game/scenarioResolution.ts) soma a pressão do evento a catecolaminas, cortisol, T3, ação efetiva de insulina/glucagon, sinalização mTOR/AMPK, regulação central, carga alostática, doença, reservas, viabilidade e compromisso apoptótico. Essa etapa calcula responsividade e risco reversível, instável ou catastrófico sem decidir o desfecho.
 
-Ao final da trajetória, [`scenarioLearning.ts`](../src/game/scenarioLearning.ts) compara o snapshot inicial ao estado realmente alcançado. Duas metas fisiológicas por caso determinam `adaptive`, `partial` ou `harmful`; risco catastrófico pode rebaixar uma resposta aparentemente favorável. A hipótese e as previsões do jogador são avaliadas separadamente, permitindo prever corretamente uma piora sem transformar essa piora em sucesso fisiológico. O debrief exibe valores inicial/final, previsão, direção observada, meta homeostática e cadeia causal.
+Ao final da trajetória, [`scenarioLearning.ts`](../src/game/scenarioLearning.ts) compara o snapshot inicial ao estado realmente alcançado. Duas metas fisiológicas por caso determinam `adaptive`, `partial` ou `harmful`; risco catastrófico pode rebaixar uma resposta aparentemente favorável. O debrief exibe valores iniciais e finais, direção observada, meta homeostática e cadeia causal, sem exigir um formulário anterior à escolha.
 
 O motor sistêmico gera uma avaliação periódica a cada 30 s. Eventos celulares cruzando viabilidade de 70% ou 35% geram avisos adicionais na timeline.
 
@@ -478,11 +483,15 @@ Respostas prejudiciais não recebem recompensa. Variantes e efeitos raros exigem
 
 Cada adaptação tem quatro níveis. Os marcadores de elegibilidade perdem progresso quando o parâmetro sai da faixa, impedindo recompensa por mera passagem de tempo. Ao resolver uma janela, parte do marcador correspondente é consumida para que o mesmo estado não produza ofertas em sequência imediata.
 
+Além das adaptações da sessão, [`mastery.ts`](../src/game/mastery.ts) mantém progressão local por perfusão, ventilação, metabolismo, eletrólitos, inflamação e endocrinologia. Cada caso pontua coerência fisiológica, trajetória favorável, estabilidade, tempo clínico, parcimônia de sinais e segurança iatrogênica. Marcos de nível multiplicam apenas a aquisição futura daquele domínio em passos pequenos de 4%; não alteram a fisiologia do fenótipo. Nível 2 demonstrado em dois casos distintos libera a automação correspondente; mecanismos como Winter, Frank–Starling, Bohr, barorreflexo e feedback túbulo-glomerular formam uma coleção. Depois de 12 casos e nível 2 nos seis domínios, o prestígio inicia um fenótipo desbloqueado e preserva conhecimento, não reservas biológicas.
+
 ## 13. Leitura clínica da interface
 
-A aba sistêmica apresenta os dados por prioridade de decisão: primeiro frequência e ritmo cardíacos, pressão/PAM, SpO₂, frequência respiratória, perfusão e débito cardíaco; em seguida gasometria/ácido-base, lactato, glicemia, cetonas, GFR, eletrólitos, temperatura, água corporal e déficit energético. O painel e os setters de contexto fisiológico, o seletor de doenças e os controles diretos de FC, ventilação e reabsorção foram removidos da interface. Hormônios e Hipotálamo agora ocupam dois modos da mesma central flutuante global, preservada em todas as quatro etapas. Defesa e Genoma formam uma única etapa de manutenção, sem aba duplicada.
+A navegação segue **Organismo → Tecido → Célula → Mitocôndria**, sempre com ícone e rótulo. Organismo começa pela avaliação primária: ritmo/FC, pressão/PAM, SpO₂/FR, temperatura, perfusão relativa ao basal e no máximo três alertas. Gasometria, eletrólitos, metabolismo e rim só aparecem após uma solicitação explícita em **Investigar**. O modo **Comparar escalas** fixa cadeias como PaO₂ → PO₂ tecidual → ATP. Célula organiza homeostase, integridade e destino ao redor de um esquema clicável. Sinalização hormonal, decisão clínica e adaptação usam um gerenciador contextual para não competir simultaneamente.
 
-O ECG é sintético e educacional. A velocidade do traçado é proporcional à frequência cardíaca do modelo; irregularidade e fibrilação alteram a forma do traçado sem representar um dispositivo diagnóstico.
+O coração anatômico e o ECG sintético continuam animados dentro de **Avaliação primária**. A velocidade do traçado é proporcional à frequência do modelo e sua fase não reinicia quando o BPM muda. Ritmo sinusal, bradicardia, taquicardia supraventricular, fibrilação atrial, taquicardia ventricular e fibrilação ventricular têm morfologias/efeitos hemodinâmicos separados. Frequência alta isolada nunca produz fibrilação ventricular: a transição depende do substrato formado por K⁺, hipóxia, acidemia, isquemia, dano miocárdico, catecolaminas e uma janela determinística controlada.
+
+A leitura ácido–base usa cloreto real, albumina e ânion gap corrigido. O interpretador calcula fórmula de Winter, compensação esperada nas quatro alterações primárias, delta ratio e processos mistos mesmo com pH quase normal. O valor exibido é identificado como excesso de base estimado.
 
 ## 14. Warnings e falência
 
@@ -503,7 +512,7 @@ Condições terminais implementadas:
 
 - pH <6,8 ou >7,8;
 - FC <20 ou >250 bpm;
-- fibrilação;
+- fibrilação ventricular;
 - SpO₂ <55%;
 - funcionalidade cerebral ou cardíaca ≤5%.
 
@@ -511,18 +520,18 @@ Esses limites são regras do simulador e não substituem prognóstico clínico, 
 
 ## 15. Limitações conhecidas
 
-- Um único adulto padrão de 70 kg; idade, sexo, composição corporal e doença não parametrizam todo o modelo.
+- Os fenótipos atleta, idoso, diabetes tipo 2 e doença renal crônica alteram reservas selecionadas, mas idade, sexo e composição corporal ainda não parametrizam todo o modelo.
 - Um único voxel genérico de tecido metabolicamente ativo, sem especialização muscular, neural, hepática ou renal.
 - O acoplamento micro → macro usa sinais agregados de lactato, CO₂, inflamação, falha de barreira, apoptose e viabilidade; os pools celulares ainda não conservam massa diretamente com os pools sistêmicos.
 - Pacotes de substrato e rendimentos de ATP são normalizados para gameplay.
-- Osmolaridade usa um proxy; ureia, proteínas e cloreto não têm balanço completo.
-- Rim ainda não possui segmentos do néfron ou medula renal detalhada; GFR, RAAS, ADH, aldosterona e fluxo urinário são controladores agregados.
-- Ácido-base não resolve todos os tampões, eletroneutralidade completa ou compensações clínicas por fórmulas específicas.
-- Troca gasosa usa equação alveolar e curva de Hill simplificadas, sem shunt, V/Q regional ou hemoglobina variável.
+- Osmolaridade usa um proxy; ureia e balanço proteico/eletrolítico completo não são conservados.
+- Rim distingue componentes proximal, distal e água livre, mas ainda não resolve todos os segmentos do néfron ou o gradiente medular.
+- Ácido-base interpreta compensações clínicas, mas não resolve eletroneutralidade e todos os tampões de forma mecanística.
+- Troca gasosa usa equação alveolar e curva de Hill simplificadas com shunt e V/Q agregados; ainda não modela regiões pulmonares nem uma curva Hb–O₂ completa dependente de temperatura e 2,3-BPG.
 - Pressão arterial e perfusão são relações normalizadas, não um sistema hemodinâmico fechado.
 - ROS, dano, reparo e viabilidade são índices normalizados sem correspondência direta com biomarcadores laboratoriais.
 - A seleção de cenários é contextual e determinística pelo maior peso elegível; não representa incidência epidemiológica.
-- Os comandos internos de FC, ventilação e reabsorção são derivados dos circuitos hipotalâmicos; nenhum deles é exposto como meta ou slider voluntário.
+- Os comandos internos de FC, ventilação e água livre são derivados de circuitos autonômicos, bulbares e osmóticos; nenhum deles é exposto como meta ou slider voluntário.
 
 ## 16. Uso educacional responsável
 

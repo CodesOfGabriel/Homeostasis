@@ -7,23 +7,12 @@ import {
   getObservedDirection,
   getScenarioLearning,
   SCENARIO_LEARNING,
-  validateScenarioReasoning,
-  type ScenarioReasoningSubmission,
 } from './scenarioLearning';
 import {
   applyScenarioPhysiologyEffects,
   getScenarioChoice,
   SCENARIO_DEFINITIONS,
 } from './scenarios';
-
-function adaptiveReasoning(scenarioId: string): ScenarioReasoningSubmission {
-  const learning = getScenarioLearning(scenarioId);
-  if (!learning) throw new Error(`Aprendizado ausente para ${scenarioId}`);
-  return {
-    hypothesisId: learning.hypotheses.find(option => option.correct)?.id ?? '',
-    predictions: Object.fromEntries(learning.predictions.map(item => [item.id, item.adaptiveDirection])),
-  };
-}
 
 function assessChoice(scenarioId: string, choiceId: string) {
   const definition = SCENARIO_DEFINITIONS.find(item => item.id === scenarioId);
@@ -38,13 +27,12 @@ function assessChoice(scenarioId: string, choiceId: string) {
     scenarioId,
     onset,
     createScenarioMetricSnapshot(finalPhysiology, finalCellular),
-    adaptiveReasoning(scenarioId),
     'recoverable',
   );
 }
 
 describe('aprendizado causal dos cenários', () => {
-  it('cobre todos os cenários com hipótese e exatamente duas previsões mensuráveis', () => {
+  it('cobre todos os cenários com duas metas mensuráveis de recuperação', () => {
     expect(Object.keys(SCENARIO_LEARNING)).toHaveLength(SCENARIO_DEFINITIONS.length);
     SCENARIO_DEFINITIONS.forEach(definition => {
       const learning = getScenarioLearning(definition.id);
@@ -55,21 +43,13 @@ describe('aprendizado causal dos cenários', () => {
     });
   });
 
-  it('bloqueia raciocínio incompleto antes de permitir a intervenção', () => {
-    expect(validateScenarioReasoning('stair-climb', undefined)).toEqual({
-      valid: false,
-      missing: ['hipótese', 'duas previsões'],
-    });
-    expect(validateScenarioReasoning('stair-climb', adaptiveReasoning('stair-climb')).valid).toBe(true);
-  });
-
   it('classifica a trajetória pelas métricas e não por um rótulo na escolha', () => {
     expect(assessChoice('stair-climb', 'stair-aerobic').outcome).toBe('adaptive');
     expect(assessChoice('stair-climb', 'stair-glycolytic').outcome).toBe('harmful');
     expect(assessChoice('hyperosmolar-renal-conflict', 'hyperosmolar-volume-only').outcome).toBe('partial');
   });
 
-  it('reconhece a trajetória restauradora configurada em todos os 21 casos', () => {
+  it('reconhece a trajetória restauradora configurada em todos os casos', () => {
     SCENARIO_DEFINITIONS.forEach(definition => {
       expect(
         assessChoice(definition.id, definition.choices[0].id).outcome,

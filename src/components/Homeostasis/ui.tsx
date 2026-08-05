@@ -34,8 +34,8 @@ export function HelpTip({ title, children, align = 'left' }: { title: string; ch
         <HelpCircle className="size-3.5"/>
       </summary>
       <div className={cn('absolute top-7 z-40 w-64 rounded-lg border border-primary/25 bg-[#111722]/95 p-3 text-left shadow-2xl backdrop-blur-xl', align === 'right' ? 'right-0' : 'left-0')}>
-        <strong className="block text-[10px] uppercase tracking-wider text-primary">{title}</strong>
-        <div className="mt-1.5 text-[10px] normal-case leading-relaxed tracking-normal text-muted-foreground">{children}</div>
+        <strong className="block text-[11px] uppercase tracking-wider text-primary">{title}</strong>
+        <div className="mt-1.5 text-[11px] normal-case leading-relaxed tracking-normal text-muted-foreground">{children}</div>
       </div>
     </details>
   );
@@ -70,10 +70,10 @@ export function MetricCard({ label, value, unit, detail, history, color = 'var(-
       <PanelLabel>{label}</PanelLabel>
       <div className="mt-1 flex items-baseline gap-1">
         <strong className="font-display text-xl font-medium tabular-nums text-foreground">{value}</strong>
-        {unit && <span className="text-[10px] text-muted-foreground">{unit}</span>}
+        {unit && <span className="text-[11px] text-muted-foreground">{unit}</span>}
         <span className={cn('ml-auto size-2 rounded-full', good ? 'bg-good shadow-[0_0_8px_var(--good)]' : 'bg-warning shadow-[0_0_8px_var(--warning)]')} />
       </div>
-      {detail && <p className="mt-1 text-[10px] text-muted-foreground">{detail}</p>}
+      {detail && <p className="mt-1 text-[11px] text-muted-foreground">{detail}</p>}
       {history && <div className="mt-2"><Sparkline data={history} color={color} height={25} /></div>}
     </GlassPanel>
   );
