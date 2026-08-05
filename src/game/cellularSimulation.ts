@@ -35,6 +35,43 @@ const FATTY_ACID_ATP_YIELD = 0.85;
 export const AUTOMATION_MAX_LEVEL = 4;
 export const CELLULAR_OPTIMIZATION_BUDGET = 8;
 
+export interface CellularAutomationPerformance {
+    autoCaptureCapacityPerSecond: SubstratePool;
+    automaticGlycolysisCapacityPerSecond: number;
+    oxidativeCapacityMultiplier: number;
+    automaticFattyAcidOxidationPerSecond: number;
+    automaticRepairAtpPerSecond: number;
+    automaticDamageRepairPerSecond: number;
+}
+
+/**
+ * Perfil quantitativo das automações usado pelo motor e pela interface.
+ * As capacidades são limites basais; demanda, sinais hormonais, gradientes,
+ * espaço nos pools e integridade mitocondrial continuam sendo necessários.
+ */
+export function getCellularAutomationPerformance(
+    automation: Record<AutomationKind, number>,
+): CellularAutomationPerformance {
+    const transporterLevel = clamp(automation.transporters, 0, AUTOMATION_MAX_LEVEL);
+    const shuttleLevel = clamp(automation.mitochondrialShuttle, 0, AUTOMATION_MAX_LEVEL);
+    const repairLevel = clamp(automation.repair, 0, AUTOMATION_MAX_LEVEL);
+    const transporterFactor = 1 + transporterLevel * .12;
+    const repairAtp = .008 * repairLevel;
+    return {
+        autoCaptureCapacityPerSecond: createPool(
+            .014 + .018 * transporterLevel,
+            .085,
+            (.002 + .008 * transporterLevel) * transporterFactor,
+            (.003 + .009 * transporterLevel) * transporterFactor,
+        ),
+        automaticGlycolysisCapacityPerSecond: .012 + .004 * shuttleLevel,
+        oxidativeCapacityMultiplier: 1 + .18 * shuttleLevel,
+        automaticFattyAcidOxidationPerSecond: .004 * shuttleLevel,
+        automaticRepairAtpPerSecond: repairAtp,
+        automaticDamageRepairPerSecond: repairAtp * 7,
+    };
+}
+
 export function getAutomationRecipe(kind: AutomationKind, level: number): AutomationRecipe {
     const tier = clamp(level, 0, AUTOMATION_MAX_LEVEL - 1);
     if (kind === 'transporters') {
@@ -447,26 +484,22 @@ export function resolveRoutineDecision(
 }
 
 function autoCapture(state: CellularState, macro: PhysiologyState, dt: number) {
-    const level = state.automation.transporters;
     // A célula já possui transportadores constitutivos. A progressão compra
     // expressão/recrutamento adicional, não cria a fisiologia basal do zero.
-    const basalRates: SubstratePool = createPool(0.014, 0.085, 0.002, 0.003);
-    const levelRates: SubstratePool = createPool(0.018, 0.07, 0.008, 0.009);
+    const performance = getCellularAutomationPerformance(state.automation);
     const insulinAction = clamp(
         macro.hormones.insulin / 10 * macro.endocrine.insulinReceptorSensitivity,
         0,
         2,
     );
     const contractionRecruitment = clamp(macro.activityLevel / 100, 0, 1.2);
-    (Object.keys(basalRates) as SubstrateKind[]).forEach(kind => {
+    (Object.keys(performance.autoCaptureCapacityPerSecond) as SubstrateKind[]).forEach(kind => {
         // GLUT4 responde à insulina e à contração muscular. O₂, por outro
         // lado, atravessa por difusão e não recebe bônus de "transportador".
         const transporterFactor = kind === 'glucose'
             ? clamp(.3 + insulinAction * .45 + contractionRecruitment * .7, .2, 1.8)
-            : kind === 'oxygen'
-                ? 1
-                : 1 + level * .12;
-        const rate = (basalRates[kind] + levelRates[kind] * (kind === 'oxygen' ? 0 : level)) * transporterFactor;
+            : 1;
+        const rate = performance.autoCaptureCapacityPerSecond[kind] * transporterFactor;
         const amount = Math.min(
             state.pools.available[kind],
             Math.max(0, CAPTURED_POOL_CAPS[kind] - state.pools.captured[kind]),
@@ -492,7 +525,7 @@ function automaticMetabolism(
     metabolicDemand: number,
     dt: number,
 ): AutomaticMetabolismResult {
-    const level = state.automation.mitochondrialShuttle;
+    const performance = getCellularAutomationPerformance(state.automation);
     const headroom = Math.max(0, MAX_ATP - state.cell.atpMmolL);
     const availableAdp = Math.max(0, state.cell.adpMmolL - 0.2);
     const productionTarget = Math.min(requestedAtp, headroom, availableAdp);
@@ -501,7 +534,7 @@ function automaticMetabolism(
     // Glicólise constitutiva fornece piruvato e um pequeno rendimento direto.
     const pyruvateNeeded = productionTarget / PYRUVATE_ATP_YIELD;
     const glucoseNeeded = Math.max(0, pyruvateNeeded - state.pools.pyruvate) / 2;
-    const maxGlycolysis = (0.012 + level * 0.004) * clamp(metabolicDemand, 0.6, 4) * dt;
+    const maxGlycolysis = performance.automaticGlycolysisCapacityPerSecond * clamp(metabolicDemand, 0.6, 4) * dt;
     const glucoseFlux = Math.min(state.pools.captured.glucose, glucoseNeeded, maxGlycolysis);
     state.pools.captured.glucose -= glucoseFlux;
     state.pools.pyruvate += glucoseFlux * 2;
@@ -510,7 +543,7 @@ function automaticMetabolism(
     const remainingTarget = Math.max(0, productionTarget - glycolyticAtp);
     const mitochondrialCapacity = clamp(state.mitochondria.healthPercent / 100, 0.1, 1)
         * clamp(oxygenFactor, 0, 1.2)
-        * (1 + level * 0.18);
+        * performance.oxidativeCapacityMultiplier;
     const maxPyruvateFlux = 0.025 * clamp(metabolicDemand, 0.5, 6) * mitochondrialCapacity * dt;
     const pyruvateFlux = Math.min(
         state.pools.pyruvate,
@@ -534,7 +567,7 @@ function automaticMetabolism(
         state.pools.captured.fattyAcid,
         state.pools.captured.oxygen / 6,
         afterPyruvate / FATTY_ACID_ATP_YIELD,
-        0.004 * level * mitochondrialCapacity * dt,
+        performance.automaticFattyAcidOxidationPerSecond * mitochondrialCapacity * dt,
     );
     if (fattyFlux > 0) {
         state.pools.captured.fattyAcid -= fattyFlux;
@@ -580,7 +613,8 @@ function autoRepair(state: CellularState, dt: number) {
         .reduce((worst, key) => state.damage[key] > state.damage[worst] ? key : worst, 'membrane');
     if (state.damage[target] <= 1) return 0;
 
-    const atpSpent = Math.min(state.cell.atpMmolL - 1, 0.008 * level * dt);
+    const performance = getCellularAutomationPerformance(state.automation);
+    const atpSpent = Math.min(state.cell.atpMmolL - 1, performance.automaticRepairAtpPerSecond * dt);
     state.cell.atpMmolL -= atpSpent;
     syncAdenylates(state);
     state.damage[target] = Math.max(0, state.damage[target] - atpSpent * 7);
@@ -1135,7 +1169,7 @@ export function oxidizeSubstrate(
     if (substrateAvailable < 1) {
         return actionFailure(state, isPyruvate
             ? 'Produza piruvato pela glicólise antes de alimentar a mitocôndria.'
-            : 'Capte dois pacotes de ácido graxo antes da beta-oxidação.');
+            : 'Capte um pacote de ácido graxo antes da beta-oxidação.');
     }
     if (state.pools.captured.oxygen < oxygenCost) {
         return actionFailure(state, `O₂ insuficiente: são necessários ${oxygenCost} pacotes para esta oxidação.`);

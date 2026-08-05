@@ -1,10 +1,16 @@
-import { useMemo, useState } from 'react';
-import { Activity, AlertTriangle, Atom, Crosshair, Flame, Shield, Target, Wind, Zap } from 'lucide-react';
-import { AUTOMATION_MAX_LEVEL, CAPTURE_AMOUNTS, CAPTURED_POOL_CAPS, CELLULAR_OPTIMIZATION_BUDGET, getAutomationRecipe } from '../../game/cellularSimulation';
+import { useEffect, useMemo, useState } from 'react';
+import { Activity, AlertTriangle, ArrowRight, Atom, Bot, Crosshair, Flame, RefreshCw, Shield, Target, Wind, Zap } from 'lucide-react';
+import { AUTOMATION_MAX_LEVEL, CAPTURE_AMOUNTS, CAPTURED_POOL_CAPS, CELLULAR_OPTIMIZATION_BUDGET, getAutomationRecipe, getCellularAutomationPerformance } from '../../game/cellularSimulation';
 import type { AutomationKind, OxidationSubstrate, RepairTarget, SubstrateKind } from '../../game/cellularTypes';
+import { getScenarioDefinition } from '../../game/scenarios';
+import {
+  SCENARIO_METRIC_CATALOG,
+  getScenarioMetricKeysByGroup,
+  type ScenarioMetricGroup,
+  type ScenarioMetricKey,
+} from '../../game/scenarioMetrics';
 import { useSimulationStore } from '../../game/simulationStore';
 import { CellularFlowScene, type FlowChipDatum, type FlowSubstrateStatus } from './CellularFlowScene';
-import { CellularMachineryScene } from './CellularMachineryScene';
 import { ElectronTransportChain } from './ElectronTransportChain';
 import { ActionButton, GlassPanel, HelpTip, MetricCard, PanelLabel, ProgressBar, Sparkline, cn } from './ui';
 
@@ -64,9 +70,42 @@ function CompactTissueMetric({ label, value, unit, history, color = 'var(--teal)
   </div>;
 }
 
+type InvestigationMetricScope = 'priority' | ScenarioMetricGroup;
+
+const investigationMetricScopes: Array<{ id: InvestigationMetricScope; label: string }> = [
+  { id: 'priority', label: 'Prioritárias' },
+  { id: 'system', label: 'Sistema' },
+  { id: 'endocrine', label: 'Hormônios' },
+  { id: 'tissue', label: 'Tecido' },
+  { id: 'cell', label: 'Célula' },
+  { id: 'mitochondria', label: 'Mitocôndria' },
+  { id: 'pools', label: 'Pools' },
+];
+
+function investigationMetric(
+  definition: typeof SCENARIO_METRIC_CATALOG[ScenarioMetricKey],
+  current: number,
+  initial: number | undefined,
+) {
+  const difference = initial === undefined ? null : current - initial;
+  const threshold = 10 ** -definition.digits / 2;
+  return {
+    label: definition.label,
+    value: current.toFixed(definition.digits),
+    unit: definition.unit,
+    delta: difference === null
+      ? '—'
+      : Math.abs(difference) < threshold
+        ? '→ 0'
+        : `${difference > 0 ? '↑ +' : '↓ '}${difference.toFixed(definition.digits)}`,
+  };
+}
+
 export function TissueView() {
   const cellular = useSimulationStore(state => state.cellular);
+  const physiology = useSimulationStore(state => state.physiology);
   const scenarioResponse = useSimulationStore(state => state.scenarioResponse);
+  const scenarioOnset = useSimulationStore(state => state.scenarioOnset);
   const history = useSimulationStore(state => state.history);
   const warnings = useSimulationStore(state => state.activeWarnings);
   const capture = useSimulationStore(state => state.captureCellularSubstrate);
@@ -74,6 +113,9 @@ export function TissueView() {
   const timeSpeed = useSimulationStore(state => state.timeSpeed);
   const [feedback, setFeedback] = useState('Observe a entrega capilar ao LEC e selecione a proteína de transporte para captar o substrato.');
   const [selectedKind, setSelectedKind] = useState<SubstrateKind>('oxygen');
+  const [investigationScope, setInvestigationScope] = useState<InvestigationMetricScope>('priority');
+  const scenarioId = cellular.routine?.id ?? scenarioResponse?.scenarioId;
+  const scenarioDefinition = scenarioId ? getScenarioDefinition(scenarioId) : undefined;
   const tissue = cellular.tissue;
   const decisionVisible = Boolean(cellular.routine || scenarioResponse);
   const cell = cellular.cell;
@@ -85,6 +127,21 @@ export function TissueView() {
   const selectedStatusExplanation = substrateStatusExplanation(selectedKind, selectedStatus);
   const SelectedIcon = selectedMeta.icon;
   const leadingAdaptation = (Object.entries(cellular.adaptations) as Array<[keyof typeof adaptationLabels, number]>).sort((a, b) => b[1] - a[1])[0];
+  const availableMetricSet = new Set<ScenarioMetricKey>(scenarioDefinition?.metricKeys ?? []);
+  const investigationMetricKeys = scenarioDefinition
+    ? investigationScope === 'priority'
+      ? scenarioDefinition.priorityMetricKeys
+      : getScenarioMetricKeysByGroup(investigationScope).filter(key => availableMetricSet.has(key))
+    : [];
+  const investigationMetrics = investigationMetricKeys.map(key => {
+    const metricDefinition = SCENARIO_METRIC_CATALOG[key];
+    return investigationMetric(metricDefinition, metricDefinition.read(physiology, cellular), scenarioOnset?.values[key]);
+  });
+
+  useEffect(() => {
+    setInvestigationScope('priority');
+  }, [scenarioId]);
+
   const flowChips = useMemo(() => Object.fromEntries((Object.keys(resourceMeta) as SubstrateKind[]).map(kind => {
     const status = substrateStatus(kind, cellular.pools.available[kind], cellular.pools.captured[kind], tissue);
     const datum: FlowChipDatum = {
@@ -156,7 +213,19 @@ export function TissueView() {
 
       <GlassPanel className="scrollbar-thin relative z-20 hidden max-h-full self-start overflow-y-auto bg-black/25 p-3 xl:col-start-3 xl:row-start-1 xl:block">
         <div className="flex items-center justify-between gap-2"><PanelLabel>Status do tecido</PanelLabel><HelpTip title="Faixas de referência" align="right"><p>Faixas funcionais adotadas pelo simulador:</p><ul className="mt-2 space-y-1"><li>pH tecidual: 7,30–7,45</li><li>Tensão de O₂: ≥ 35 mmHg</li><li>ATP celular: ≥ 1,50 mmol/L</li><li>Estresse oxidativo: ≤ 40%</li><li>Potencial de membrana: −80 a −55 mV</li></ul></HelpTip></div><div className="gold-line my-3 h-px"/>
-        <div className="space-y-1.5">
+        {scenarioDefinition && <section aria-labelledby="tissue-investigation-title">
+          <div className="flex items-center justify-between gap-2"><div id="tissue-investigation-title"><PanelLabel icon={<Activity className="size-3.5"/>}>Métricas para investigar</PanelLabel></div><span className="flex-none text-[8px] uppercase tracking-wider text-primary">Δ detecção</span></div>
+          <p className="mt-2 text-[9px] leading-relaxed text-muted-foreground">{scenarioDefinition.difficulty === 'hard' ? `${scenarioDefinition.metricKeys.length} marcadores integrados. Selecione uma escala e compare a trajetória antes de decidir.` : 'Marcadores prioritários deste evento e sua variação desde o instante de detecção.'}</p>
+          {scenarioDefinition.difficulty === 'hard' && <div className="mt-2 grid grid-cols-2 gap-1" role="tablist" aria-label="Escala das métricas do evento">
+            {investigationMetricScopes.map(scope => <button type="button" role="tab" aria-selected={investigationScope === scope.id} key={scope.id} onClick={() => setInvestigationScope(scope.id)} className={cn('min-h-8 rounded-md border px-1.5 text-[8px] uppercase tracking-wider transition', investigationScope === scope.id ? 'border-primary/45 bg-primary/10 text-primary' : 'border-white/8 bg-black/15 text-muted-foreground hover:border-primary/25 hover:text-foreground')}>{scope.label}</button>)}
+          </div>}
+          <div className="mt-2 space-y-1.5">
+            {investigationMetrics.map(item => <div key={item.label} className="rounded-lg border border-white/8 bg-black/20 px-2.5 py-2"><span className="block truncate text-[8px] uppercase tracking-wider text-muted-foreground" title={item.label}>{item.label}</span><div className="mt-1 flex items-baseline justify-between gap-2"><strong className="font-mono text-[12px] text-foreground">{item.value} <small className="text-[8px] font-normal text-muted-foreground">{item.unit}</small></strong><span className={cn('font-mono text-[9px]', item.delta === '—' ? 'text-muted-foreground' : 'text-primary')}>{item.delta}</span></div></div>)}
+          </div>
+          <div className="gold-line my-3 h-px"/>
+          <PanelLabel>Referências basais do tecido</PanelLabel>
+        </section>}
+        <div className={cn('space-y-1.5', scenarioDefinition && 'mt-2')}>
           <CompactTissueMetric label="pH tecidual" value={tissue.pH.toFixed(2)} history={[...history.pH, tissue.pH]} good={tissue.pH >= 7.3 && tissue.pH <= 7.45}/>
           <CompactTissueMetric label="Tensão de O₂" value={tissue.oxygenMmHg.toFixed(0)} unit="mmHg" history={[...history.tissueOxygen, tissue.oxygenMmHg]} color="var(--cyan)" good={tissue.oxygenMmHg >= 35}/>
           <CompactTissueMetric label="ATP celular" value={cell.atpMmolL.toFixed(2)} unit="mmol/L" history={[...history.cellularAtp, cell.atpMmolL]} color="var(--primary)" good={cell.atpMmolL >= 1.5}/>
@@ -198,44 +267,151 @@ export function IntracellularView() {
   </div></div>;
 }
 
-const automationLabels: Record<AutomationKind, string> = { transporters: 'Transportadores', mitochondrialShuttle: 'Navette mitocondrial', repair: 'Reparo automático' };
+const automationMeta: Record<AutomationKind, { label: string; mechanism: string; improves: string; unchanged: string; icon: typeof Zap; color: string }> = {
+  transporters: {
+    label: 'Transportadores',
+    mechanism: 'Aumenta expressão e recrutamento constitutivo de GLUT4, CD36/FATP e LAT1–4F2hc.',
+    improves: 'Captação automática de glicose, ácido graxo e aminoácido.',
+    unchanged: 'O₂ não recebe bônus: continua dependente de PO₂, perfusão e difusão.',
+    icon: RefreshCw,
+    color: 'var(--cyan)',
+  },
+  mitochondrialShuttle: {
+    label: 'Navette mitocondrial',
+    mechanism: 'Acelera entrega de piruvato/ADP e aumenta a capacidade de utilizar o gradiente mitocondrial.',
+    improves: 'Glicólise automática, capacidade oxidativa e beta-oxidação automática.',
+    unchanged: 'Não cria O₂, ADP ou substrato e não reduz o custo estequiométrico dos botões manuais.',
+    icon: Atom,
+    color: 'var(--primary)',
+  },
+  repair: {
+    label: 'Reparo automático',
+    mechanism: 'Aloca ATP continuamente ao maior dano entre membrana, proteínas e DNA.',
+    improves: 'Velocidade de manutenção estrutural sem comando manual.',
+    unchanged: 'Não melhora captação de substrato nem produção de ATP; consome a reserva existente.',
+    icon: Shield,
+    color: 'var(--good)',
+  },
+};
+
+interface AutomationImpactRow {
+  label: string;
+  current: string;
+  next: string;
+  detail: string;
+  changes: boolean;
+}
+
+function automationImpactRows(automation: Record<AutomationKind, number>, kind: AutomationKind): AutomationImpactRow[] {
+  const level = automation[kind];
+  const nextAutomation = { ...automation, [kind]: Math.min(AUTOMATION_MAX_LEVEL, level + 1) };
+  const current = getCellularAutomationPerformance(automation);
+  const next = getCellularAutomationPerformance(nextAutomation);
+  const rate = (value: number) => `${value.toFixed(3)} pac/s`;
+  const row = (label: string, currentValue: number, nextValue: number, format: (value: number) => string, detail: string): AutomationImpactRow => ({
+    label, current: format(currentValue), next: format(nextValue), detail, changes: Math.abs(nextValue - currentValue) > 1e-8,
+  });
+  if (kind === 'transporters') return [
+    row('Glicose automática', current.autoCaptureCapacityPerSecond.glucose, next.autoCaptureCapacityPerSecond.glucose, rate, 'Capacidade-base × sinal de insulina/GLUT4 e contração.'),
+    row('Ácido graxo automático', current.autoCaptureCapacityPerSecond.fattyAcid, next.autoCaptureCapacityPerSecond.fattyAcid, rate, 'Entrada por CD36/FATP, limitada pelo espaço no pool.'),
+    row('Aminoácido automático', current.autoCaptureCapacityPerSecond.aminoAcid, next.autoCaptureCapacityPerSecond.aminoAcid, rate, 'Entrada por LAT1–4F2hc, limitada pela oferta tecidual.'),
+    row('Oxigênio por difusão', current.autoCaptureCapacityPerSecond.oxygen, next.autoCaptureCapacityPerSecond.oxygen, rate, 'Não muda com este upgrade.'),
+  ];
+  if (kind === 'mitochondrialShuttle') return [
+    row('Glicólise automática', current.automaticGlycolysisCapacityPerSecond, next.automaticGlycolysisCapacityPerSecond, rate, 'Limite-base antes do ajuste pela demanda metabólica.'),
+    row('Capacidade oxidativa', current.oxidativeCapacityMultiplier, next.oxidativeCapacityMultiplier, value => `×${value.toFixed(2)}`, 'Multiplica o fluxo permitido por saúde mitocondrial e O₂.'),
+    row('Beta-oxidação automática', current.automaticFattyAcidOxidationPerSecond, next.automaticFattyAcidOxidationPerSecond, rate, 'Ainda exige ácido graxo, seis partes de O₂ e ADP.'),
+  ];
+  return [
+    row('ATP alocado automaticamente', current.automaticRepairAtpPerSecond, next.automaticRepairAtpPerSecond, rate, 'Só atua com ATP > 1,2 mmol/L e dano mensurável.'),
+    row('Dano reparado', current.automaticDamageRepairPerSecond, next.automaticDamageRepairPerSecond, value => `${value.toFixed(3)} %/s`, 'Prioriza membrana, proteínas ou DNA com maior dano.'),
+  ];
+}
 
 export function MachineryView() {
   const cellular = useSimulationStore(state => state.cellular);
+  const scenarioResponse = useSimulationStore(state => state.scenarioResponse);
   const glycolysis = useSimulationStore(state => state.runCellularGlycolysis);
   const oxidize = useSimulationStore(state => state.oxidizeCellularSubstrate);
   const purchase = useSimulationStore(state => state.purchaseCellularAutomation);
-  const [feedback, setFeedback] = useState('A maquinaria está pronta. Escolha uma rota bioquímica.');
+  const [feedback, setFeedback] = useState('Leia entrada → CTE → saída e escolha uma rota compatível com os substratos disponíveis.');
   const run = (action: () => boolean, ok: string, fail: string) => setFeedback(action() ? ok : fail);
   const usedBudget = Object.values(cellular.automation).reduce((sum, level) => sum + level, 0);
+  const performance = getCellularAutomationPerformance(cellular.automation);
+  const activeScenarioId = cellular.routine?.id ?? scenarioResponse?.scenarioId;
+  const activeScenario = activeScenarioId ? getScenarioDefinition(activeScenarioId) : undefined;
+  const decisionVisible = Boolean(activeScenario);
   const canGlycolysis = cellular.pools.captured.glucose >= 1 && cellular.cell.atpMmolL <= 5.72;
-  const canOxidize = (kind: OxidationSubstrate) => kind === 'pyruvate' ? cellular.pools.pyruvate >= 1 && cellular.pools.captured.oxygen >= 3 && cellular.cell.adpMmolL >= .45 : cellular.pools.captured.fattyAcid >= 1 && cellular.pools.captured.oxygen >= 6 && cellular.cell.adpMmolL >= .85;
-  return <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto px-4 pb-28 lg:px-6"><div className="mx-auto grid max-w-7xl grid-cols-1 gap-4 xl:grid-cols-[1fr_340px]">
-    <GlassPanel className="p-4"><div className="flex items-center justify-between gap-2"><PanelLabel icon={<Atom className="size-4"/>}>Rotas bioquímicas</PanelLabel><HelpTip title="Referências da rota"><p>Os substratos são exibidos em pacotes, não em unidades clínicas; não há uma faixa “normal” fixa para seus estoques.</p><ul className="mt-2 space-y-1"><li>O₂ tecidual: mantenha ≥ 35 mmHg</li><li>ATP celular: mantenha ≥ 1,50 mmol/L</li><li>ΔΨ mitocondrial: cerca de −150 a −180 mV</li><li>NADH: em equilíbrio, ~40–60%</li><li>Saúde mitocondrial: ≥ 70%</li></ul><p className="mt-2">Os botões ficam disponíveis quando há os pacotes necessários para cada reação.</p></HelpTip></div><div className="gold-line my-3 h-px"/><div className="grid grid-cols-2 gap-2 md:grid-cols-5">{[
-      ['Glicose', cellular.pools.captured.glucose], ['O₂ disponível à CTE', cellular.pools.captured.oxygen], ['Ácido graxo', cellular.pools.captured.fattyAcid], ['Aminoácido', cellular.pools.captured.aminoAcid], ['Piruvato', cellular.pools.pyruvate]
-    ].map(([label, value]) => <GlassPanel key={String(label)} soft className="p-3 text-center"><PanelLabel className="justify-center">{label}</PanelLabel><strong className="mt-2 block font-display text-xl">{Number(value).toFixed(1)}</strong></GlassPanel>)}</div>
-      <CellularMachineryScene automation={cellular.automation} etcFlux={cellular.mitochondria.etcFluxPercent} atp={cellular.cell.atpMmolL}/>
-      <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-3">
-        <GlassPanel soft className="flex min-h-56 flex-col p-4"><span className="text-[9px] uppercase tracking-widest text-primary">Rota 01</span><h3 className="mt-3 font-display text-lg">Glicólise</h3><p className="mt-2 text-xs leading-relaxed text-muted-foreground">Converte glicose captada em dois piruvatos e ATP citosólico.</p><ActionButton className="mt-auto" disabled={!canGlycolysis} onClick={() => run(glycolysis, 'Glicólise concluída; piruvato disponível.', 'Colete glicose ou libere espaço no pool de ATP.')}>Processar glicose</ActionButton></GlassPanel>
-        <GlassPanel soft className="flex min-h-56 flex-col p-4"><span className="text-[9px] uppercase tracking-widest text-primary">Rota 02</span><h3 className="mt-3 font-display text-lg">Oxidação de piruvato</h3><p className="mt-2 text-xs leading-relaxed text-muted-foreground">Usa um piruvato, três pacotes de O₂ e ADP para produzir ATP mitocondrial.</p><ActionButton className="mt-auto" disabled={!canOxidize('pyruvate')} onClick={() => run(() => oxidize('pyruvate'), 'Piruvato oxidado; ATP mitocondrial produzido.', 'Faltam piruvato, oxigênio, ADP ou espaço energético.')}>Oxidar piruvato</ActionButton></GlassPanel>
-        <GlassPanel soft className="flex min-h-56 flex-col p-4"><span className="text-[9px] uppercase tracking-widest text-primary">Rota 03</span><h3 className="mt-3 font-display text-lg">Beta-oxidação</h3><p className="mt-2 text-xs leading-relaxed text-muted-foreground">Usa ácido graxo e seis pacotes de O₂ para alto rendimento energético.</p><ActionButton className="mt-auto" disabled={!canOxidize('fattyAcid')} onClick={() => run(() => oxidize('fattyAcid'), 'Beta-oxidação concluída.', 'Faltam ácido graxo, oxigênio, ADP ou espaço energético.')}>Oxidar ácido graxo</ActionButton></GlassPanel>
-      </div>
-      <ElectronTransportChain
-        fluxPercent={cellular.mitochondria.etcFluxPercent}
-        membranePotentialMv={cellular.mitochondria.membranePotentialMv}
-        atpSynthaseFlux={cellular.mitochondria.atpSynthaseFlux}
-        oxygenMmHg={cellular.tissue.oxygenMmHg}
-        nadhPercent={cellular.cell.nadhPercent}
-        healthPercent={cellular.mitochondria.healthPercent}
-        oxidativeStress={cellular.damage.oxidativeStress}
-        processing={cellular.mitochondria.processing}
-      />
-      <div className="mt-4 rounded-lg border border-primary/20 bg-black/25 p-3 text-[10px] text-primary" role="status">{feedback}</div>
-      <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4"><MetricCard label="ATP celular" value={cellular.cell.atpMmolL.toFixed(2)} unit="mmol/L"/><MetricCard label="ΔΨ mitocondrial" value={cellular.mitochondria.membranePotentialMv.toFixed(0)} unit="mV"/><MetricCard label="Fluxo ETC" value={cellular.mitochondria.etcFluxPercent.toFixed(0)} unit="%"/><MetricCard label="Saúde mitocondrial" value={cellular.mitochondria.healthPercent.toFixed(0)} unit="%" good={cellular.mitochondria.healthPercent >= 70}/></div>
-    </GlassPanel>
-    <GlassPanel className="p-4"><PanelLabel icon={<Shield className="size-4"/>}>Automação celular</PanelLabel><div className="gold-line my-3 h-px"/><div className="mb-4"><div className="mb-1 flex justify-between text-[10px] uppercase text-muted-foreground"><span>Orçamento</span><span>{usedBudget}/{CELLULAR_OPTIMIZATION_BUDGET}</span></div><ProgressBar value={usedBudget / CELLULAR_OPTIMIZATION_BUDGET * 100}/></div><div className="space-y-3">{(Object.keys(automationLabels) as AutomationKind[]).map(kind => {
-      const level = cellular.automation[kind]; const recipe = getAutomationRecipe(kind, level); const maxed = level >= AUTOMATION_MAX_LEVEL; const enoughAtp = cellular.cell.atpMmolL - recipe.atp >= 1; const enoughSubstrates = (Object.entries(recipe.substrates) as Array<[SubstrateKind, number]>).every(([key, amount]) => cellular.pools.captured[key] >= amount); const canBuy = !maxed && usedBudget < CELLULAR_OPTIMIZATION_BUDGET && enoughAtp && enoughSubstrates;
-      return <GlassPanel soft key={kind} className="p-3"><div className="flex justify-between gap-3"><strong className="text-xs uppercase tracking-wider">{automationLabels[kind]}</strong><span className="font-mono text-[10px] text-primary">{level}/{AUTOMATION_MAX_LEVEL}</span></div><ProgressBar value={level / AUTOMATION_MAX_LEVEL * 100}/><p className="mt-2 text-[9px] text-muted-foreground">Custo: {recipe.atp.toFixed(2)} ATP{Object.entries(recipe.substrates).map(([key, amount]) => ` · ${resourceMeta[key as SubstrateKind].label} ${amount}`).join('')}</p><ActionButton className="mt-3 w-full" disabled={!canBuy} onClick={() => run(() => purchase(kind), 'Automação construída.', 'Recursos insuficientes ou limite atingido.')}>{maxed ? 'Nível máximo' : `Construir nível ${level + 1}`}</ActionButton></GlassPanel>;
-    })}</div></GlassPanel>
-  </div></div>;
+  const canOxidize = (kind: OxidationSubstrate) => kind === 'pyruvate'
+    ? cellular.pools.pyruvate >= 1 && cellular.pools.captured.oxygen >= 3 && cellular.cell.adpMmolL >= .45
+    : cellular.pools.captured.fattyAcid >= 1 && cellular.pools.captured.oxygen >= 6 && cellular.cell.adpMmolL >= .85;
+  const chainProps = {
+    fluxPercent: cellular.mitochondria.etcFluxPercent,
+    membranePotentialMv: cellular.mitochondria.membranePotentialMv,
+    atpSynthaseFlux: cellular.mitochondria.atpSynthaseFlux,
+    oxygenMmHg: cellular.tissue.oxygenMmHg,
+    nadhPercent: cellular.cell.nadhPercent,
+    healthPercent: cellular.mitochondria.healthPercent,
+    oxidativeStress: cellular.damage.oxidativeStress,
+    processing: cellular.mitochondria.processing,
+  };
+
+  return <div className={cn(
+    'relative min-h-0 flex-1 overflow-hidden px-4 pb-20 transition-[padding] duration-300',
+    decisionVisible
+      ? cn('lg:pr-6', activeScenario?.difficulty === 'hard' ? 'lg:pl-[464px]' : 'lg:pl-[424px]')
+      : 'lg:px-6',
+  )}>
+    <div className={cn(
+      'scrollbar-thin mx-auto grid h-full max-w-[1600px] grid-cols-1 gap-3 overflow-y-auto',
+      decisionVisible
+        ? 'xl:grid-cols-[200px_minmax(0,1fr)] min-[1800px]:grid-cols-[210px_minmax(0,1fr)_300px] min-[1800px]:overflow-hidden'
+        : 'xl:grid-cols-[230px_minmax(0,1fr)_330px] xl:overflow-hidden',
+    )}>
+      <aside className="scrollbar-thin space-y-3 xl:min-h-0 xl:overflow-y-auto xl:pr-1" aria-label="Rotas e limites mitocondriais">
+        <GlassPanel className="border-cyan/20 bg-black/55 p-3">
+          <div className="flex items-start justify-between gap-2"><div><PanelLabel icon={<Atom className="size-4 text-cyan"/>}>Mapa funcional</PanelLabel><h2 className="mt-2 font-display text-lg">Do substrato ao ATP</h2></div><HelpTip title="Como interpretar"><p>O fluxo só aumenta quando substrato, ADP, O₂, potencial e saúde mitocondrial convergem.</p><ul className="mt-2 space-y-1"><li>ΔΨ esperado: −150 a −180 mV</li><li>NADH equilibrado: 40–60%</li><li>Saúde mitocondrial: ≥ 70%</li><li>ROS alto indica pressão redox.</li></ul></HelpTip></div>
+          <p className="mt-2 text-[9px] leading-relaxed text-muted-foreground">A cadeia respiratória ocupa o centro sem painéis sobrepostos. Moléculas, reações e taxas aparecem diretamente sobre o complexo que as processa.</p>
+        </GlassPanel>
+
+        <section className="space-y-2" aria-label="Rotas metabólicas manuais">
+          <GlassPanel className="flex flex-col bg-black/55 p-3"><span className="text-[8px] uppercase tracking-widest text-good">Rota 01 · preparo</span><h3 className="mt-1.5 font-display text-base">Glicólise</h3><p className="mt-1 text-[9px] leading-relaxed text-muted-foreground">Glicose gera piruvato e NADH. Automação atual: {performance.automaticGlycolysisCapacityPerSecond.toFixed(3)} pac/s.</p><ActionButton className="mt-3 w-full" disabled={!canGlycolysis} onClick={() => run(glycolysis, 'Glicólise concluída; piruvato e NADH disponíveis.', 'Colete glicose ou libere espaço no pool de ATP.')}>Processar glicose</ActionButton></GlassPanel>
+          <GlassPanel className="flex flex-col border-cyan/15 bg-black/55 p-3"><span className="text-[8px] uppercase tracking-widest text-cyan">Rota 02 · CTE</span><h3 className="mt-1.5 font-display text-base">Oxidar piruvato</h3><p className="mt-1 text-[9px] leading-relaxed text-muted-foreground">Exige piruvato, 3 O₂ e ADP. Capacidade oxidativa: ×{performance.oxidativeCapacityMultiplier.toFixed(2)}.</p><ActionButton className="mt-3 w-full" disabled={!canOxidize('pyruvate')} onClick={() => run(() => oxidize('pyruvate'), 'Piruvato oxidado; CTE e ATP sintase responderam.', 'Faltam piruvato, O₂, ADP ou espaço energético.')}>Oxidar piruvato</ActionButton></GlassPanel>
+          <GlassPanel className="flex flex-col border-warning/15 bg-black/55 p-3"><span className="text-[8px] uppercase tracking-widest text-warning">Rota 03 · alto rendimento</span><h3 className="mt-1.5 font-display text-base">Beta-oxidação</h3><p className="mt-1 text-[9px] leading-relaxed text-muted-foreground">Exige ácido graxo, 6 O₂ e ADP. Automação: {performance.automaticFattyAcidOxidationPerSecond.toFixed(3)} pac/s.</p><ActionButton className="mt-3 w-full" disabled={!canOxidize('fattyAcid')} onClick={() => run(() => oxidize('fattyAcid'), 'Beta-oxidação concluída; monitore O₂ e ROS.', 'Faltam ácido graxo, O₂, ADP ou espaço energético.')}>Oxidar ácido graxo</ActionButton></GlassPanel>
+        </section>
+        <div className="rounded-lg border border-primary/25 bg-black/60 px-3 py-2.5 text-[9px] leading-relaxed text-primary" role="status" aria-live="polite">{feedback}</div>
+      </aside>
+
+      <section className="flex min-h-[540px] min-w-0 items-center overflow-hidden rounded-xl xl:min-h-0" aria-label="Cadeia respiratória mitocondrial totalmente visível">
+        <ElectronTransportChain {...chainProps} className="my-0 w-full bg-black/30"/>
+      </section>
+
+      <GlassPanel className={cn(
+        'scrollbar-thin self-start border-primary/25 bg-black/55 p-4 xl:max-h-full xl:overflow-y-auto',
+        decisionVisible && 'xl:col-span-2 min-[1800px]:col-span-1',
+      )}>
+          <div className="flex items-center justify-between gap-3"><div><PanelLabel icon={<Bot className="size-4"/>}>Automação celular</PanelLabel><h2 className="mt-2 font-display text-lg">O que muda no próximo nível</h2></div><span className="rounded-full border border-primary/25 bg-primary/10 px-2.5 py-1 font-mono text-[9px] text-primary">{usedBudget}/{CELLULAR_OPTIMIZATION_BUDGET}</span></div>
+          <p className="mt-2 text-[10px] leading-relaxed text-muted-foreground">Cada nível altera taxas contínuas do motor. Compare os valores antes de gastar ATP e substratos.</p>
+          <div className="mt-3"><ProgressBar value={usedBudget / CELLULAR_OPTIMIZATION_BUDGET * 100}/></div>
+          <div className="mt-4 space-y-3">{(Object.keys(automationMeta) as AutomationKind[]).map(kind => {
+            const meta = automationMeta[kind];
+            const Icon = meta.icon;
+            const level = cellular.automation[kind];
+            const recipe = getAutomationRecipe(kind, level);
+            const maxed = level >= AUTOMATION_MAX_LEVEL;
+            const enoughAtp = cellular.cell.atpMmolL - recipe.atp >= 1;
+            const enoughSubstrates = (Object.entries(recipe.substrates) as Array<[SubstrateKind, number]>).every(([key, amount]) => cellular.pools.captured[key] >= amount);
+            const canBuy = !maxed && usedBudget < CELLULAR_OPTIMIZATION_BUDGET && enoughAtp && enoughSubstrates;
+            const impacts = automationImpactRows(cellular.automation, kind);
+            return <section key={kind} className="overflow-hidden rounded-xl border border-white/10 bg-black/30">
+              <div className="p-3"><div className="flex items-start gap-3"><span className="grid size-9 shrink-0 place-items-center rounded-lg border bg-black/35" style={{ color: meta.color, borderColor: meta.color }}><Icon className="size-4"/></span><div className="min-w-0 flex-1"><div className="flex items-center justify-between gap-2"><strong className="text-[11px] uppercase tracking-wider text-foreground">{meta.label}</strong><span className="font-mono text-[9px] text-primary">Nv.{level} {maxed ? '· máximo' : `→ Nv.${level + 1}`}</span></div><p className="mt-1 text-[9px] leading-relaxed text-muted-foreground">{meta.mechanism}</p></div></div>
+                <div className="mt-3 rounded-lg border border-primary/15 bg-primary/5 px-2.5 py-2 text-[9px] leading-relaxed"><strong className="text-primary">Melhora:</strong> <span className="text-foreground/75">{meta.improves}</span></div>
+              </div>
+              <div className="border-y border-white/8 bg-black/20 px-3 py-2"><span className="text-[8px] uppercase tracking-[.16em] text-muted-foreground">Impacto mensurável</span><div className="mt-2 space-y-2">{impacts.map(impact => <div key={impact.label}><div className="flex items-center gap-2 text-[9px]"><span className="min-w-0 flex-1 text-foreground/80">{impact.label}</span><span className="font-mono text-muted-foreground">{impact.current}</span><ArrowRight className="size-3 text-primary"/><span className={cn('font-mono', impact.changes ? 'text-primary' : 'text-muted-foreground')}>{impact.next}</span></div><p className="mt-0.5 text-[8px] leading-relaxed text-muted-foreground">{impact.detail}</p></div>)}</div></div>
+              <div className="p-3"><p className="text-[8px] leading-relaxed text-warning"><strong>Não altera:</strong> {meta.unchanged}</p><p className="mt-2 text-[9px] text-muted-foreground"><strong className="text-foreground/70">Custo Nv.{Math.min(level + 1, AUTOMATION_MAX_LEVEL)}:</strong> {recipe.atp.toFixed(2)} ATP{Object.entries(recipe.substrates).map(([key, amount]) => ` · ${resourceMeta[key as SubstrateKind].label} ${Number(amount).toFixed(2)}`).join('')}</p><ActionButton className="mt-3 w-full" disabled={!canBuy} onClick={() => run(() => purchase(kind), `${meta.label} elevada para o nível ${level + 1}. Compare as novas taxas.`, 'Recursos insuficientes ou limite de especialização atingido.')}>{maxed ? 'Nível máximo atingido' : `Construir nível ${level + 1}`}</ActionButton></div>
+            </section>;
+          })}</div>
+      </GlassPanel>
+    </div>
+  </div>;
 }

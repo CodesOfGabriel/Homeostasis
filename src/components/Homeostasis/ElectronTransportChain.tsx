@@ -2,7 +2,7 @@ import { useEffect, useRef, type ReactNode } from 'react';
 import { Activity, BatteryCharging, Droplets, Gauge, Wind, Zap } from 'lucide-react';
 import type { MitochondrialProcessing } from '../../game/cellularTypes';
 import { advanceFlowProgress, calculateEtcParticleCount, MAX_ETC_PARTICLES } from './flowAnimation';
-import { GlassPanel, PanelLabel, ProgressBar } from './ui';
+import { GlassPanel, PanelLabel, ProgressBar, cn } from './ui';
 
 interface ElectronTransportChainProps {
   fluxPercent: number;
@@ -13,6 +13,15 @@ interface ElectronTransportChainProps {
   healthPercent: number;
   oxidativeStress: number;
   processing: MitochondrialProcessing;
+  className?: string;
+}
+
+export function ElectronTransportChainBackdrop(props: ElectronTransportChainProps) {
+  return (
+    <div className="mitochondrial-chain-backdrop" aria-hidden="true">
+      <ElectronTransportChain {...props}/>
+    </div>
+  );
 }
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
@@ -34,6 +43,31 @@ const rosParticles = Array.from({ length: 8 }, (_, index) => ({
   y: 286 + (index % 3) * 8,
 }));
 
+interface MolecularTrack {
+  id: string;
+  path: string;
+  formula: string;
+  color: string;
+  count: number;
+  baseSpeed: number;
+  radius: number;
+  driver: 'flux' | 'coupling' | 'atp';
+  label: string;
+}
+
+const MOLECULAR_TRACKS: MolecularTrack[] = [
+  { id: 'proton-pump-i', path: 'M178 260 C174 214 181 146 178 72', formula: 'H⁺', color: '#8ee8f0', count: 4, baseSpeed: .24, radius: 6.5, driver: 'flux', label: 'Prótons bombeados pelo complexo I' },
+  { id: 'proton-pump-iii', path: 'M450 260 C445 210 454 142 450 72', formula: 'H⁺', color: '#8ee8f0', count: 4, baseSpeed: .25, radius: 6.5, driver: 'flux', label: 'Prótons bombeados pelo complexo III' },
+  { id: 'proton-pump-iv', path: 'M602 235 C598 190 606 132 602 72', formula: 'H⁺', color: '#8ee8f0', count: 4, baseSpeed: .27, radius: 6.5, driver: 'flux', label: 'Prótons bombeados pelo complexo IV' },
+  { id: 'proton-return-atpase', path: 'M760 68 C766 91 752 112 760 139 C768 160 752 181 760 204', formula: 'H⁺', color: '#d9b45f', count: 5, baseSpeed: .3, radius: 6.5, driver: 'coupling', label: 'Prótons retornando pela ATP sintase' },
+  { id: 'coq-from-i', path: 'M212 224 C258 220 306 224 337 222 C374 219 393 220 414 221', formula: 'Q', color: '#d9b45f', count: 2, baseSpeed: .2, radius: 6, driver: 'flux', label: 'Coenzima Q transportando elétrons do complexo I ao III' },
+  { id: 'coq-from-ii', path: 'M322 248 C348 246 373 230 414 222', formula: 'Q', color: '#d9b45f', count: 2, baseSpeed: .22, radius: 6, driver: 'flux', label: 'Coenzima Q transportando elétrons do complexo II ao III' },
+  { id: 'cytochrome-c', path: 'M470 158 C488 126 505 108 532 108 C559 108 580 128 598 146', formula: 'c', color: '#e4c978', count: 3, baseSpeed: .23, radius: 5.5, driver: 'flux', label: 'Citocromo c transportando elétrons do complexo III ao IV' },
+  { id: 'oxygen-entry', path: 'M704 162 C681 163 659 169 632 181', formula: 'O₂', color: '#72d8e8', count: 2, baseSpeed: .18, radius: 6.5, driver: 'flux', label: 'Oxigênio entrando no complexo IV' },
+  { id: 'water-output', path: 'M632 199 C653 208 672 222 699 242', formula: 'H₂O', color: '#55b7bd', count: 2, baseSpeed: .16, radius: 7, driver: 'flux', label: 'Água produzida pelo complexo IV' },
+  { id: 'atp-output', path: 'M760 286 C760 307 779 322 809 334', formula: 'ATP', color: '#d9b45f', count: 3, baseSpeed: .18, radius: 8, driver: 'atp', label: 'ATP liberado pela ATP sintase' },
+];
+
 export function ElectronTransportChain({
   fluxPercent,
   membranePotentialMv,
@@ -43,6 +77,7 @@ export function ElectronTransportChain({
   healthPercent,
   oxidativeStress,
   processing,
+  className,
 }: ElectronTransportChainProps) {
   const activity = clamp(fluxPercent, 6, 100);
   const oxygenAdequacy = clamp(oxygenMmHg / 40 * 100, 0, 100);
@@ -50,20 +85,17 @@ export function ElectronTransportChain({
   const synthaseSpin = clamp(5.5 - atpSynthaseFlux * 0.055, 1.2, 5.5);
   const protonCount = Math.round(clamp(3 + coupling * .13, 3, protonParticles.length));
   const rosCount = Math.round(clamp(oxidativeStress * .08, 0, rosParticles.length));
-  const molecules = [
-    { name: 'Piruvato', formula: 'C₃H₃O₃⁻', value: processing.pyruvatePerMin, color: '#55be83' },
-    { name: 'Ácido graxo', formula: 'AG-CoA', value: processing.fattyAcidPerMin, color: '#e2a54f' },
-    { name: 'NADH', formula: 'NADH', value: processing.nadhPerMin, color: '#58bdd0' },
-    { name: 'FADH₂', formula: 'FADH₂', value: processing.fadh2PerMin, color: '#d9b45f' },
-    { name: 'Oxigênio', formula: 'O₂', value: processing.oxygenPerMin, color: '#72d8e8' },
-    { name: 'Prótons', formula: 'H⁺', value: processing.protonsPerMin, color: '#8ee8f0' },
-    { name: 'ADP + fosfato', formula: 'ADP + Pi', value: processing.adpPerMin, color: '#b3a6dc' },
-    { name: 'ATP', formula: 'ATP', value: processing.atpPerMin, color: '#d9b45f' },
-    { name: 'Água', formula: 'H₂O', value: processing.waterPerMin, color: '#55b7bd' },
+  const electronRate = (processing.nadhPerMin + processing.fadh2PerMin) * 2;
+  const processNodes: ProcessNodeProps[] = [
+    { x: 72, width: 160, targetX: 178, targetY: 221, color: '#58bdd0', title: 'Complexo I', reaction: 'NADH → NAD⁺ + 2e⁻', rate: `${formatMolecularRate(processing.nadhPerMin)}/min`, source: `Piruvato ${formatMolecularRate(processing.pyruvatePerMin)}/min` },
+    { x: 238, width: 126, targetX: 290, targetY: 221, color: '#d9b45f', title: 'Complexo II', reaction: 'FADH₂ → FAD + 2e⁻', rate: `${formatMolecularRate(processing.fadh2PerMin)}/min`, source: `Ácido graxo ${formatMolecularRate(processing.fattyAcidPerMin)}/min` },
+    { x: 370, width: 142, targetX: 450, targetY: 221, color: '#d9b45f', title: 'Complexo III', reaction: 'CoQH₂ → cyt c', rate: `${formatMolecularRate(electronRate)} e⁻/min`, source: `H⁺ total ${formatMolecularRate(processing.protonsPerMin)}/min` },
+    { x: 518, width: 164, targetX: 602, targetY: 205, color: '#72d8e8', title: 'Complexo IV', reaction: 'O₂ + e⁻ + H⁺ → H₂O', rate: `${formatMolecularRate(processing.oxygenPerMin)} O₂/min`, source: `H₂O ${formatMolecularRate(processing.waterPerMin)}/min` },
+    { x: 688, width: 154, targetX: 760, targetY: 135, color: '#d9b45f', title: 'ATP sintase', reaction: 'ADP + Pi + H⁺ → ATP', rate: `${formatMolecularRate(processing.adpPerMin)} ADP/min`, source: `ATP ${formatMolecularRate(processing.atpPerMin)}/min` },
   ];
 
   return (
-    <GlassPanel soft className="mt-4 overflow-hidden border-cyan/15">
+    <GlassPanel soft className={cn('mt-4 overflow-hidden border-cyan/15', className)}>
       <div className="flex flex-wrap items-start justify-between gap-3 px-4 pt-4">
         <div>
           <PanelLabel icon={<Zap className="size-4 text-cyan"/>}>Cadeia de transporte de elétrons</PanelLabel>
@@ -78,10 +110,10 @@ export function ElectronTransportChain({
 
       <div className="scrollbar-thin mt-3 overflow-x-auto px-3 pb-1">
         <svg
-          className="min-w-[820px]"
-          viewBox="0 0 860 360"
+          className="h-auto w-full min-w-[760px] xl:min-w-0"
+          viewBox="0 0 860 422"
           role="img"
-          aria-label="Diagrama da cadeia respiratória mitocondrial com complexos um a quatro, coenzima Q, citocromo c, gradiente de prótons e ATP sintase"
+          aria-label="Diagrama da cadeia respiratória mitocondrial com moléculas e taxas ancoradas aos complexos um a quatro e à ATP sintase"
         >
           <defs>
             <linearGradient id="etc-membrane" x1="0" y1="0" x2="1" y2="0">
@@ -110,44 +142,48 @@ export function ElectronTransportChain({
             <path id="electron-route" d="M92 222 C130 222 145 221 178 221 S230 251 289 251 S338 221 450 221 S514 181 602 181"/>
           </defs>
 
+          {processNodes.map(node => <ProcessNode key={node.title} {...node}/>)}
+
+          <g transform="translate(0 62)">
           <rect x="20" y="20" width="820" height="320" rx="18" fill="#071016" fillOpacity=".42" stroke="#58bdd0" strokeOpacity=".12"/>
           <text x="44" y="49" fill="#929ba9" fontSize="10" letterSpacing="2">ESPAÇO INTERMEMBRANA · RESERVATÓRIO DE H⁺</text>
           <text x="44" y="326" fill="#929ba9" fontSize="10" letterSpacing="2">MATRIZ MITOCONDRIAL</text>
 
-          {protonParticles.map((particle, index) => <g key={`gradient-${index}`} opacity={index < protonCount ? .32 + coupling * .006 : .04}>
-            <circle cx={particle.x} cy={particle.y} r="8" fill="#102c34" stroke="#58bdd0" strokeOpacity=".75"/>
+          {protonParticles.map((particle, index) => <g key={`gradient-${index}`} className="etc-proton-reservoir" opacity={index < protonCount ? .32 + coupling * .006 : .04} style={{ animationDelay: `${-index * .17}s`, animationDuration: `${2.8 - coupling * .012 + index % 3 * .18}s` }}>
+            <circle cx={particle.x} cy={particle.y} r="8" fill="#102c34" stroke="#58bdd0" strokeOpacity=".75" filter={index < protonCount ? 'url(#etc-glow)' : undefined}/>
             <text x={particle.x} y={particle.y + 3.5} textAnchor="middle" fill="#8ee8f0" fontSize="8">H⁺</text>
           </g>)}
 
           <rect x="38" y="128" width="784" height="96" rx="44" fill="url(#etc-membrane)" stroke="#58bdd0" strokeOpacity=".25"/>
-          <path d="M54 150 H806 M54 202 H806" stroke="#76d5df" strokeOpacity=".24" strokeWidth="3" strokeDasharray="2 8"/>
+          <path d="M54 150 H806 M54 202 H806" className="etc-membrane-energy" stroke="#76d5df" strokeOpacity=".24" strokeWidth="3" strokeDasharray="2 8"/>
           <text x="48" y="120" fill="#58bdd0" fillOpacity=".65" fontSize="9" letterSpacing="1.7">MEMBRANA INTERNA</text>
 
-          {complexes.map(complex => (
-            <g key={complex.number}>
+          {complexes.map((complex, index) => {
+            const cycle = Math.max(1.05, 2.5 - activity * .012 + index * .08);
+            return <g key={complex.number} className="etc-complex-node" style={{ animationDuration: `${cycle}s`, animationDelay: `${-index * .34}s` }}>
               <title>{complex.name}: {complex.detail}{complex.pumps ? '; bombeia prótons' : '; não bombeia prótons'}</title>
-              <rect x={complex.x} y={complex.number === 'IV' ? 143 : 159} width={complex.width} height={complex.number === 'IV' ? 78 : 102} rx="15" fill="url(#etc-complex)" stroke="#58bdd0" strokeOpacity=".7"/>
-              <circle cx={complex.x + complex.width / 2} cy={complex.number === 'IV' ? 180 : 197} r="18" fill="#071016" stroke="#58bdd0" strokeOpacity=".62"/>
+              <rect className="etc-complex-body" style={{ animationDuration: `${cycle}s`, animationDelay: `${-index * .34}s` }} x={complex.x} y={complex.number === 'IV' ? 143 : 159} width={complex.width} height={complex.number === 'IV' ? 78 : 102} rx="15" fill="url(#etc-complex)" stroke="#58bdd0" strokeOpacity=".7"/>
+              <circle className="etc-complex-core" style={{ animationDuration: `${Math.max(.8, cycle * .72)}s`, animationDelay: `${-index * .21}s` }} cx={complex.x + complex.width / 2} cy={complex.number === 'IV' ? 180 : 197} r="18" fill="#071016" stroke="#58bdd0" strokeOpacity=".62"/>
               <text x={complex.x + complex.width / 2} y={complex.number === 'IV' ? 185 : 202} textAnchor="middle" fill="#e6e8ec" fontFamily="Cinzel, serif" fontSize="17">{complex.number}</text>
               <text x={complex.x + complex.width / 2} y={complex.number === 'IV' ? 238 : 280} textAnchor="middle" fill="#929ba9" fontSize="9">{complex.detail}</text>
-            </g>
-          ))}
+            </g>;
+          })}
 
           <g>
             <title>Coenzima Q transporta elétrons dos complexos I e II ao complexo III</title>
-            <circle cx="358" cy="222" r="25" fill="#102c32" stroke="#d9b45f" strokeOpacity=".75"/>
+            <circle className="etc-coq-core" cx="358" cy="222" r="25" fill="#102c32" stroke="#d9b45f" strokeOpacity=".75"/>
             <text x="358" y="218" textAnchor="middle" fill="#d9b45f" fontSize="11" fontWeight="600">CoQ</text>
             <text x="358" y="231" textAnchor="middle" fill="#929ba9" fontSize="8">Q/QH₂</text>
           </g>
           <g>
             <title>Citocromo c transporta elétrons do complexo III ao complexo IV</title>
-            <rect x="504" y="92" width="58" height="31" rx="15" fill="#2f2520" stroke="#d9b45f" strokeOpacity=".8"/>
+            <rect className="etc-cytochrome-core" x="504" y="92" width="58" height="31" rx="15" fill="#2f2520" stroke="#d9b45f" strokeOpacity=".8"/>
             <text x="533" y="112" textAnchor="middle" fill="#d9b45f" fontSize="10" fontWeight="600">cyt c</text>
             <path d="M470 158 C486 125 502 111 516 108 M551 109 C574 114 586 130 598 146" fill="none" stroke="#d9b45f" strokeWidth="2" strokeDasharray="5 5" markerEnd="url(#etc-arrow-gold)"/>
           </g>
 
           <path d="M92 222 C130 222 145 221 178 221 S230 251 289 251 S338 221 450 221 S514 181 602 181" fill="none" stroke="#58bdd0" strokeOpacity=".28" strokeWidth="7"/>
-          <path d="M92 222 C130 222 145 221 178 221 S230 251 289 251 S338 221 450 221 S514 181 602 181" fill="none" stroke="#58bdd0" strokeWidth="2" strokeDasharray="7 10" markerEnd="url(#etc-arrow-cyan)" className="animate-flow"/>
+          <path d="M92 222 C130 222 145 221 178 221 S230 251 289 251 S338 221 450 221 S514 181 602 181" fill="none" stroke="#58bdd0" strokeWidth="2" strokeDasharray="7 10" markerEnd="url(#etc-arrow-cyan)" className="animate-flow" style={{ animationDuration: `${Math.max(.55, 1.8 - activity * .012)}s` }}/>
           <ElectronParticles activity={activity}/>
 
           <g fill="#58bdd0" fontSize="11" fontWeight="600">
@@ -155,7 +191,7 @@ export function ElectronTransportChain({
               const x = complex.x + complex.width / 2;
               return <g key={`pump-${complex.number}`}>
                 <path d={`M${x} 154 V76`} stroke="#58bdd0" strokeWidth="2" strokeDasharray="4 4" markerEnd="url(#etc-arrow-cyan)"/>
-                <circle cx={x - 13} cy={66 - index * 4} r="10" fill="#112d34" stroke="#58bdd0" strokeOpacity=".55"/>
+                <circle className="etc-pump-gate" cx={x - 13} cy={66 - index * 4} r="10" fill="#112d34" stroke="#58bdd0" strokeOpacity=".55"/>
                 <text x={x - 13} y={70 - index * 4} textAnchor="middle">H⁺</text>
               </g>;
             })}
@@ -173,33 +209,29 @@ export function ElectronTransportChain({
 
           <g aria-label="Vazamento de espécies reativas de oxigênio">
             <title>ROS aumenta conforme o estresse oxidativo celular</title>
-            {rosParticles.map((particle, index) => <circle key={`ros-${index}`} cx={particle.x} cy={particle.y} r="4" fill="#dc6658" filter="url(#etc-glow)" opacity={index < rosCount ? .85 : .035}/>) }
+            {rosParticles.map((particle, index) => <circle key={`ros-${index}`} className="etc-ros-particle" style={{ animationDelay: `${-index * .19}s`, animationDuration: `${1.25 + index % 3 * .22}s` }} cx={particle.x} cy={particle.y} r="4" fill="#dc6658" filter="url(#etc-glow)" opacity={index < rosCount ? .85 : .035}/>) }
           </g>
+
+          <MolecularFlowLayer activity={activity} coupling={coupling} atpSynthaseFlux={atpSynthaseFlux}/>
 
           <g transform="translate(715 88)">
             <title>ATP sintase: o retorno de prótons converte ADP e fosfato em ATP</title>
             <path d="M45 -15 V34" stroke="#d9b45f" strokeWidth="2" strokeDasharray="4 4" markerEnd="url(#etc-arrow-gold)"/>
             <text x="58" y="4" fill="#d9b45f" fontSize="11">H⁺</text>
-            <rect x="19" y="34" width="53" height="79" rx="20" fill="url(#etc-atp)" stroke="#d9b45f" strokeOpacity=".78"/>
-            <g className="origin-[45px_72px] animate-spin" style={{ animationDuration: `${synthaseSpin}s` }}>
+            <rect className="etc-atp-body" x="19" y="34" width="53" height="79" rx="20" fill="url(#etc-atp)" stroke="#d9b45f" strokeOpacity=".78"/>
+            <g className="etc-atp-rotor origin-[45px_72px] animate-spin" style={{ animationDuration: `${synthaseSpin}s` }}>
               <circle cx="45" cy="72" r="22" fill="#191a17" stroke="#d9b45f" strokeOpacity=".75"/>
               <path d="M45 50 V94 M23 72 H67 M30 57 L60 87 M60 57 L30 87" stroke="#d9b45f" strokeOpacity=".55"/>
             </g>
             <path d="M45 113 V139" stroke="#d9b45f" strokeWidth="3"/>
-            <ellipse cx="45" cy="149" rx="33" ry="18" fill="#302a1c" stroke="#d9b45f"/>
+            <ellipse className="etc-atp-catalytic" cx="45" cy="149" rx="33" ry="18" fill="#302a1c" stroke="#d9b45f"/>
             <text x="45" y="153" textAnchor="middle" fill="#e6e8ec" fontSize="10" fontWeight="700">ATPase</text>
             <text x="45" y="184" textAnchor="middle" fill="#929ba9" fontSize="9">ADP + Pi</text>
             <path d="M45 190 V211" stroke="#d9b45f" strokeWidth="1.5" markerEnd="url(#etc-arrow-gold)"/>
             <text x="45" y="231" textAnchor="middle" fill="#d9b45f" fontFamily="Cinzel, serif" fontSize="18">ATP</text>
           </g>
+          </g>
         </svg>
-      </div>
-
-      <div className="border-t border-white/5 bg-black/10 p-3">
-        <div className="flex flex-wrap items-center justify-between gap-2"><PanelLabel>Moléculas sendo processadas</PanelLabel><span className="text-[8px] text-muted-foreground">fluxos normalizados em equivalentes/min</span></div>
-        <div className="mt-2 grid grid-cols-3 gap-1.5 lg:grid-cols-5">
-          {molecules.map(molecule => <MoleculeCounter key={molecule.name} {...molecule}/>) }
-        </div>
       </div>
       <div className="grid grid-cols-2 gap-px border-t border-white/5 bg-white/5 sm:grid-cols-4">
         <ChainMetric icon={<Activity className="size-3.5"/>} label="NADH disponível" value={`${nadhPercent.toFixed(0)}%`} progress={nadhPercent}/>
@@ -268,8 +300,81 @@ function ElectronParticles({ activity }: { activity: number }) {
       r="4.5"
       fill="#d9b45f"
       filter="url(#etc-glow)"
+      className="etc-electron-particle"
+      style={{ animationDelay: `${-index * .13}s` }}
       opacity="0"
     />)}
+  </g>;
+}
+
+function MolecularFlowLayer({ activity, coupling, atpSynthaseFlux }: { activity: number; coupling: number; atpSynthaseFlux: number }) {
+  const paths = useRef<Record<string, SVGPathElement | null>>({});
+  const particles = useRef<Record<string, Array<SVGGElement | null>>>({});
+  const progress = useRef<Record<string, number[]>>({});
+  const activityRef = useRef(activity);
+  const couplingRef = useRef(coupling);
+  const atpFluxRef = useRef(atpSynthaseFlux);
+  activityRef.current = activity;
+  couplingRef.current = coupling;
+  atpFluxRef.current = atpSynthaseFlux;
+
+  MOLECULAR_TRACKS.forEach(track => {
+    progress.current[track.id] ??= Array.from({ length: track.count }, (_, index) => (index / track.count + track.id.length * .037) % 1);
+    particles.current[track.id] ??= Array.from({ length: track.count }, () => null);
+  });
+
+  useEffect(() => {
+    let frame = 0;
+    let last = performance.now();
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+    const positionParticles = (delta: number) => {
+      MOLECULAR_TRACKS.forEach(track => {
+        const route = paths.current[track.id];
+        if (!route) return;
+        const driver = track.driver === 'flux'
+          ? activityRef.current / 100
+          : track.driver === 'coupling'
+            ? couplingRef.current / 100
+            : atpFluxRef.current / 100;
+        const normalizedDriver = clamp(driver, 0, 1);
+        const speed = track.baseSpeed * (.18 + normalizedDriver * 1.35);
+        const length = route.getTotalLength();
+        particles.current[track.id]?.forEach((particle, index) => {
+          if (!particle) return;
+          if (!reducedMotion.matches) progress.current[track.id][index] = advanceFlowProgress(progress.current[track.id][index], speed, delta);
+          const point = route.getPointAtLength(progress.current[track.id][index] * length);
+          particle.setAttribute('transform', `translate(${point.x.toFixed(2)} ${point.y.toFixed(2)})`);
+          particle.style.opacity = String(.32 + normalizedDriver * .68);
+        });
+      });
+    };
+
+    const animate = (now: number) => {
+      const delta = Math.min(.08, Math.max(0, (now - last) / 1000));
+      last = now;
+      positionParticles(delta);
+      frame = requestAnimationFrame(animate);
+    };
+
+    positionParticles(0);
+    frame = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(frame);
+  }, []);
+
+  return <g aria-label="Fluxos moleculares animados da cadeia respiratória">
+    {MOLECULAR_TRACKS.map(track => <g key={track.id} aria-label={track.label}>
+      <path ref={element => { paths.current[track.id] = element; }} d={track.path} fill="none" stroke={track.color} strokeOpacity=".08" strokeWidth="1" strokeDasharray="2 7"/>
+      {Array.from({ length: track.count }, (_, index) => <g
+        key={`${track.id}-${index}`}
+        ref={element => { particles.current[track.id][index] = element; }}
+        className="etc-molecular-particle"
+        style={{ animationDelay: `${-index * .16}s` }}
+      >
+        <circle r={track.radius} fill="#081019" fillOpacity=".94" stroke={track.color} strokeWidth="1.15" filter="url(#etc-glow)"/>
+        <text y="2.2" textAnchor="middle" fill={track.color} fontSize={track.formula.length > 2 ? 4.8 : 6.2} fontWeight="700">{track.formula}</text>
+      </g>)}
+    </g>)}
   </g>;
 }
 
@@ -280,11 +385,30 @@ function formatMolecularRate(value: number) {
   return value.toFixed(2);
 }
 
-function MoleculeCounter({ name, formula, value, color }: { name: string; formula: string; value: number; color: string }) {
-  return <div className="rounded-lg border border-white/8 bg-black/20 px-2 py-2">
-    <div className="flex items-center gap-1.5"><span className="size-1.5 rounded-full" style={{ background: color, boxShadow: `0 0 7px ${color}` }}/><span className="truncate text-[8px] uppercase tracking-wider text-muted-foreground">{name}</span></div>
-    <div className="mt-1 flex items-baseline justify-between gap-1"><strong className="font-mono text-[11px] text-foreground">{formatMolecularRate(value)}</strong><span className="text-[8px]" style={{ color }}>{formula}</span></div>
-  </div>;
+interface ProcessNodeProps {
+  x: number;
+  width: number;
+  targetX: number;
+  targetY: number;
+  color: string;
+  title: string;
+  reaction: string;
+  rate: string;
+  source: string;
+}
+
+function ProcessNode({ x, width, targetX, targetY, color, title, reaction, rate, source }: ProcessNodeProps) {
+  const centerX = x + width / 2;
+  return <g aria-label={`${title}: ${reaction}; ${rate}; ${source}`}>
+    <path d={`M${centerX} 60 C${centerX} 88 ${targetX} 100 ${targetX} ${targetY}`} fill="none" stroke={color} strokeOpacity=".42" strokeWidth="1.25" strokeDasharray="3 5"/>
+    <circle cx={targetX} cy={targetY} r="3" fill={color} opacity=".9" filter="url(#etc-glow)"/>
+    <rect x={x} y="5" width={width} height="55" rx="11" fill="#081019" fillOpacity=".94" stroke={color} strokeOpacity=".48"/>
+    <circle cx={x + 10} cy="17" r="2.5" fill={color} filter="url(#etc-glow)"/>
+    <text x={x + 17} y="20" fill={color} fontSize="7.5" fontWeight="700" letterSpacing="1.05">{title.toUpperCase()}</text>
+    <text x={x + width - 9} y="20" textAnchor="end" fill="#e6e8ec" fontFamily="ui-monospace, monospace" fontSize="8" fontWeight="600">{rate}</text>
+    <text x={centerX} y="37" textAnchor="middle" fill="#e6e8ec" fontSize="8.5" fontWeight="600">{reaction}</text>
+    <text x={centerX} y="51" textAnchor="middle" fill="#929ba9" fontFamily="ui-monospace, monospace" fontSize="7.5">{source}</text>
+  </g>;
 }
 
 function ChainMetric({ icon, label, value, progress }: { icon: ReactNode; label: string; value: string; progress: number }) {

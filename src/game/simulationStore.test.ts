@@ -3,6 +3,7 @@ import {
   advanceCellularSimulation,
   allocateAtp,
   captureSubstrate,
+  getCellularAutomationPerformance,
   initializeCellularState,
   oxidizeSubstrate,
   purchaseAutomation,
@@ -323,6 +324,10 @@ describe('ciclo de gameplay celular', () => {
       expect(narrative.scene.length, definition.id).toBeGreaterThan(80);
       expect(narrative.objective.length, definition.id).toBeGreaterThan(45);
     });
+    SCENARIO_DEFINITIONS.filter(definition => definition.difficulty === 'hard').forEach(definition => {
+      expect(definition.investigationPrompt?.length, definition.id).toBeGreaterThan(120);
+      expect(definition.investigationPrompt, definition.id).toContain('?');
+    });
   });
 
   it('mantém todas as estratégias difíceis executáveis no instante da decisão', () => {
@@ -455,6 +460,20 @@ describe('ciclo de gameplay celular', () => {
     const automation = purchaseAutomation(repair.state, 'transporters');
     expect(automation.ok).toBe(true);
     expect(automation.state.automation.transporters).toBe(1);
+  });
+
+  it('expõe ganhos quantitativos de cada automação sem atribuir transporte ao O₂', () => {
+    const baseline = getCellularAutomationPerformance({ transporters: 0, mitochondrialShuttle: 0, repair: 0 });
+    const upgraded = getCellularAutomationPerformance({ transporters: 1, mitochondrialShuttle: 1, repair: 1 });
+
+    expect(upgraded.autoCaptureCapacityPerSecond.glucose).toBeGreaterThan(baseline.autoCaptureCapacityPerSecond.glucose);
+    expect(upgraded.autoCaptureCapacityPerSecond.fattyAcid).toBeGreaterThan(baseline.autoCaptureCapacityPerSecond.fattyAcid);
+    expect(upgraded.autoCaptureCapacityPerSecond.aminoAcid).toBeGreaterThan(baseline.autoCaptureCapacityPerSecond.aminoAcid);
+    expect(upgraded.autoCaptureCapacityPerSecond.oxygen).toBe(baseline.autoCaptureCapacityPerSecond.oxygen);
+    expect(upgraded.automaticGlycolysisCapacityPerSecond).toBeCloseTo(.016, 6);
+    expect(upgraded.oxidativeCapacityMultiplier).toBeCloseTo(1.18, 6);
+    expect(upgraded.automaticFattyAcidOxidationPerSecond).toBeCloseTo(.004, 6);
+    expect(upgraded.automaticDamageRepairPerSecond).toBeCloseTo(.056, 6);
   });
 
   it('cria evento com contexto embutido e distingue decisão adaptativa da prejudicial', () => {

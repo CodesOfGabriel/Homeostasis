@@ -22,12 +22,6 @@ import {
 } from '../../game/scenarios';
 import { collectPreparedDecisionSignals, useSimulationStore } from '../../game/simulationStore';
 import { getScenarioNarrative } from '../../game/scenarioNarrative';
-import {
-  SCENARIO_METRIC_CATALOG,
-  getScenarioMetricKeysByGroup,
-  type ScenarioMetricGroup,
-  type ScenarioMetricKey,
-} from '../../game/scenarioMetrics';
 import { GlassPanel, PanelLabel, ProgressBar, cn } from './ui';
 
 interface PhysiologicalDecisionLayerProps {
@@ -65,24 +59,11 @@ const scenarioSteps: Record<string, StepKey[]> = {
   'major-hemorrhage': ['vitals', 'tissue', 'mitochondria', 'defense'],
 };
 
-type MetricScope = 'priority' | ScenarioMetricGroup;
-
-const metricScopes: Array<{ id: MetricScope; label: string }> = [
-  { id: 'priority', label: 'Prioritárias' },
-  { id: 'system', label: 'Sistema' },
-  { id: 'endocrine', label: 'Hormônios' },
-  { id: 'tissue', label: 'Tecido' },
-  { id: 'cell', label: 'Célula' },
-  { id: 'mitochondria', label: 'Mitocôndria' },
-  { id: 'pools', label: 'Pools' },
-];
-
 export function PhysiologicalDecisionLayer({ onNavigate }: PhysiologicalDecisionLayerProps) {
   const cellular = useSimulationStore(state => state.cellular);
   const physiology = useSimulationStore(state => state.physiology);
   const routine = cellular.routine;
   const response = useSimulationStore(state => state.scenarioResponse);
-  const onset = useSimulationStore(state => state.scenarioOnset);
   const pendingCommands = useSimulationStore(state => state.pendingCommands);
   const activeHormonalActions = useSimulationStore(state => state.activeHormonalActions);
   const hypothalamus = useSimulationStore(state => state.hypothalamus);
@@ -91,7 +72,6 @@ export function PhysiologicalDecisionLayer({ onNavigate }: PhysiologicalDecision
   const resolve = useSimulationStore(state => state.resolveCellularRoutine);
   const [error, setError] = useState('');
   const [collapsed, setCollapsed] = useState(false);
-  const [metricScope, setMetricScope] = useState<MetricScope>('priority');
   const scenarioId = routine?.id ?? response?.scenarioId;
   const definition = scenarioId ? getScenarioDefinition(scenarioId) : undefined;
   const narrative = scenarioId ? getScenarioNarrative(scenarioId) : undefined;
@@ -105,7 +85,6 @@ export function PhysiologicalDecisionLayer({ onNavigate }: PhysiologicalDecision
     if (!scenarioId) return;
     setError('');
     setCollapsed(false);
-    setMetricScope('priority');
   }, [scenarioId]);
 
   if (!scenarioId || !definition) {
@@ -125,22 +104,16 @@ export function PhysiologicalDecisionLayer({ onNavigate }: PhysiologicalDecision
 
   const observing = Boolean(response && !routine);
   const selectedChoice = response ? definition.choices.find(choice => choice.id === response.choiceId) : undefined;
-  const availableMetricSet = new Set<ScenarioMetricKey>(definition.metricKeys);
-  const visibleMetricKeys = metricScope === 'priority'
-    ? definition.priorityMetricKeys
-    : getScenarioMetricKeysByGroup(metricScope).filter(key => availableMetricSet.has(key));
-  const visibleMetrics = visibleMetricKeys.map(key => {
-    const definition = SCENARIO_METRIC_CATALOG[key];
-    return metric(definition, definition.read(physiology, cellular), onset?.values[key]);
-  });
   const relevantSteps = scenarioSteps[scenarioId] ?? ['vitals', 'tissue'];
   const progress = response ? (1 - response.remainingSeconds / response.totalSeconds) * 100 : 0;
+  const investigatingHardEvent = definition.difficulty === 'hard' && !observing;
 
   return (
     <aside
       aria-label={observing ? 'Observação da resposta fisiológica' : 'Evento fisiológico aguardando decisão'}
       className={cn(
-        'fixed bottom-[calc(82px+env(safe-area-inset-bottom))] left-3 top-auto z-[45] flex max-h-[64dvh] w-[calc(100%-1.5rem)] flex-col lg:bottom-[82px] lg:left-3 lg:top-[68px] lg:max-h-none lg:w-[400px]',
+        'fixed bottom-[calc(82px+env(safe-area-inset-bottom))] left-3 top-auto z-[45] flex max-h-[64dvh] w-[calc(100%-1.5rem)] max-w-[calc(100vw-1.5rem)] flex-col overflow-x-hidden [contain:layout_paint] lg:bottom-[82px] lg:left-3 lg:top-[68px] lg:max-h-none lg:w-[400px]',
+        definition.difficulty === 'hard' && 'lg:w-[440px]',
         collapsed && 'max-lg:max-h-16',
       )}
     >
@@ -164,6 +137,10 @@ export function PhysiologicalDecisionLayer({ onNavigate }: PhysiologicalDecision
             })}
           </div>
 
+          <div className="mt-2 flex flex-wrap gap-1.5" aria-label="Eixos de aprendizagem do evento">
+            {['Fisiologia aplicada', 'Regulação endócrina', 'Manejo clínico'].map(axis => <span key={axis} className="rounded-full border border-primary/20 bg-primary/[.06] px-2 py-1 text-[7px] uppercase tracking-[.14em] text-primary/85">{axis}</span>)}
+          </div>
+
           <div className="mt-3 overflow-hidden rounded-xl border border-primary/25 bg-gradient-to-br from-primary/[.09] via-black/15 to-black/25">
             <div className="border-b border-white/8 px-3 py-2.5">
               <div className="flex items-center justify-between gap-2">
@@ -175,6 +152,10 @@ export function PhysiologicalDecisionLayer({ onNavigate }: PhysiologicalDecision
             <div className="p-3">
               <p className="font-display text-[13px] leading-relaxed text-foreground">{narrative?.scene ?? definition.description}</p>
               <p className="mt-2 text-[10px] leading-relaxed text-foreground/65">{definition.description}</p>
+              <div className="mt-3 rounded-lg border border-cyan/20 bg-cyan/[.05] px-3 py-2">
+                <span className="text-[8px] uppercase tracking-[.16em] text-cyan">{investigatingHardEvent ? 'O que precisa ser explicado?' : 'Raciocínio fisiológico-clínico'}</span>
+                <p className="mt-1 text-[9px] leading-relaxed text-foreground/75">{investigatingHardEvent ? definition.investigationPrompt : definition.explanation}</p>
+              </div>
               <div className="mt-3 rounded-lg border border-warning/20 bg-warning/[.06] px-3 py-2">
                 <span className="text-[8px] uppercase tracking-[.16em] text-warning">Sua missão</span>
                 <p className="mt-1 text-[10px] leading-relaxed text-foreground/85">{narrative?.objective}</p>
@@ -182,19 +163,6 @@ export function PhysiologicalDecisionLayer({ onNavigate }: PhysiologicalDecision
               <p className="mt-2 text-[9px] leading-relaxed text-muted-foreground">{definition.contextSummary}</p>
             </div>
           </div>
-
-          <section className="mt-4" aria-labelledby="event-metrics-title">
-            <div className="flex items-center justify-between gap-2"><div id="event-metrics-title"><PanelLabel icon={<Activity className="size-3.5"/>}>Métricas para investigar</PanelLabel></div><span className="text-[8px] uppercase tracking-wider text-muted-foreground">Δ desde detecção</span></div>
-            {definition.difficulty === 'hard' && <>
-              <p className="mt-1.5 text-[9px] leading-relaxed text-muted-foreground">{definition.metricKeys.length} marcadores integrados. Cruze escalas: um valor isolado pode parecer normal e ainda ocultar falha de entrega, utilização ou compensação.</p>
-              <div className="scrollbar-thin mt-2 flex gap-1 overflow-x-auto pb-1" role="tablist" aria-label="Escala das métricas do evento">
-                {metricScopes.map(scope => <button type="button" role="tab" aria-selected={metricScope === scope.id} key={scope.id} onClick={() => setMetricScope(scope.id)} className={cn('min-h-8 flex-none rounded-md border px-2 text-[8px] uppercase tracking-wider transition', metricScope === scope.id ? 'border-primary/45 bg-primary/10 text-primary' : 'border-white/8 bg-black/15 text-muted-foreground hover:border-primary/25 hover:text-foreground')}>{scope.label}</button>)}
-              </div>
-            </>}
-            <div className="mt-2 grid grid-cols-2 gap-1.5">
-              {visibleMetrics.map(item => <div key={item.label} className="rounded-lg border border-white/8 bg-black/15 px-2.5 py-2"><span className="block truncate text-[8px] uppercase tracking-wider text-muted-foreground">{item.label}</span><div className="mt-1 flex items-baseline justify-between gap-2"><strong className="font-mono text-[12px] text-foreground">{item.value} <small className="text-[8px] font-normal text-muted-foreground">{item.unit}</small></strong><span className={cn('font-mono text-[9px]', item.delta === '—' ? 'text-muted-foreground' : 'text-primary')}>{item.delta}</span></div></div>)}
-            </div>
-          </section>
 
           <section className="mt-4">
             <PanelLabel icon={<Eye className="size-3.5"/>}>Abrir investigação</PanelLabel>
@@ -215,16 +183,16 @@ export function PhysiologicalDecisionLayer({ onNavigate }: PhysiologicalDecision
           ) : routine ? (
             <section className="mt-4">
               <PanelLabel icon={<GitFork className="size-3.5"/>}>Escolher intervenção</PanelLabel>
-              <p className="mt-1 text-[9px] leading-relaxed text-muted-foreground">As opções mostram mecanismo e requisitos, não o resultado. A qualidade da resposta depende das reservas e sinais que você preparou.</p>
+              <p className="mt-1 text-[9px] leading-relaxed text-muted-foreground">As opções combinam manobras, fármacos e suporte fisiológico. Cruze sinais vitais, eixo endócrino e perfusão antes de escolher; os requisitos indicam a resposta interna que precisa acompanhar a conduta.</p>
               <div className="mt-2 space-y-2">
                 {routine.choices.map((choice, index) => {
                   const availability = getScenarioChoiceAvailability(cellular, routine.id, choice.id, preparedSignals);
                   const hasRequirements = choice.requirements.length > 0 || (choice.signalRequirements?.length ?? 0) > 0;
                   return <button type="button" key={choice.id} disabled={!availability.available} onClick={() => { if (!resolve(choice.id)) setError('Não foi possível iniciar essa resposta. Revise os recursos e tente novamente.'); }} className="group w-full rounded-xl border border-white/10 bg-black/20 p-3 text-left transition hover:border-primary/55 hover:bg-primary/[.07] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 disabled:cursor-not-allowed disabled:border-warning/20 disabled:opacity-55">
-                    <span className="text-[8px] uppercase tracking-[.16em] text-muted-foreground">Estratégia {index + 1}</span>
+                    <span className="text-[8px] uppercase tracking-[.16em] text-muted-foreground">Conduta {index + 1}</span>
                     <strong className="mt-1.5 block text-[11px] text-foreground group-hover:text-primary">{choice.label}</strong>
                     <span className="mt-1 block text-[10px] leading-relaxed text-muted-foreground">{choice.description}</span>
-                    {definition.difficulty === 'hard' && <span className="mt-1.5 block text-[9px] leading-relaxed text-foreground/65"><span className="text-primary">Implicação:</span> {choice.tradeoff}</span>}
+                    {definition.difficulty === 'hard' && <span className="mt-1.5 block text-[9px] leading-relaxed text-foreground/65"><span className="text-primary">Risco fisiológico:</span> {choice.tradeoff}</span>}
                     {hasRequirements && <span className="mt-2 block border-t border-white/8 pt-2 text-[9px] leading-relaxed"><strong className={availability.available ? 'text-primary' : 'text-warning'}>{availability.available ? 'Preparação compatível' : `Faltam: ${availability.missing.join(' · ')}`}</strong>{choice.requirements.map(requirement => <span key={requirement.resource} className="mt-1 block text-muted-foreground">{DECISION_RESOURCE_LABELS[requirement.resource]} {getDecisionResourceAmount(cellular, requirement.resource).toFixed(requirement.resource === 'antioxidants' ? 0 : 1)} / {requirement.minimum.toFixed(requirement.resource === 'antioxidants' ? 0 : 1)}{requirement.cost > 0 ? ` · uso ${requirement.cost}` : ''}</span>)}{(choice.signalRequirements ?? []).map(requirement => { const ready = requirement.anyOf.some(signal => preparedSignalSet.has(signal)); return <span key={requirement.label} className={cn('mt-1 block', ready ? 'text-primary' : 'text-muted-foreground')}><Zap className="mr-1 inline size-3"/>{requirement.label} · {ready ? 'preparado' : 'aguardando sinal'}</span>; })}</span>}
                   </button>;
                 })}
@@ -236,19 +204,4 @@ export function PhysiologicalDecisionLayer({ onNavigate }: PhysiologicalDecision
       </GlassPanel>
     </aside>
   );
-}
-
-function metric(definition: typeof SCENARIO_METRIC_CATALOG[ScenarioMetricKey], current: number, initial: number | undefined) {
-  const difference = initial === undefined ? null : current - initial;
-  const threshold = 10 ** -definition.digits / 2;
-  return {
-    label: definition.label,
-    value: current.toFixed(definition.digits),
-    unit: definition.unit,
-    delta: difference === null
-      ? '—'
-      : Math.abs(difference) < threshold
-        ? '→ 0'
-        : `${difference > 0 ? '↑ +' : '↓ '}${difference.toFixed(definition.digits)}`,
-  };
 }

@@ -220,6 +220,133 @@ button:disabled { cursor: not-allowed; }
 @keyframes dash-flow { to { stroke-dashoffset: -24; } }
 .animate-flow { animation: dash-flow 1.4s linear infinite; }
 
+@keyframes etc-complex-conformation {
+  0%, 100% { transform: translateY(0) scale(1); }
+  28% { transform: translateY(-1.5px) scale(1.025, .982); }
+  58% { transform: translateY(.75px) scale(.987, 1.02); }
+  78% { transform: translateY(-.5px) scale(1.012, .994); }
+}
+@keyframes etc-complex-charge {
+  0%, 100% { stroke-opacity: .58; filter: drop-shadow(0 0 0 rgba(88,189,208,0)); }
+  48% { stroke-opacity: 1; filter: drop-shadow(0 0 8px rgba(88,189,208,.72)); }
+  62% { stroke-opacity: .78; filter: drop-shadow(0 0 3px rgba(217,180,95,.38)); }
+}
+@keyframes etc-core-catalysis {
+  0%, 100% { transform: scale(.96); stroke-opacity: .48; }
+  45% { transform: scale(1.1); stroke-opacity: 1; }
+  68% { transform: scale(1.01); stroke-opacity: .72; }
+}
+@keyframes etc-reservoir-drift {
+  0%, 100% { transform: translate(0, 0) scale(.94); }
+  30% { transform: translate(2px, -4px) scale(1.08); }
+  64% { transform: translate(-2px, -1px) scale(1); }
+}
+@keyframes etc-carrier-wobble {
+  0%, 100% { transform: translateX(-3px) rotate(-2deg); filter: drop-shadow(0 0 2px rgba(217,180,95,.2)); }
+  50% { transform: translateX(3px) rotate(2deg); filter: drop-shadow(0 0 7px rgba(217,180,95,.65)); }
+}
+@keyframes etc-particle-pulse {
+  0%, 100% { opacity: .72; stroke-width: 1; }
+  50% { opacity: 1; stroke-width: 1.8; }
+}
+@keyframes etc-ros-jitter {
+  0%, 100% { transform: translate(0, 0) scale(.8); }
+  33% { transform: translate(2px, -2px) scale(1.25); }
+  66% { transform: translate(-1px, 2px) scale(1); }
+}
+@keyframes etc-membrane-current {
+  0% { stroke-dashoffset: 0; stroke-opacity: .16; }
+  50% { stroke-opacity: .38; }
+  100% { stroke-dashoffset: -40; stroke-opacity: .16; }
+}
+@keyframes etc-atp-catalysis {
+  0%, 100% { transform: scale(.96, 1); filter: drop-shadow(0 0 2px rgba(217,180,95,.2)); }
+  45% { transform: scale(1.08, .94); filter: drop-shadow(0 0 10px rgba(217,180,95,.7)); }
+  72% { transform: scale(1.01); filter: drop-shadow(0 0 5px rgba(217,180,95,.4)); }
+}
+
+.etc-complex-node {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation-name: etc-complex-conformation;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+.etc-complex-body {
+  animation-name: etc-complex-charge;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+.etc-complex-core {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation-name: etc-core-catalysis;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+.etc-proton-reservoir {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation-name: etc-reservoir-drift;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+.etc-membrane-energy { animation: etc-membrane-current 2.4s linear infinite; }
+.etc-coq-core, .etc-cytochrome-core {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: etc-carrier-wobble 1.7s ease-in-out infinite;
+}
+.etc-cytochrome-core { animation-delay: -.65s; }
+.etc-pump-gate {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: etc-core-catalysis 1.1s ease-in-out infinite;
+}
+.etc-molecular-particle circle { animation: etc-particle-pulse .86s ease-in-out infinite; }
+.etc-electron-particle {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: etc-core-catalysis .72s ease-in-out infinite;
+}
+.etc-ros-particle {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation-name: etc-ros-jitter;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+.etc-atp-body, .etc-atp-catalytic {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: etc-atp-catalysis 1.35s ease-in-out infinite;
+}
+.etc-atp-catalytic { animation-delay: -.48s; }
+.etc-atp-rotor { filter: drop-shadow(0 0 6px rgba(217,180,95,.55)); }
+
+.mitochondrial-chain-backdrop {
+  @apply pointer-events-none absolute inset-0 z-0 overflow-hidden;
+  mask-image: linear-gradient(to bottom, transparent 0%, black 9%, black 84%, transparent 100%);
+}
+.mitochondrial-chain-backdrop > .glass-soft {
+  @apply absolute inset-0 m-0 overflow-hidden rounded-none border-0 bg-transparent shadow-none backdrop-blur-none;
+}
+.mitochondrial-chain-backdrop > .glass-soft > :not(:nth-child(2)) { display: none; }
+.mitochondrial-chain-backdrop > .glass-soft > :nth-child(2) {
+  @apply absolute inset-0 m-0 overflow-hidden p-0;
+}
+.mitochondrial-chain-backdrop svg {
+  position: absolute;
+  left: 50%;
+  top: 48%;
+  width: max(1120px, 118vw);
+  height: max(520px, 84vh);
+  min-width: 0;
+  transform: translate(-50%, -50%) scale(1.08);
+  opacity: .56;
+  filter: saturate(1.15) contrast(1.04) drop-shadow(0 0 38px rgba(88, 189, 208, .12));
+}
+
 @keyframes critical-pulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(220,102,88,.08); }
   50% { box-shadow: 0 0 18px 1px rgba(220,102,88,.28); }
