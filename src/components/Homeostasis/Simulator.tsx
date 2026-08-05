@@ -1,6 +1,7 @@
 import { lazy, Suspense, useMemo, useState } from 'react';
 import { BrainCircuit, CheckCircle2, RotateCcw, ShieldCheck, X } from 'lucide-react';
 import { useSimulationLoop, useSimulationStore } from '../../game/simulationStore';
+import { getSimulationCalendar } from '../../game/simulationCalendar';
 import { Playback, Stepper, TopNav, type SimulatorTab, type StepKey } from './navigation';
 import { ActionButton, GlassPanel, PanelLabel, cn } from './ui';
 import { GlobalPhysiologyDock } from './GlobalPhysiologyDock';
@@ -19,15 +20,6 @@ const stepTabs: Record<StepKey, SimulatorTab> = {
   defense: 'intracellular',
   vitals: 'system',
 };
-
-function simulationClock(seconds: number) {
-  const totalMinutes = 8 * 60 + Math.floor(seconds / 60);
-  const day = Math.floor(totalMinutes / 1440) + 1;
-  const minuteOfDay = totalMinutes % 1440;
-  const hours = Math.floor(minuteOfDay / 60);
-  const minutes = minuteOfDay % 60;
-  return { day, clock: `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}` };
-}
 
 export function Simulator() {
   useSimulationLoop();
@@ -48,7 +40,7 @@ export function Simulator() {
   const reset = useSimulationStore(state => state.reset);
   const setSpeed = useSimulationStore(state => state.setTimeSpeed);
   const setDifficulty = useSimulationStore(state => state.setSimulationDifficulty);
-  const time = simulationClock(physiology.timeElapsed);
+  const time = getSimulationCalendar(physiology.timeElapsed);
 
   const condition = useMemo(() => {
     if (!physiology.isAlive) return 'Falência';
@@ -95,7 +87,7 @@ export function Simulator() {
           </Suspense>}
         </div>
         {started && <GlobalPhysiologyDock />}
-        {started && <PhysiologicalDecisionLayer onNavigate={chooseStep} />}
+        {started && <PhysiologicalDecisionLayer />}
         <footer className="pointer-events-none absolute inset-x-0 bottom-0 z-30 flex items-end justify-center gap-3 bg-gradient-to-t from-background/85 via-background/30 to-transparent px-4 pb-2 pt-10 lg:px-6">
           <Stepper active={activeStep} onChange={chooseStep} />
           <div className="pointer-events-auto hidden flex-none sm:block xl:absolute xl:bottom-2 xl:right-6"><Playback running={running} speed={speed} onToggle={() => running ? pause() : start()} onSpeed={cycleSpeed} /></div>
@@ -105,7 +97,7 @@ export function Simulator() {
 
       {!started && <Overlay title="Iniciar simulador" onClose={undefined}>
         <p className="text-sm leading-relaxed text-muted-foreground">Investigue sinais fisiológicos e endócrinos para escolher manobras e intervenções clínicas. A bioquímica aparece como suporte causal básico, não como objetivo isolado.</p>
-        <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3"><Info label="Objetivo" text="Preservar a viabilidade"/><Info label="Casos" text="Histórias clínicas encadeadas"/><Info label="Decisões" text="Manobras, fármacos e suporte"/></div>
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4"><Info label="Objetivo" text="Preservar a viabilidade"/><Info label="Casos" text="Histórias clínicas encadeadas"/><Info label="Decisões" text="Manobras, fármacos e suporte"/><Info label="Relógio" text="1 dia ≈ 4 min 30 s em 1×"/></div>
         <section className="mt-5 rounded-2xl border-2 border-primary/35 bg-gradient-to-br from-primary/[.12] via-black/30 to-danger/[.08] p-3 shadow-[0_16px_50px_rgba(0,0,0,.35)]" aria-labelledby="difficulty-title">
           <div className="flex items-center justify-between gap-3 px-1 pb-3">
             <div><PanelLabel>Escolha a intensidade</PanelLabel><h3 id="difficulty-title" className="mt-1 font-display text-base text-foreground">Dificuldade: Fácil / Difícil</h3></div>
@@ -142,6 +134,7 @@ export function Simulator() {
 
       {settingsOpen && <Overlay title="Configurações da simulação" onClose={() => setSettingsOpen(false)}>
         <p className="text-sm leading-relaxed text-muted-foreground">Este é um modelo educacional simplificado e não deve orientar diagnóstico ou tratamento.</p>
+        <div className="mt-3 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2.5 text-[11px] leading-relaxed text-muted-foreground">Calendário comprimido: em 1×, 24 horas do simulador passam em aproximadamente 4 min 30 s reais. Crises e respostas celulares continuam usando segundos fisiológicos próprios.</div>
         <div className="mt-4 rounded-lg border border-warning/20 bg-warning/5 px-3 py-2.5 text-[11px] leading-relaxed text-muted-foreground">Dificuldade atual: <strong className="text-foreground">{difficulty === 'easy' ? 'Fácil' : 'Difícil'}</strong>. Os eventos ensinam fisiologia, regulação endócrina e manejo clínico simplificado. Quando uma situação surgir, a simulação pausará para investigação antes da conduta.</div>
         <div className="mt-5 grid grid-cols-2 gap-2"><ActionButton onClick={() => setSettingsOpen(false)}>Continuar</ActionButton><ActionButton onClick={restartSimulation}><RotateCcw className="mr-2 inline size-3.5"/>Reiniciar</ActionButton></div>
       </Overlay>}

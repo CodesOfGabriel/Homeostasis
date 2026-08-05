@@ -15,6 +15,7 @@ import {
     isScenarioNarrativelyCompatible,
     narrativeAffinity,
 } from './scenarioNarrative';
+import { isSimulationTimeWithinWindows, type SimulationTimeWindow } from './simulationCalendar';
 
 export const BASELINE_PHYSIOLOGICAL_CONTEXT: PhysiologicalContextFactors = {
     exercise: 0,
@@ -191,6 +192,48 @@ const eligibleWhen = (
         weight,
         reason,
     });
+
+const ALL_DAY: readonly SimulationTimeWindow[] = [
+    { startHour: 0, endHour: 24, label: 'qualquer horário' },
+];
+
+/**
+ * Janelas narrativas do calendário comprimido. Eventos encadeados mantêm sua
+ * própria janela: whisky surge à noite e sua complicação aparece na madrugada.
+ */
+export const SCENARIO_TIME_WINDOWS: Record<string, readonly SimulationTimeWindow[]> = {
+    'stair-climb': [{ startHour: 7, endHour: 20, label: 'manhã ao início da noite' }],
+    'meal-surge': [
+        { startHour: 11, endHour: 15, label: 'almoço' },
+        { startHour: 19, endHour: 22, label: 'jantar' },
+    ],
+    'morning-fast': [{ startHour: 6, endHour: 10, label: 'início da manhã' }],
+    'micro-injury': [{ startHour: 8, endHour: 22, label: 'período desperto após esforço' }],
+    'immune-challenge': [{ startHour: 7, endHour: 23, label: 'período desperto' }],
+    'heat-dehydration': [{ startHour: 11, endHour: 18, label: 'horas mais quentes' }],
+    'orthostatic-transition': [{ startHour: 6, endHour: 11, label: 'ao levantar pela manhã' }],
+    'hypercapnic-challenge': [{ startHour: 20, endHour: 6, label: 'noite em ambiente fechado' }],
+    'acute-water-load': [{ startHour: 12, endHour: 21, label: 'tarde ou início da noite após hidratação' }],
+    'nocturnal-hypoglycemia': [{ startHour: 0, endHour: 6, label: 'madrugada' }],
+    'mitochondrial-uncoupling': [
+        { startHour: 6, endHour: 12, label: 'treino matinal' },
+        { startHour: 16, endHour: 21, label: 'treino no fim do dia' },
+    ],
+    'mixed-ketoacidotic-fatigue': [{ startHour: 4, endHour: 12, label: 'fim da madrugada à manhã' }],
+    'distributive-dysoxia': [{ startHour: 12, endHour: 23, label: 'deterioração ao longo do dia' }],
+    'reperfusion-paradox': ALL_DAY,
+    'hyperosmolar-renal-conflict': [{ startHour: 13, endHour: 21, label: 'fim de um turno prolongado' }],
+    'whisky-party-hepatic-overload': [{ startHour: 20, endHour: 2, label: 'noite de festa' }],
+    'alcohol-nocturnal-hypoglycemia': [{ startHour: 1, endHour: 7, label: 'madrugada após a festa' }],
+    'fasted-workout-free-fatty-acids': [{ startHour: 6, endHour: 10, label: 'treino matinal em jejum' }],
+    'chronic-anxiety-sedentary': [{ startHour: 17, endHour: 23, label: 'fim do dia em repouso' }],
+    'panic-hyperventilation': [{ startHour: 20, endHour: 2, label: 'noite em casa' }],
+    'major-hemorrhage': ALL_DAY,
+};
+
+export function getScenarioTimeWindows(id: string): readonly SimulationTimeWindow[] {
+    return SCENARIO_TIME_WINDOWS[id] ?? ALL_DAY;
+}
 
 export const SCENARIO_DEFINITIONS: ScenarioDefinition[] = [
     {
@@ -1125,6 +1168,7 @@ export function selectEligibleScenario(
     const eligible = SCENARIO_DEFINITIONS
         .filter(definition => definition.difficulty === difficulty)
         .filter(definition => (state.scenarioCooldowns[definition.id] ?? 0) <= state.simulationTime)
+        .filter(definition => isSimulationTimeWithinWindows(macro.timeElapsed, getScenarioTimeWindows(definition.id)))
         .filter(definition => isScenarioNarrativelyCompatible(definition.id, narrative))
         .map(definition => ({ definition, eligibility: definition.isEligible(state, macro) }))
         .filter(candidate => candidate.eligibility.eligible);

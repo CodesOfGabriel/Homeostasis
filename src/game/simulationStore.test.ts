@@ -17,6 +17,7 @@ import { applyScenarioPhysiologyEffects, getScenarioContext, getScenarioDefiniti
 import { useSimulationStore } from './simulationStore';
 import { ALL_SCENARIO_METRIC_KEYS, createScenarioMetricSnapshot, SCENARIO_METRICS } from './scenarioMetrics';
 import { advanceScenarioNarrative, getScenarioNarrative } from './scenarioNarrative';
+import { physiologicalSecondsAt } from './simulationCalendar';
 
 function forceScenario<T extends ReturnType<typeof initializeCellularState>>(state: T, scenarioId: string): T {
   return {
@@ -200,10 +201,15 @@ describe('controles da simulação', () => {
 
   it('exige contrarregulação hormonal na hipoglicemia noturna', () => {
     const physiology = useSimulationStore.getState().physiology;
-    const cellular = forceScenario(useSimulationStore.getState().cellular, 'nocturnal-hypoglycemia');
+    const nightTime = physiologicalSecondsAt(2, 2);
+    const cellular = {
+      ...forceScenario(useSimulationStore.getState().cellular, 'nocturnal-hypoglycemia'),
+      simulationTime: nightTime,
+    };
     useSimulationStore.setState({
       physiology: {
         ...physiology,
+        timeElapsed: nightTime,
         nutrients: { ...physiology.nutrients, hoursSinceMeal: 6, bloodGlucose: 92 },
       },
       cellular,
@@ -224,10 +230,15 @@ describe('controles da simulação', () => {
 
   it('mantém penalidade crítica enquanto a insulina inadequada permanece ativa', () => {
     const physiology = useSimulationStore.getState().physiology;
-    const cellular = forceScenario(useSimulationStore.getState().cellular, 'nocturnal-hypoglycemia');
+    const nightTime = physiologicalSecondsAt(2, 2);
+    const cellular = {
+      ...forceScenario(useSimulationStore.getState().cellular, 'nocturnal-hypoglycemia'),
+      simulationTime: nightTime,
+    };
     useSimulationStore.setState({
       physiology: {
         ...physiology,
+        timeElapsed: nightTime,
         nutrients: { ...physiology.nutrients, hoursSinceMeal: 6, bloodGlucose: 92 },
       },
       cellular,
@@ -305,15 +316,18 @@ describe('ciclo de gameplay celular', () => {
 
   it('encadeia festa, ansiedade e trauma em capítulos fisiologicamente coerentes', () => {
     const continuations = [
-      ['whisky-party-hepatic-overload', 'alcohol-nocturnal-hypoglycemia'],
-      ['chronic-anxiety-sedentary', 'panic-hyperventilation'],
-      ['major-hemorrhage', 'reperfusion-paradox'],
+      ['whisky-party-hepatic-overload', 'alcohol-nocturnal-hypoglycemia', physiologicalSecondsAt(2, 3)],
+      ['chronic-anxiety-sedentary', 'panic-hyperventilation', physiologicalSecondsAt(1, 22)],
+      ['major-hemorrhage', 'reperfusion-paradox', physiologicalSecondsAt(1, 12)],
     ] as const;
 
-    continuations.forEach(([previousId, expectedId]) => {
+    continuations.forEach(([previousId, expectedId, elapsedSeconds]) => {
       const cellular = initializeCellularState();
+      cellular.simulationTime = elapsedSeconds;
       cellular.narrative = advanceScenarioNarrative(cellular.narrative, previousId);
-      const selected = selectEligibleScenario(cellular, initializePhysiologyState(), 'hard');
+      const physiology = initializePhysiologyState();
+      physiology.timeElapsed = elapsedSeconds;
+      const selected = selectEligibleScenario(cellular, physiology, 'hard');
       expect(selected?.definition.id).toBe(expectedId);
     });
   });

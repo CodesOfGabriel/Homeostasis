@@ -1,5 +1,6 @@
 import { detectActiveCombos, type HormonalCombo } from './actions';
 import { HORMONE_DEFINITIONS, type HormoneKey } from './config/hormones';
+import { getSimulationCalendar } from './simulationCalendar';
 import type {
     EndocrineRegulationState,
     HormonalAction,
@@ -59,7 +60,7 @@ export function calculateEndocrineTick(context: EndocrineTickContext): Endocrine
     const hyperglycemia = clamp((nutrients.bloodGlucose - 90) / 120, 0, 1.5);
     const fasting = clamp((nutrients.hoursSinceMeal - 4) / 12, 0, 1);
     const sleepDebt = 1 - sleepFraction;
-    const circadianHour = (8 + context.simulationTime / 3600) % 24;
+    const circadianHour = getSimulationCalendar(context.simulationTime).hourDecimal;
     const morningDrive = .5 + .5 * Math.cos((circadianHour - 8) / 24 * Math.PI * 2);
 
     const sympatheticTarget = clamp(

@@ -395,7 +395,7 @@ export interface PhysiologyState {
     bodyTemperature: number;      // °C - Temperatura corporal central
 
     // Time
-    timeElapsed: number;          // seconds - Tempo de simulação
+    timeElapsed: number;          // seconds - Tempo fisiológico agudo; o calendário narrativo é comprimido separadamente
     cyclePhase: 'awake' | 'sleep'; // Fase do ciclo circadiano
 
     // Critical State

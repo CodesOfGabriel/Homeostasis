@@ -14,6 +14,7 @@ import {
   Wind,
 } from 'lucide-react';
 import { useSimulationStore } from '../../game/simulationStore';
+import { getSimulationCalendar } from '../../game/simulationCalendar';
 import { CardiacRhythmInline } from './CardiacMonitorCard';
 import type { StepKey } from './navigation';
 import { ActionButton, GlassPanel, HelpTip, PanelLabel, Sparkline, cn } from './ui';
@@ -21,9 +22,8 @@ import { ActionButton, GlassPanel, HelpTip, PanelLabel, Sparkline, cn } from './
 type TrendDirection = 'up' | 'down' | 'stable';
 
 function formatEventTime(seconds: number) {
-  const minutes = Math.floor(seconds / 60);
-  const rest = Math.floor(seconds % 60);
-  return `${String(minutes).padStart(2, '0')}:${String(rest).padStart(2, '0')}`;
+  const calendar = getSimulationCalendar(seconds);
+  return `Dia ${calendar.day} · ${calendar.clock}`;
 }
 
 function getTrend(history: number[], current: number, epsilon = .01): TrendDirection {

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { initializePhysiologyState } from './physiology';
 import { applyDiseasePreset } from './pathology';
 import { calculatePhysiologyTick } from './simulationLogic';
+import { physiologicalSecondsAt } from './simulationCalendar';
 import type { PhysiologyState, SimulationInput } from './types';
 
 const defaultInput: Omit<SimulationInput, 'deltaTime'> = {
@@ -70,6 +71,15 @@ describe('trajetórias do motor sistêmico', () => {
     expect(stressed.hormones.adrenaline).toBeGreaterThan(60);
     expect(stressed.hormones.cortisol).toBeGreaterThan(12);
     expect(stressed.endocrine.hpaDrive).toBeGreaterThan(.4);
+  });
+
+  it('sincroniza a fase circadiana com o calendário comprimido', () => {
+    const daytime = initializePhysiologyState();
+    daytime.timeElapsed = physiologicalSecondsAt(1, 12);
+    const nighttime = initializePhysiologyState();
+    nighttime.timeElapsed = physiologicalSecondsAt(1, 23);
+    expect(simulate(daytime, 1).cyclePhase).toBe('awake');
+    expect(simulate(nighttime, 1).cyclePhase).toBe('sleep');
   });
 });
 

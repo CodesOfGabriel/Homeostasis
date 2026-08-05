@@ -1,19 +1,15 @@
 import { useEffect, useState } from 'react';
 import {
-  Activity,
   AlertTriangle,
   CheckCircle2,
   ChevronDown,
   Eye,
   GitFork,
   HeartPulse,
-  Microscope,
   Route,
   ShieldAlert,
-  Stethoscope,
   Zap,
 } from 'lucide-react';
-import type { StepKey } from './navigation';
 import {
   DECISION_RESOURCE_LABELS,
   getDecisionResourceAmount,
@@ -22,48 +18,15 @@ import {
 } from '../../game/scenarios';
 import { collectPreparedDecisionSignals, useSimulationStore } from '../../game/simulationStore';
 import { getScenarioNarrative } from '../../game/scenarioNarrative';
+import { getSimulationCalendar } from '../../game/simulationCalendar';
 import { GlassPanel, PanelLabel, ProgressBar, cn } from './ui';
 
-interface PhysiologicalDecisionLayerProps {
-  onNavigate: (step: StepKey) => void;
-}
-
-const stepMeta: Record<StepKey, { label: string; icon: typeof Activity }> = {
-  tissue: { label: 'Tecido e oferta', icon: Activity },
-  mitochondria: { label: 'Rotas energéticas', icon: Route },
-  defense: { label: 'Célula e defesa', icon: Microscope },
-  vitals: { label: 'Sistema e sinais', icon: Stethoscope },
-};
-
-const scenarioSteps: Record<string, StepKey[]> = {
-  'stair-climb': ['vitals', 'tissue', 'mitochondria'],
-  'meal-surge': ['vitals', 'tissue', 'mitochondria'],
-  'morning-fast': ['vitals', 'tissue', 'mitochondria'],
-  'micro-injury': ['defense', 'tissue', 'vitals'],
-  'immune-challenge': ['defense', 'vitals', 'tissue'],
-  'heat-dehydration': ['vitals', 'tissue', 'defense'],
-  'orthostatic-transition': ['vitals', 'tissue'],
-  'hypercapnic-challenge': ['vitals', 'tissue'],
-  'acute-water-load': ['vitals', 'defense'],
-  'nocturnal-hypoglycemia': ['vitals', 'tissue', 'mitochondria'],
-  'mitochondrial-uncoupling': ['mitochondria', 'defense', 'vitals', 'tissue'],
-  'mixed-ketoacidotic-fatigue': ['vitals', 'tissue', 'mitochondria', 'defense'],
-  'distributive-dysoxia': ['vitals', 'tissue', 'mitochondria', 'defense'],
-  'reperfusion-paradox': ['mitochondria', 'defense', 'tissue', 'vitals'],
-  'hyperosmolar-renal-conflict': ['vitals', 'defense', 'tissue', 'mitochondria'],
-  'whisky-party-hepatic-overload': ['vitals', 'mitochondria', 'tissue', 'defense'],
-  'alcohol-nocturnal-hypoglycemia': ['vitals', 'tissue', 'mitochondria', 'defense'],
-  'fasted-workout-free-fatty-acids': ['vitals', 'tissue', 'mitochondria', 'defense'],
-  'chronic-anxiety-sedentary': ['vitals', 'mitochondria', 'defense', 'tissue'],
-  'panic-hyperventilation': ['vitals', 'tissue', 'defense'],
-  'major-hemorrhage': ['vitals', 'tissue', 'mitochondria', 'defense'],
-};
-
-export function PhysiologicalDecisionLayer({ onNavigate }: PhysiologicalDecisionLayerProps) {
+export function PhysiologicalDecisionLayer() {
   const cellular = useSimulationStore(state => state.cellular);
   const physiology = useSimulationStore(state => state.physiology);
   const routine = cellular.routine;
   const response = useSimulationStore(state => state.scenarioResponse);
+  const scenarioOnset = useSimulationStore(state => state.scenarioOnset);
   const pendingCommands = useSimulationStore(state => state.pendingCommands);
   const activeHormonalActions = useSimulationStore(state => state.activeHormonalActions);
   const hypothalamus = useSimulationStore(state => state.hypothalamus);
@@ -104,9 +67,9 @@ export function PhysiologicalDecisionLayer({ onNavigate }: PhysiologicalDecision
 
   const observing = Boolean(response && !routine);
   const selectedChoice = response ? definition.choices.find(choice => choice.id === response.choiceId) : undefined;
-  const relevantSteps = scenarioSteps[scenarioId] ?? ['vitals', 'tissue'];
   const progress = response ? (1 - response.remainingSeconds / response.totalSeconds) * 100 : 0;
   const investigatingHardEvent = definition.difficulty === 'hard' && !observing;
+  const eventCalendar = getSimulationCalendar(scenarioOnset?.time ?? physiology.timeElapsed);
 
   return (
     <aside
@@ -145,7 +108,7 @@ export function PhysiologicalDecisionLayer({ onNavigate }: PhysiologicalDecision
             <div className="border-b border-white/8 px-3 py-2.5">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-[8px] uppercase tracking-[.18em] text-primary">{narrative?.eyebrow}</span>
-                <span className="text-[8px] uppercase tracking-wider text-muted-foreground">Capítulo {cellular.narrative?.chapter || 1}</span>
+                <span className="text-right text-[8px] uppercase tracking-wider text-muted-foreground">Dia {eventCalendar.day} · {eventCalendar.clock}<span className="ml-1.5 text-foreground/45">Cap. {cellular.narrative?.chapter || 1}</span></span>
               </div>
               {previousDefinition && <p className="mt-1.5 text-[9px] text-muted-foreground"><Route className="mr-1 inline size-3 text-primary"/>Continuação de <strong className="text-foreground/75">{previousDefinition.title}</strong></p>}
             </div>
@@ -163,14 +126,6 @@ export function PhysiologicalDecisionLayer({ onNavigate }: PhysiologicalDecision
               <p className="mt-2 text-[9px] leading-relaxed text-muted-foreground">{definition.contextSummary}</p>
             </div>
           </div>
-
-          <section className="mt-4">
-            <PanelLabel icon={<Eye className="size-3.5"/>}>Abrir investigação</PanelLabel>
-            <div className="mt-2 grid grid-cols-1 gap-1.5 sm:grid-cols-3 lg:grid-cols-1">
-              {relevantSteps.map(step => { const meta = stepMeta[step]; const Icon = meta.icon; return <button type="button" key={step} onClick={() => onNavigate(step)} className="flex min-h-10 items-center gap-2 rounded-lg border border-white/8 bg-black/15 px-3 text-left text-[10px] text-foreground transition hover:border-primary/40 hover:text-primary"><Icon className="size-3.5 text-primary"/>{meta.label}</button>; })}
-            </div>
-            {!observing && <div className="mt-2 rounded-lg border border-primary/15 bg-black/15 px-3 py-2 text-[9px] leading-relaxed text-muted-foreground"><Zap className="mr-1 inline size-3 text-primary"/>A central flutuante à direita permanece disponível para hormônios, água e regulação central. {pendingCommands.length > 0 ? <strong className="text-primary">{pendingCommands.length} intervenção(ões) preparada(s) para esta decisão.</strong> : 'Os sinais escolhidos serão integrados ao contexto no momento da decisão.'}</div>}
-          </section>
 
           {observing && response ? (
             <section className="mt-4 rounded-xl border border-primary/25 bg-primary/5 p-3" aria-live="polite">

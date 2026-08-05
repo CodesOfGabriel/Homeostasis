@@ -52,7 +52,6 @@ export function TopNav({ day, clock, condition, healthy, events, routine, onSett
     <header className="relative z-30 grid flex-none grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-4 py-2 lg:px-6">
       <div className="flex min-w-0 items-center gap-3">
         <div className="relative grid size-9 place-items-center rounded-full border border-primary/40 text-primary"><Hexagon className="size-5" strokeWidth={1.5}/><span className="absolute size-1.5 rounded-full bg-primary"/></div>
-        <div className="hidden leading-none sm:block"><h1 className="font-display text-sm text-hair text-foreground lg:text-base">HOMEOSTASIS</h1><p className="mt-1 text-[7px] text-hair text-muted-foreground">SIMULADOR FISIOLÓGICO</p></div>
       </div>
 
       <div className="scrollbar-thin flex min-w-0 items-center gap-1.5 overflow-x-auto" aria-label="Eventos recentes">

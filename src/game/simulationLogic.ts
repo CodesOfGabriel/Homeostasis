@@ -26,6 +26,7 @@ import {
     SimulationOutput,
 } from './types';
 import { calculateEndocrineTick, type EndocrineEffectsResult } from './endocrine';
+import { getSimulationCalendar } from './simulationCalendar';
 
 const BASE_ATP_DEMAND = 30; // mmol/min in the simulator's whole-body scale
 const BASE_BMR = 1800; // kcal/day, paciente padrão de 70 kg
@@ -79,6 +80,7 @@ export function calculatePhysiologyTick(
     const interventions = input.interventions ?? DEFAULT_INTERVENTIONS;
     const externalFactors = input.externalFactors;
     const nextTime = prevState.timeElapsed + dt;
+    const calendarTime = getSimulationCalendar(nextTime);
     const events: PhysiologicalEvent[] = [];
 
     const provisionalDemand = calculateEnergyDemand(
@@ -281,7 +283,7 @@ export function calculatePhysiologyTick(
         activityLevel: clamp(externalFactors.exercise, 0, 100),
         bodyTemperature,
         timeElapsed: nextTime,
-        cyclePhase: externalFactors.sleep >= 70 && (((8 + nextTime / 3600) % 24) >= 22 || ((8 + nextTime / 3600) % 24) < 7) ? 'sleep' : 'awake',
+        cyclePhase: externalFactors.sleep >= 70 && (calendarTime.hour >= 22 || calendarTime.hour < 7) ? 'sleep' : 'awake',
         isAlive,
         causeOfDeath,
     };
