@@ -1,4 +1,4 @@
-import type { CellularState, RoutineDecisionOutcome } from './cellularTypes';
+import type { CellularState } from './cellularTypes';
 import type { HypothalamicRegulationState } from './hypothalamus';
 import type { PhysiologyState } from './types';
 
@@ -12,12 +12,11 @@ export interface ScenarioResolutionModifier {
 
 /**
  * Soma o evento à condição endócrina, regulação central, reservas e dano já
- * acumulado. A decisão define a direção; o contexto define a intensidade e
- * se a recuperação ainda é eficiente.
+ * acumulado. A escolha aplica mecanismos e esta função mede a capacidade de
+ * resposta do organismo sem antecipar se o desfecho será bom ou ruim.
  */
 export function evaluateScenarioResolution(
     scenarioId: string,
-    outcome: RoutineDecisionOutcome,
     physiology: PhysiologyState,
     cellular: CellularState,
     hypothalamus: HypothalamicRegulationState,
@@ -202,14 +201,62 @@ export function evaluateScenarioResolution(
             + Math.max(0, physiology.nutrients.sodium - 145) / 18
             + Math.max(0, 40 - physiology.nutrients.hydration) / 8
             + Math.max(0, -hypothalamus.osmoticDrive) * .55;
+    } else if (scenarioId === 'whisky-party-hepatic-overload') {
+        protectiveScore += glucagonDrive * .34
+            + cellular.damage.antioxidantCapacity / 100 * .3
+            + Math.max(0, hypothalamus.respiratoryDrive) * .22;
+        pressureScore += Math.max(0, 78 - physiology.nutrients.bloodGlucose) / 32
+            + Math.max(0, physiology.energy.lactateLevel - 2) / 7
+            + Math.max(0, physiology.respiratory.paco2 - 45) / 28
+            + Math.max(0, cellular.cell.nadhPercent - 65) / 70;
+    } else if (scenarioId === 'alcohol-nocturnal-hypoglycemia') {
+        protectiveScore += glucagonDrive * .42
+            + Math.max(0, hypothalamus.respiratoryDrive) * .4;
+        pressureScore += Math.max(0, 74 - physiology.nutrients.bloodGlucose) / 28
+            + Math.max(0, physiology.respiratory.paco2 - 44) / 22
+            + Math.max(0, 7.34 - physiology.acidBase.pH) * 4
+            + physiology.energy.energyDeficit / 100 * .35;
+    } else if (scenarioId === 'fasted-workout-free-fatty-acids') {
+        protectiveScore += glucagonDrive * .32
+            + clamp(physiology.nutrients.fattyAcids / .8, 0, 1.2) * .18
+            + clamp(cellular.mitochondria.healthPercent / 100, 0, 1) * .18;
+        pressureScore += Math.max(0, 76 - physiology.nutrients.bloodGlucose) / 30
+            + catecholamineExcess * .32
+            + Math.max(0, cellular.tissue.lactateMmolL - 2) / 8
+            + Math.max(0, cellular.cell.nadhPercent - 70) / 65;
+    } else if (scenarioId === 'chronic-anxiety-sedentary') {
+        protectiveScore += Math.max(0, -hypothalamus.autonomicTone) * .46
+            + clamp(physiology.cardiovascular.heartRateVariability / 70, 0, 1.2) * .2
+            + physiology.allostaticLoad.adaptationCapacity / 100 * .2;
+        pressureScore += catecholamineExcess * .42
+            + cortisolExcess * .38
+            + Math.max(0, physiology.cardiovascular.heartRate - 85) / 55
+            + Math.max(0, 50 - physiology.cardiovascular.heartRateVariability) / 55
+            + physiology.allostaticLoad.currentLoad / 100 * .25;
+    } else if (scenarioId === 'panic-hyperventilation') {
+        protectiveScore += Math.max(0, -hypothalamus.autonomicTone) * .5
+            + Math.max(0, -hypothalamus.respiratoryDrive) * .48;
+        pressureScore += catecholamineExcess * .4
+            + Math.max(0, 34 - physiology.respiratory.paco2) / 18
+            + Math.max(0, physiology.acidBase.pH - 7.45) * 5
+            + Math.max(0, physiology.respiratory.respiratoryRate - 22) / 28;
+    } else if (scenarioId === 'major-hemorrhage') {
+        protectiveScore += Math.max(0, hypothalamus.autonomicTone) * .38
+            + clamp(physiology.cardiovascular.meanArterialPressure / 75, 0, 1) * .22
+            + clamp(cellular.cell.atpMmolL / 5, 0, 1) * .18;
+        pressureScore += Math.max(0, 70 - physiology.cardiovascular.meanArterialPressure) / 30
+            + Math.max(0, 3.5 - physiology.cardiovascular.cardiacOutput) / 2.5
+            + Math.max(0, 45 - physiology.nutrients.hydration) / 7
+            + Math.max(0, physiology.energy.lactateLevel - 2) / 7
+            + Math.max(0, 55 - cellular.tissue.perfusionPercent) / 45;
     }
 
     protectiveScore = clamp(protectiveScore, 0, 2);
     pressureScore = clamp(pressureScore, 0, 3);
-    const effectMultiplier = outcome === 'adaptive'
-        ? clamp(1 + protectiveScore * .42 - pressureScore * .38, .2, 1.75)
-        : clamp(1 + pressureScore * .62 - protectiveScore * .18, .65, 2.8);
-    const catastrophicIndex = pressureScore + (outcome === 'harmful' ? effectMultiplier * .35 : 0)
+    // O multiplicador representa responsividade do organismo, não um veredito
+    // embutido na opção. A classificação só ocorre após observar as métricas.
+    const effectMultiplier = clamp(.75 + protectiveScore * .28 + pressureScore * .12, .65, 1.65);
+    const catastrophicIndex = pressureScore + Math.max(0, 1 - protectiveScore) * .24
         + (cellular.fate.status === 'apoptosis' || cellular.fate.status === 'necrosis' ? .8 : 0);
     const risk = catastrophicIndex >= 2.15 ? 'catastrophic' : catastrophicIndex >= 1.15 ? 'unstable' : 'recoverable';
     const summary = `proteção ${Math.round(protectiveScore * 50)}% · pressão ${Math.round(pressureScore / 3 * 100)}% · efeito ×${effectMultiplier.toFixed(2)} · risco ${risk === 'catastrophic' ? 'catastrófico' : risk === 'unstable' ? 'instável' : 'reversível'}`;

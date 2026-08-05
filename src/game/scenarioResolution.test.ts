@@ -8,7 +8,6 @@ describe('somatória entre evento, hormônios e condição do organismo', () => 
   it('amplifica um caminho prejudicial até risco catastrófico quando os sinais se somam', () => {
     const baseline = evaluateScenarioResolution(
       'stair-climb',
-      'harmful',
       initializePhysiologyState(),
       initializeCellularState(),
       createInitialHypothalamicState(),
@@ -26,7 +25,6 @@ describe('somatória entre evento, hormônios e condição do organismo', () => 
 
     const compounded = evaluateScenarioResolution(
       'stair-climb',
-      'harmful',
       physiology,
       cellular,
       createInitialHypothalamicState(),
@@ -40,7 +38,6 @@ describe('somatória entre evento, hormônios e condição do organismo', () => 
     const cellular = initializeCellularState();
     const neutral = evaluateScenarioResolution(
       'heat-dehydration',
-      'adaptive',
       physiology,
       cellular,
       createInitialHypothalamicState(),
@@ -48,7 +45,6 @@ describe('somatória entre evento, hormônios e condição do organismo', () => 
     const protectiveAxis = { ...createInitialHypothalamicState(), osmoticDrive: .85 };
     const protectedResolution = evaluateScenarioResolution(
       'heat-dehydration',
-      'adaptive',
       physiology,
       cellular,
       protectiveAxis,
@@ -62,7 +58,6 @@ describe('somatória entre evento, hormônios e condição do organismo', () => 
     const baselineCellular = initializeCellularState();
     const baseline = evaluateScenarioResolution(
       'mitochondrial-uncoupling',
-      'adaptive',
       physiology,
       baselineCellular,
       createInitialHypothalamicState(),
@@ -83,7 +78,6 @@ describe('somatória entre evento, hormônios e condição do organismo', () => 
 
     const resilient = evaluateScenarioResolution(
       'mitochondrial-uncoupling',
-      'adaptive',
       physiology,
       prepared,
       createInitialHypothalamicState(),

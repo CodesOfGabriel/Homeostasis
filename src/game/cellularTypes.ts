@@ -138,7 +138,7 @@ export interface DecisionSignalRequirement {
     label: string;
 }
 
-export type RoutineDecisionOutcome = 'adaptive' | 'harmful';
+export type RoutineDecisionOutcome = 'adaptive' | 'partial' | 'harmful';
 
 export interface CellularFateState {
     status: 'homeostasis' | 'stress' | 'apoptosis' | 'necrosis';
@@ -176,6 +176,7 @@ export interface CellularControls {
     renalWaterReabsorption: number;
     pendingWaterMl: number;
     difficulty?: SimulationDifficulty;
+    adaptationOpportunityActive?: boolean;
 }
 
 export interface CellularEvent {
@@ -194,7 +195,6 @@ export interface CellularActionResult {
     ok: boolean;
     reason?: string;
     event?: CellularEvent;
-    decisionOutcome?: RoutineDecisionOutcome;
     scenarioId?: string;
 }
 

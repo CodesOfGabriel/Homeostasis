@@ -86,12 +86,12 @@ export function ElectronTransportChain({
   const protonCount = Math.round(clamp(3 + coupling * .13, 3, protonParticles.length));
   const rosCount = Math.round(clamp(oxidativeStress * .08, 0, rosParticles.length));
   const electronRate = (processing.nadhPerMin + processing.fadh2PerMin) * 2;
-  const processNodes: ProcessNodeProps[] = [
-    { x: 72, width: 160, targetX: 178, targetY: 221, color: '#58bdd0', title: 'Complexo I', reaction: 'NADH → NAD⁺ + 2e⁻', rate: `${formatMolecularRate(processing.nadhPerMin)}/min`, source: `Piruvato ${formatMolecularRate(processing.pyruvatePerMin)}/min` },
-    { x: 238, width: 126, targetX: 290, targetY: 221, color: '#d9b45f', title: 'Complexo II', reaction: 'FADH₂ → FAD + 2e⁻', rate: `${formatMolecularRate(processing.fadh2PerMin)}/min`, source: `Ácido graxo ${formatMolecularRate(processing.fattyAcidPerMin)}/min` },
-    { x: 370, width: 142, targetX: 450, targetY: 221, color: '#d9b45f', title: 'Complexo III', reaction: 'CoQH₂ → cyt c', rate: `${formatMolecularRate(electronRate)} e⁻/min`, source: `H⁺ total ${formatMolecularRate(processing.protonsPerMin)}/min` },
-    { x: 518, width: 164, targetX: 602, targetY: 205, color: '#72d8e8', title: 'Complexo IV', reaction: 'O₂ + e⁻ + H⁺ → H₂O', rate: `${formatMolecularRate(processing.oxygenPerMin)} O₂/min`, source: `H₂O ${formatMolecularRate(processing.waterPerMin)}/min` },
-    { x: 688, width: 154, targetX: 760, targetY: 135, color: '#d9b45f', title: 'ATP sintase', reaction: 'ADP + Pi + H⁺ → ATP', rate: `${formatMolecularRate(processing.adpPerMin)} ADP/min`, source: `ATP ${formatMolecularRate(processing.atpPerMin)}/min` },
+  const processNodes: ProcessCardProps[] = [
+    { color: '#58bdd0', title: 'Complexo I', reaction: 'NADH → NAD⁺ + 2e⁻', rateValue: formatMolecularRate(processing.nadhPerMin), rateUnit: '/min', sourceLabel: 'Piruvato', sourceValue: `${formatMolecularRate(processing.pyruvatePerMin)}/min` },
+    { color: '#d9b45f', title: 'Complexo II', reaction: 'FADH₂ → FAD + 2e⁻', rateValue: formatMolecularRate(processing.fadh2PerMin), rateUnit: '/min', sourceLabel: 'Ácido graxo', sourceValue: `${formatMolecularRate(processing.fattyAcidPerMin)}/min` },
+    { color: '#d9b45f', title: 'Complexo III', reaction: 'CoQH₂ → citocromo c', rateValue: formatMolecularRate(electronRate), rateUnit: 'e⁻/min', sourceLabel: 'H⁺ total', sourceValue: `${formatMolecularRate(processing.protonsPerMin)}/min` },
+    { color: '#72d8e8', title: 'Complexo IV', reaction: 'O₂ + e⁻ + H⁺ → H₂O', rateValue: formatMolecularRate(processing.oxygenPerMin), rateUnit: 'O₂/min', sourceLabel: 'H₂O produzida', sourceValue: `${formatMolecularRate(processing.waterPerMin)}/min` },
+    { color: '#d9b45f', title: 'ATP sintase', reaction: 'ADP + Pi + H⁺ → ATP', rateValue: formatMolecularRate(processing.adpPerMin), rateUnit: 'ADP/min', sourceLabel: 'ATP produzido', sourceValue: `${formatMolecularRate(processing.atpPerMin)}/min` },
   ];
 
   return (
@@ -108,10 +108,14 @@ export function ElectronTransportChain({
         </div>
       </div>
 
+      <div className="mt-3 grid grid-cols-1 gap-2 px-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+        {processNodes.map(node => <ProcessCard key={node.title} {...node}/>) }
+      </div>
+
       <div className="scrollbar-thin mt-3 overflow-x-auto px-3 pb-1">
         <svg
           className="h-auto w-full min-w-[760px] xl:min-w-0"
-          viewBox="0 0 860 422"
+          viewBox="0 0 860 360"
           role="img"
           aria-label="Diagrama da cadeia respiratória mitocondrial com moléculas e taxas ancoradas aos complexos um a quatro e à ATP sintase"
         >
@@ -142,9 +146,7 @@ export function ElectronTransportChain({
             <path id="electron-route" d="M92 222 C130 222 145 221 178 221 S230 251 289 251 S338 221 450 221 S514 181 602 181"/>
           </defs>
 
-          {processNodes.map(node => <ProcessNode key={node.title} {...node}/>)}
-
-          <g transform="translate(0 62)">
+          <g>
           <rect x="20" y="20" width="820" height="320" rx="18" fill="#071016" fillOpacity=".42" stroke="#58bdd0" strokeOpacity=".12"/>
           <text x="44" y="49" fill="#929ba9" fontSize="10" letterSpacing="2">ESPAÇO INTERMEMBRANA · RESERVATÓRIO DE H⁺</text>
           <text x="44" y="326" fill="#929ba9" fontSize="10" letterSpacing="2">MATRIZ MITOCONDRIAL</text>
@@ -385,30 +387,38 @@ function formatMolecularRate(value: number) {
   return value.toFixed(2);
 }
 
-interface ProcessNodeProps {
-  x: number;
-  width: number;
-  targetX: number;
-  targetY: number;
+interface ProcessCardProps {
   color: string;
   title: string;
   reaction: string;
-  rate: string;
-  source: string;
+  rateValue: string;
+  rateUnit: string;
+  sourceLabel: string;
+  sourceValue: string;
 }
 
-function ProcessNode({ x, width, targetX, targetY, color, title, reaction, rate, source }: ProcessNodeProps) {
-  const centerX = x + width / 2;
-  return <g aria-label={`${title}: ${reaction}; ${rate}; ${source}`}>
-    <path d={`M${centerX} 60 C${centerX} 88 ${targetX} 100 ${targetX} ${targetY}`} fill="none" stroke={color} strokeOpacity=".42" strokeWidth="1.25" strokeDasharray="3 5"/>
-    <circle cx={targetX} cy={targetY} r="3" fill={color} opacity=".9" filter="url(#etc-glow)"/>
-    <rect x={x} y="5" width={width} height="55" rx="11" fill="#081019" fillOpacity=".94" stroke={color} strokeOpacity=".48"/>
-    <circle cx={x + 10} cy="17" r="2.5" fill={color} filter="url(#etc-glow)"/>
-    <text x={x + 17} y="20" fill={color} fontSize="7.5" fontWeight="700" letterSpacing="1.05">{title.toUpperCase()}</text>
-    <text x={x + width - 9} y="20" textAnchor="end" fill="#e6e8ec" fontFamily="ui-monospace, monospace" fontSize="8" fontWeight="600">{rate}</text>
-    <text x={centerX} y="37" textAnchor="middle" fill="#e6e8ec" fontSize="8.5" fontWeight="600">{reaction}</text>
-    <text x={centerX} y="51" textAnchor="middle" fill="#929ba9" fontFamily="ui-monospace, monospace" fontSize="7.5">{source}</text>
-  </g>;
+function ProcessCard({ color, title, reaction, rateValue, rateUnit, sourceLabel, sourceValue }: ProcessCardProps) {
+  return (
+    <article
+      aria-label={`${title}: ${rateValue} ${rateUnit}; ${reaction}; ${sourceLabel} ${sourceValue}`}
+      className="min-w-0 rounded-xl border bg-black/25 p-3 shadow-[inset_0_1px_rgba(255,255,255,.035)]"
+      style={{ borderColor: `${color}55`, backgroundImage: `linear-gradient(145deg, ${color}13, rgba(3,8,12,.3) 58%)` }}
+    >
+      <header className="flex items-center gap-2">
+        <span className="size-1.5 shrink-0 rounded-full shadow-[0_0_9px_currentColor]" style={{ color, backgroundColor: color }} />
+        <span className="text-[9px] font-semibold uppercase tracking-[.16em]" style={{ color }}>{title}</span>
+      </header>
+      <div className="mt-2 flex items-baseline gap-1.5">
+        <strong className="font-mono text-lg font-semibold tabular-nums text-foreground">{rateValue}</strong>
+        <span className="font-mono text-[9px] text-muted-foreground">{rateUnit}</span>
+      </div>
+      <p className="mt-1.5 min-h-8 text-[10px] font-medium leading-relaxed text-foreground/85">{reaction}</p>
+      <div className="mt-2 flex items-center justify-between gap-3 border-t border-white/8 pt-2">
+        <span className="min-w-0 text-[8px] uppercase tracking-wider text-muted-foreground">{sourceLabel}</span>
+        <strong className="shrink-0 font-mono text-[10px] font-medium tabular-nums text-foreground">{sourceValue}</strong>
+      </div>
+    </article>
+  );
 }
 
 function ChainMetric({ icon, label, value, progress }: { icon: ReactNode; label: string; value: string; progress: number }) {

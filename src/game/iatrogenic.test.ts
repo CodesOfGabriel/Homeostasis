@@ -65,5 +65,31 @@ describe('carga iatrogênica persistente', () => {
     );
     expect(merged).toHaveLength(1);
     expect(merged[0].remainingSeconds).toBeGreaterThan(first.remainingSeconds - 10);
+    expect(merged[0].recurrenceCount).toBe(2);
+    expect(merged[0].intensity).toBeGreaterThan(first.intensity);
+  });
+
+  it('agrava o dano molecular quando o mesmo erro volta a acontecer', () => {
+    const physiology = initializePhysiologyState();
+    physiology.nutrients.bloodGlucose = 75;
+    const cellular = initializeCellularState();
+    cellular.damage.oxidativeStress = 45;
+    cellular.damage.membrane = 30;
+    cellular.damage.proteins = 25;
+    cellular.damage.dna = 18;
+    const episode = assessSignalMisuse('hormone:release-insulin', physiology, 'morning-fast');
+    expect(episode).not.toBeNull();
+    if (!episode) return;
+
+    const firstExposure = advanceIatrogenicConsequences(physiology, cellular, [episode], 1);
+    const repeated = mergeIatrogenicEpisodes([episode], [episode]);
+    const repeatedExposure = advanceIatrogenicConsequences(physiology, cellular, repeated, 1);
+    const firstMembraneDamage = firstExposure.cellular.damage.membrane - cellular.damage.membrane;
+    const repeatedMembraneDamage = repeatedExposure.cellular.damage.membrane - cellular.damage.membrane;
+
+    expect(repeatedExposure.cellular.damage.oxidativeStress).toBeGreaterThan(firstExposure.cellular.damage.oxidativeStress);
+    expect(repeatedExposure.cellular.damage.proteins).toBeGreaterThan(firstExposure.cellular.damage.proteins);
+    expect(repeatedExposure.cellular.damage.dna).toBeGreaterThan(firstExposure.cellular.damage.dna);
+    expect(repeatedMembraneDamage).toBeGreaterThan(firstMembraneDamage);
   });
 });

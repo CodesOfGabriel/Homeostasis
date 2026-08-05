@@ -3,7 +3,6 @@ import type {
     AutomationKind,
     AutomationRecipe,
     CellularActionResult,
-    CellularAdaptationKind,
     CellularControls,
     CellularEvent,
     CellularState,
@@ -473,12 +472,11 @@ export function resolveRoutineDecision(
     return {
         state: next,
         ok: true,
-        decisionOutcome: choice.outcome,
         scenarioId,
         event: {
-            message: `${choice.outcome === 'adaptive' ? 'Decisão correta' : 'Decisão prejudicial'} — ${choice.result}`,
-            severity: choice.outcome === 'adaptive' ? 'info' : 'critical',
-            affectedSystems: ['cellular', 'decision', choice.outcome],
+            message: `Intervenção iniciada — ${choice.label}. Observe a trajetória antes de classificar o resultado.`,
+            severity: 'info',
+            affectedSystems: ['cellular', 'decision', 'observation'],
         },
     };
 }
@@ -947,50 +945,6 @@ function advanceStep(
     return state;
 }
 
-type RewardTimer = 'homeostasisSeconds' | 'rosControlSeconds' | 'balancedFuelSeconds' | 'phStableSeconds' | 'hypoxiaStableSeconds';
-
-function maybeAwardAdaptation(state: CellularState): CellularEvent | null {
-    if (state.simulationTime - state.rewards.lastOpportunityAt < 6) return null;
-    const opportunities: Array<{ kind: CellularAdaptationKind; timer: RewardTimer; threshold: number; label: string; reason: string }> = [
-        { kind: 'enzymaticEfficiency', timer: 'homeostasisSeconds', threshold: 30, label: 'Eficiência enzimática', reason: 'ATP, O₂, pH e viabilidade permaneceram em faixa funcional' },
-        { kind: 'antioxidantDefense', timer: 'rosControlSeconds', threshold: 24, label: 'Defesa antioxidante', reason: 'ROS ficou controlado com reserva antioxidante disponível' },
-        { kind: 'metabolicFlexibility', timer: 'balancedFuelSeconds', threshold: 28, label: 'Flexibilidade metabólica', reason: 'glicose e ácidos graxos foram mantidos disponíveis sem colapso energético' },
-        { kind: 'bufferCapacity', timer: 'phStableSeconds', threshold: 26, label: 'Buffer intracelular', reason: 'o pH foi preservado apesar da produção metabólica' },
-        { kind: 'hypoxiaTolerance', timer: 'hypoxiaStableSeconds', threshold: 18, label: 'Tolerância à hipóxia', reason: 'o ATP foi sustentado com tensão de O₂ reduzida' },
-    ];
-    const eligibleOpportunities = opportunities.filter(opportunity => state.rewards[opportunity.timer] >= opportunity.threshold && state.adaptations[opportunity.kind] < 4);
-    if (eligibleOpportunities.length === 0) return null;
-
-    const quality = clamp(
-        state.cell.viabilityPercent / 100 * .28
-        + clamp(state.cell.atpMmolL / 5, 0, 1) * .24
-        + clamp(state.tissue.oxygenMmHg / 40, 0, 1) * .18
-        + clamp((45 - state.damage.oxidativeStress) / 45, 0, 1) * .30,
-        0,
-        1,
-    );
-    const stateSeed = Math.sin(state.simulationTime * 12.9898 + state.collection.score * .37 + quality * 19.19) * 43758.5453;
-    const opportunityRoll = stateSeed - Math.floor(stateSeed);
-    const chosen = eligibleOpportunities[Math.floor(opportunityRoll * eligibleOpportunities.length) % eligibleOpportunities.length];
-    const rewardSeed = Math.sin(state.simulationTime * 7.13 + quality * 31.7 + chosen.threshold) * 24634.6345;
-    const rewardRoll = rewardSeed - Math.floor(rewardSeed);
-    state.rewards.lastOpportunityAt = state.simulationTime;
-    if (rewardRoll > .35 + quality * .45) return null;
-
-    state.adaptations[chosen.kind] += 1;
-    state.rewards[chosen.timer] = chosen.threshold * .2;
-    if (chosen.kind === 'enzymaticEfficiency') state.cell.atpMmolL = clamp(state.cell.atpMmolL + .12, .2, MAX_ATP);
-    if (chosen.kind === 'antioxidantDefense') state.damage.oxidativeStress = clamp(state.damage.oxidativeStress - 2.5, 0, 100);
-    if (chosen.kind === 'bufferCapacity') state.cell.pH = approach(state.cell.pH, 7.2, 1, .5);
-    syncAdenylates(state);
-    state.lastEvent = `${chosen.label} +1: ${chosen.reason}`;
-    return {
-        message: `Adaptação desbloqueada — ${chosen.label}: ${chosen.reason}.`,
-        severity: 'info',
-        affectedSystems: ['cellular-adaptation', 'reward'],
-    };
-}
-
 export function advanceCellularSimulation(
     previous: CellularState,
     macro: PhysiologyState,
@@ -1003,13 +957,13 @@ export function advanceCellularSimulation(
     let remaining = totalTime;
 
     const startRoutineIfDue = () => {
-        if (state.routine || state.simulationTime < state.nextRoutineAt) return;
+        if (controls.adaptationOpportunityActive || state.routine || state.simulationTime < state.nextRoutineAt) return;
         const candidate = selectEligibleScenario(state, macro, controls.difficulty ?? 'easy');
         if (!candidate) {
             state.nextRoutineAt = state.simulationTime + 8;
             return;
         }
-        state.routine = createRoutineEvent(candidate.definition, candidate.eligibility.reason, state.simulationTime);
+        state.routine = createRoutineEvent(candidate.definition, candidate.eligibility.reason, state, state.simulationTime);
         state.narrative = advanceScenarioNarrative(state.narrative, candidate.definition.id);
         applyRoutineOnset(state);
         // Intervalo variável determinístico: evita uma fila de tickets e dá
@@ -1033,9 +987,6 @@ export function advanceCellularSimulation(
         remaining -= dt;
     }
     startRoutineIfDue();
-
-    const adaptationEvent = maybeAwardAdaptation(state);
-    if (adaptationEvent) events.push(adaptationEvent);
 
     if (previous.cell.viabilityPercent >= 70 && state.cell.viabilityPercent < 70) {
         events.push({

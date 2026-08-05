@@ -37,6 +37,7 @@ import type {
     DecisionSignalId,
     OxidationSubstrate,
     RepairTarget,
+    RoutineDecisionOutcome,
     SimulationDifficulty,
     SubstrateKind,
 } from './cellularTypes';
@@ -63,11 +64,26 @@ import { evaluateScenarioResolution } from './scenarioResolution';
 import {
     advanceIatrogenicConsequences,
     assessSignalMisuse,
+    createDecisionErrorEpisode,
     iatrogenicEpisodeEvent,
     mergeIatrogenicEpisodes,
     type IatrogenicEpisode,
 } from './iatrogenic';
+import { deriveCellularDamageEvents } from './cellularDamage';
 import { createScenarioMetricSnapshot, type ScenarioMetricSnapshot } from './scenarioMetrics';
+import {
+    assessScenarioLearning,
+    validateScenarioReasoning,
+    type ScenarioLearningAssessment,
+    type ScenarioReasoningSubmission,
+} from './scenarioLearning';
+import {
+    advanceAdaptationWindow,
+    createInitialAdaptationProgress,
+    resolveAdaptationWindow,
+    type AdaptationOpportunityState,
+    type AdaptationProgressState,
+} from './adaptationWindow';
 
 // ============================================================================
 // STATE INTERFACE
@@ -94,21 +110,23 @@ export type SimulationCommand =
 
 export interface DecisionFeedback {
     scenarioId: string;
+    choiceId: string;
     title: string;
     message: string;
-    outcome: 'adaptive' | 'harmful';
+    outcome: RoutineDecisionOutcome;
+    assessment: ScenarioLearningAssessment;
     timestamp: number;
 }
 
 export interface ScenarioResponseState {
     scenarioId: string;
     choiceId: string;
-    outcome: 'adaptive' | 'harmful';
     effectMultiplier: number;
     risk: 'recoverable' | 'unstable' | 'catastrophic';
     totalSeconds: number;
     remainingSeconds: number;
-    result: string;
+    onset: ScenarioMetricSnapshot;
+    reasoning: ScenarioReasoningSubmission;
 }
 
 interface SimulationStore {
@@ -175,6 +193,8 @@ interface SimulationStore {
     scenarioOnset: ScenarioMetricSnapshot | null;
     scenarioResponse: ScenarioResponseState | null;
     iatrogenicEpisodes: IatrogenicEpisode[];
+    adaptationOpportunity: AdaptationOpportunityState | null;
+    adaptationProgress: AdaptationProgressState;
 
     // UI State
     selectedOrgan: string | null;
@@ -197,7 +217,8 @@ interface SimulationStore {
     oxidizeCellularSubstrate: (substrate: OxidationSubstrate) => boolean;
     allocateCellularAtp: (target: RepairTarget) => boolean;
     purchaseCellularAutomation: (kind: AutomationKind) => boolean;
-    resolveCellularRoutine: (choiceId: string) => boolean;
+    resolveCellularRoutine: (choiceId: string, reasoning?: ScenarioReasoningSubmission) => boolean;
+    resolveAdaptationOpportunity: (choiceId: string) => boolean;
 
     // Utilitários
     selectOrgan: (organName: string | null) => void;
@@ -313,6 +334,8 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
     scenarioOnset: null,
     scenarioResponse: null,
     iatrogenicEpisodes: [],
+    adaptationOpportunity: null,
+    adaptationProgress: createInitialAdaptationProgress(),
     selectedOrgan: null,
 
     // ============================================================================
@@ -329,7 +352,8 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
     },
 
     reset: () => {
-        const difficulty = get().simulationDifficulty;
+        const previous = get();
+        const difficulty = previous.simulationDifficulty;
         // Criar evento de inicialização
         const initEvent: PhysiologicalEvent = {
             type: 'system',
@@ -364,6 +388,16 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
             scenarioOnset: null,
             scenarioResponse: null,
             iatrogenicEpisodes: [],
+            adaptationOpportunity: null,
+            adaptationProgress: createInitialAdaptationProgress({
+                physiologicalKnowledge: previous.adaptationProgress.physiologicalKnowledge,
+                unlockedCaseVariants: previous.adaptationProgress.unlockedCaseVariants,
+                unlockedVisualEffects: previous.adaptationProgress.unlockedVisualEffects,
+                offered: previous.adaptationProgress.offered,
+                resolved: previous.adaptationProgress.resolved,
+                successful: previous.adaptationProgress.successful,
+                missed: previous.adaptationProgress.missed,
+            }),
             selectedOrgan: null,
         });
     },
@@ -452,6 +486,7 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
                 renalWaterReabsorption: nextInterventions.renalWaterReabsorption,
                 pendingWaterMl: nextInterventions.pendingWaterMl,
                 difficulty: state.simulationDifficulty,
+                adaptationOpportunityActive: Boolean(state.adaptationOpportunity),
             },
             adjustedDeltaTime,
         );
@@ -464,6 +499,7 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
         let nextScenarioResponse = state.scenarioResponse;
         let completedDecision: DecisionFeedback | null = null;
         let responseEvent: PhysiologicalEvent | null = null;
+        const decisionErrorEpisodes: IatrogenicEpisode[] = [];
         if (startedScenario) {
             resultingPhysiology = applyScenarioPhysiologyEffects(resultingPhysiology, startedScenario.onStartPhysiology);
         }
@@ -491,32 +527,60 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
             const remainingSeconds = Math.max(0, response.remainingSeconds - effectSeconds);
             nextScenarioResponse = remainingSeconds > .001 ? { ...response, remainingSeconds } : null;
             if (!nextScenarioResponse) {
+                const finalSnapshot = createScenarioMetricSnapshot(resultingPhysiology, resultingCellular);
+                const assessment = assessScenarioLearning(
+                    response.scenarioId,
+                    response.onset,
+                    finalSnapshot,
+                    response.reasoning,
+                    response.risk,
+                );
                 const title = response.risk === 'catastrophic'
                     ? 'Cascata fisiológica crítica'
-                    : response.outcome === 'adaptive'
+                    : assessment.outcome === 'adaptive'
                         ? 'Recuperação homeostática observada'
-                        : 'Descompensação após a intervenção';
+                        : assessment.outcome === 'partial'
+                            ? 'Resposta fisiológica parcial'
+                            : 'Descompensação após a intervenção';
                 completedDecision = {
                     scenarioId: response.scenarioId,
+                    choiceId: response.choiceId,
                     title,
-                    message: response.result,
-                    outcome: response.outcome,
+                    message: assessment.summary,
+                    outcome: assessment.outcome,
+                    assessment,
                     timestamp: resultingPhysiology.timeElapsed,
                 };
                 responseEvent = {
                     type: 'cellular',
-                    severity: response.outcome === 'adaptive' ? 'info' : 'critical',
-                    message: response.result,
+                    severity: assessment.outcome === 'adaptive' ? 'info' : assessment.outcome === 'partial' ? 'warning' : 'critical',
+                    message: assessment.summary,
                     timestamp: resultingPhysiology.timeElapsed,
-                    affectedSystems: ['cellular', 'decision', response.outcome],
+                    affectedSystems: ['cellular', 'decision', assessment.outcome],
                 };
+                if (assessment.outcome === 'harmful' && choice) {
+                    decisionErrorEpisodes.push(createDecisionErrorEpisode({
+                        scenarioId: response.scenarioId,
+                        choiceId: response.choiceId,
+                        choiceLabel: choice.label,
+                        physiology: resultingPhysiology,
+                        cellular: resultingCellular,
+                        risk: response.risk,
+                    }));
+                }
             }
         }
 
         const activeIatrogenicEpisodes = mergeIatrogenicEpisodes(
             state.iatrogenicEpisodes,
-            commandOutput.iatrogenicEpisodes,
+            [...commandOutput.iatrogenicEpisodes, ...decisionErrorEpisodes],
         );
+        const newIatrogenicEvents = [...commandOutput.iatrogenicEpisodes, ...decisionErrorEpisodes]
+            .map(addition => activeIatrogenicEpisodes.find(episode => (
+                episode.signalId === addition.signalId && episode.mechanism === addition.mechanism
+            )))
+            .filter((episode): episode is IatrogenicEpisode => Boolean(episode))
+            .map(episode => iatrogenicEpisodeEvent(episode, resultingPhysiology.timeElapsed));
         const iatrogenicOutput = advanceIatrogenicConsequences(
             resultingPhysiology,
             resultingCellular,
@@ -525,6 +589,31 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
         );
         resultingPhysiology = iatrogenicOutput.physiology;
         resultingCellular = iatrogenicOutput.cellular;
+
+        const iatrogenicBurden = Math.min(1, iatrogenicOutput.episodes.reduce((sum, episode) => {
+            const severityWeight = episode.severity === 'critical' ? 1 : episode.severity === 'severe' ? .72 : .45;
+            return sum + episode.intensity * severityWeight;
+        }, 0));
+        const adaptationOutput = advanceAdaptationWindow({
+            physiology: resultingPhysiology,
+            cellular: resultingCellular,
+            opportunity: state.adaptationOpportunity,
+            progress: state.adaptationProgress,
+            iatrogenicBurden,
+            blocked: Boolean(
+                startedScenario
+                || state.cellular.routine
+                || state.scenarioResponse
+                || state.activeScenarioId
+                || nextScenarioResponse,
+            ),
+            deltaTime: adjustedDeltaTime,
+            interactionDeltaTime: Math.min(2, realDeltaTime),
+        });
+        resultingPhysiology = adaptationOutput.physiology;
+        resultingCellular = adaptationOutput.cellular;
+        const damageEvents = deriveCellularDamageEvents(state.cellular.damage, resultingCellular.damage)
+            .map(event => cellularEventToPhysiological(event, resultingPhysiology.timeElapsed));
 
         // Atualizar cooldowns hormonais
         const newCooldowns = Object.fromEntries(
@@ -619,8 +708,19 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
         // Adicionar novos eventos NO INÍCIO (manter últimos 50)
         const cellularEvents = cellularOutput.events.map(event =>
             cellularEventToPhysiological(event, output.newState.timeElapsed));
+        const adaptationEvents = adaptationOutput.events.map(event =>
+            cellularEventToPhysiological(event, resultingPhysiology.timeElapsed));
         const updatedEvents = [
-            ...[...commandOutput.events, ...iatrogenicOutput.events, ...cellularEvents, ...output.events, ...(responseEvent ? [responseEvent] : [])].reverse(),
+            ...[
+                ...commandOutput.events.filter(event => !event.affectedSystems.includes('iatrogenic')),
+                ...newIatrogenicEvents,
+                ...iatrogenicOutput.events,
+                ...cellularEvents,
+                ...adaptationEvents,
+                ...damageEvents,
+                ...output.events,
+                ...(responseEvent ? [responseEvent] : []),
+            ].reverse(),
             ...state.recentEvents,
         ].slice(0, 50);
 
@@ -662,6 +762,8 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
                     : state.scenarioOnset,
             scenarioResponse: nextScenarioResponse,
             iatrogenicEpisodes: iatrogenicOutput.episodes,
+            adaptationOpportunity: adaptationOutput.opportunity,
+            adaptationProgress: adaptationOutput.progress,
             lastDecision: completedDecision ?? state.lastDecision,
             // Toda situação exige uma decisão. A simulação congela no instante
             // do evento e só retoma depois que um caminho é escolhido.
@@ -785,11 +887,13 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
         return result.ok;
     },
 
-    resolveCellularRoutine: (choiceId: string) => {
+    resolveCellularRoutine: (choiceId: string, reasoning?: ScenarioReasoningSubmission) => {
         const state = get();
         const scenarioId = state.cellular.routine?.id;
         const pendingChoice = scenarioId ? getScenarioChoice(scenarioId, choiceId) : undefined;
         if (!scenarioId || !pendingChoice) return false;
+        const reasoningValidation = validateScenarioReasoning(scenarioId, reasoning);
+        if (!reasoningValidation.valid || !reasoning) return false;
 
         // Sinais escolhidos durante a análise entram no mesmo instante causal
         // da decisão. Assim, hormônios e circuitos centrais realmente alteram
@@ -806,7 +910,7 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
             scenarioId,
         );
         const resolution = scenarioId && pendingChoice
-            ? evaluateScenarioResolution(scenarioId, pendingChoice.outcome, commandOutput.physiology, state.cellular, commandOutput.hypothalamus)
+            ? evaluateScenarioResolution(scenarioId, commandOutput.physiology, state.cellular, commandOutput.hypothalamus)
             : null;
         const result = resolveRoutineDecision(
             state.cellular,
@@ -815,7 +919,7 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
             false,
             commandOutput.preparedSignals,
         );
-        if (!result.ok || !result.scenarioId || !result.decisionOutcome) {
+        if (!result.ok || !result.scenarioId) {
             set(cellularActionUpdate(state, result));
             return false;
         }
@@ -832,15 +936,17 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
         }
 
         const responseDuration = Math.max(12, definition.durationSeconds);
+        const onset = state.scenarioOnset
+            ?? createScenarioMetricSnapshot(commandOutput.physiology, state.cellular);
         const response: ScenarioResponseState = {
             scenarioId: definition.id,
             choiceId,
-            outcome: result.decisionOutcome,
             effectMultiplier: resolution?.effectMultiplier ?? 1,
             risk: resolution?.risk ?? 'recoverable',
             totalSeconds: responseDuration,
             remainingSeconds: responseDuration,
-            result: choice.result,
+            onset,
+            reasoning,
         };
         const responseStartedEvent: PhysiologicalEvent = {
             type: 'system',
@@ -849,6 +955,16 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
             timestamp: commandOutput.physiology.timeElapsed,
             affectedSystems: ['decision', 'observation'],
         };
+        const mergedIatrogenicEpisodes = mergeIatrogenicEpisodes(
+            state.iatrogenicEpisodes,
+            commandOutput.iatrogenicEpisodes,
+        );
+        const commandIatrogenicEvents = commandOutput.iatrogenicEpisodes
+            .map(addition => mergedIatrogenicEpisodes.find(episode => (
+                episode.signalId === addition.signalId && episode.mechanism === addition.mechanism
+            )))
+            .filter((episode): episode is IatrogenicEpisode => Boolean(episode))
+            .map(episode => iatrogenicEpisodeEvent(episode, commandOutput.physiology.timeElapsed));
         set({
             physiology: commandOutput.physiology,
             cellular: result.state,
@@ -860,15 +976,13 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
             pendingCommands: [],
             recentEvents: [
                 responseStartedEvent,
-                ...commandOutput.events.reverse(),
+                ...commandIatrogenicEvents.reverse(),
+                ...commandOutput.events.filter(event => !event.affectedSystems.includes('iatrogenic')).reverse(),
                 ...state.recentEvents,
             ].slice(0, 50),
             scenarioResponse: response,
             activeScenarioId: definition.id,
-            iatrogenicEpisodes: mergeIatrogenicEpisodes(
-                state.iatrogenicEpisodes,
-                commandOutput.iatrogenicEpisodes,
-            ),
+            iatrogenicEpisodes: mergedIatrogenicEpisodes,
             lastDecision: null,
             lastCausalTrace: commandOutput.causalTrace ?? state.lastCausalTrace,
             isRunning: state.resumeAfterDecision,
@@ -876,6 +990,38 @@ export const useSimulationStore = create<SimulationStore>((set, get) => ({
             lastTickTime: Date.now(),
         });
         return result.ok;
+    },
+
+    resolveAdaptationOpportunity: (choiceId: string) => {
+        const state = get();
+        if (!state.adaptationOpportunity) return false;
+        const resolution = resolveAdaptationWindow(
+            state.physiology,
+            state.cellular,
+            state.adaptationOpportunity,
+            state.adaptationProgress,
+            choiceId,
+        );
+        if (!resolution) return false;
+        const severity = resolution.result.outcome === 'harmful' ? 'warning' : 'info';
+        const event: PhysiologicalEvent = {
+            type: 'cellular',
+            severity,
+            message: resolution.result.detail,
+            timestamp: resolution.physiology.timeElapsed,
+            affectedSystems: ['adaptation-window', resolution.result.type, resolution.result.outcome],
+        };
+        set({
+            physiology: resolution.physiology,
+            cellular: resolution.cellular,
+            adaptationOpportunity: null,
+            adaptationProgress: resolution.progress,
+            recentEvents: [
+                event,
+                ...state.recentEvents,
+            ].slice(0, 50),
+        });
+        return true;
     },
 
     // ============================================================================
@@ -927,6 +1073,9 @@ function cellularActionUpdate(
         severity: 'warning',
         affectedSystems: ['cellular'],
     };
+    const damageEvents = result.ok
+        ? deriveCellularDamageEvents(state.cellular.damage, result.state.damage)
+        : [];
     return {
         cellular: result.ok
             ? result.state
@@ -936,6 +1085,7 @@ function cellularActionUpdate(
         recentEvents: state.cellular.routine
             ? state.recentEvents
             : [
+                ...damageEvents.map(damageEvent => cellularEventToPhysiological(damageEvent, state.physiology.timeElapsed)),
                 cellularEventToPhysiological(event, state.physiology.timeElapsed),
                 ...state.recentEvents,
             ].slice(0, 50),

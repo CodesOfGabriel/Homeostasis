@@ -6,6 +6,7 @@ import { Playback, Stepper, TopNav, type SimulatorTab, type StepKey } from './na
 import { ActionButton, GlassPanel, PanelLabel, cn } from './ui';
 import { GlobalPhysiologyDock } from './GlobalPhysiologyDock';
 import { PhysiologicalDecisionLayer } from './PhysiologicalDecisionLayer';
+import { AdaptationOpportunityLayer } from './AdaptationOpportunityLayer';
 
 const TissueView = lazy(() => import('./views').then(module => ({ default: module.TissueView })));
 const IntracellularView = lazy(() => import('./views').then(module => ({ default: module.IntracellularView })));
@@ -88,6 +89,7 @@ export function Simulator() {
         </div>
         {started && <GlobalPhysiologyDock />}
         {started && <PhysiologicalDecisionLayer />}
+        {started && <AdaptationOpportunityLayer />}
         <footer className="pointer-events-none absolute inset-x-0 bottom-0 z-30 flex items-end justify-center gap-3 bg-gradient-to-t from-background/85 via-background/30 to-transparent px-4 pb-2 pt-10 lg:px-6">
           <Stepper active={activeStep} onChange={chooseStep} />
           <div className="pointer-events-auto hidden flex-none sm:block xl:absolute xl:bottom-2 xl:right-6"><Playback running={running} speed={speed} onToggle={() => running ? pause() : start()} onSpeed={cycleSpeed} /></div>

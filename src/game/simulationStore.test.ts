@@ -18,6 +18,8 @@ import { useSimulationStore } from './simulationStore';
 import { ALL_SCENARIO_METRIC_KEYS, createScenarioMetricSnapshot, SCENARIO_METRICS } from './scenarioMetrics';
 import { advanceScenarioNarrative, getScenarioNarrative } from './scenarioNarrative';
 import { physiologicalSecondsAt } from './simulationCalendar';
+import { getScenarioLearning, type ScenarioReasoningSubmission } from './scenarioLearning';
+import { createInitialAdaptationProgress } from './adaptationWindow';
 
 function forceScenario<T extends ReturnType<typeof initializeCellularState>>(state: T, scenarioId: string): T {
   return {
@@ -34,6 +36,17 @@ function advanceStoreTicks(count: number) {
     useSimulationStore.setState({ lastTickTime: Date.now() - 1000 });
     useSimulationStore.getState().tick();
   }
+}
+
+function adaptiveReasoning(scenarioId: string): ScenarioReasoningSubmission {
+  const learning = getScenarioLearning(scenarioId);
+  if (!learning) throw new Error(`Aprendizado ausente para ${scenarioId}`);
+  return {
+    hypothesisId: learning.hypotheses.find(option => option.correct)?.id ?? '',
+    predictions: Object.fromEntries(
+      learning.predictions.map(item => [item.id, item.adaptiveDirection]),
+    ),
+  };
 }
 
 describe('controles da simulação', () => {
@@ -64,6 +77,34 @@ describe('controles da simulação', () => {
     });
     useSimulationStore.getState().tick();
     expect(useSimulationStore.getState().cellular.routine?.id).toBe('mitochondrial-uncoupling');
+  });
+
+  it('oferece e resolve a janela adaptativa sem pausar ou abrir cenário clínico', () => {
+    const cellular = initializeCellularState();
+    cellular.simulationTime = 180;
+    cellular.nextRoutineAt = 9999;
+    cellular.rewards.homeostasisSeconds = 60;
+    cellular.rewards.rosControlSeconds = 60;
+    cellular.rewards.phStableSeconds = 60;
+    const progress = createInitialAdaptationProgress();
+    useSimulationStore.setState({
+      cellular,
+      adaptationOpportunity: null,
+      adaptationProgress: progress,
+      isRunning: true,
+      lastTickTime: Date.now() - 250,
+    });
+
+    useSimulationStore.getState().tick();
+    const offered = useSimulationStore.getState();
+    expect(offered.adaptationOpportunity).not.toBeNull();
+    expect(offered.cellular.routine).toBeNull();
+    expect(offered.isRunning).toBe(true);
+
+    const choiceId = offered.adaptationOpportunity?.choices[0]?.id;
+    expect(choiceId && offered.resolveAdaptationOpportunity(choiceId)).toBe(true);
+    expect(useSimulationStore.getState().adaptationOpportunity).toBeNull();
+    expect(useSimulationStore.getState().adaptationProgress.resolved).toBe(1);
   });
 
   it('aplica água e converte sinais hipotalâmicos em comandos internos', () => {
@@ -141,12 +182,12 @@ describe('controles da simulação', () => {
       },
     });
     expect(useSimulationStore.getState().sendHypothalamicSignal('chemoreflex-ventilation').ok).toBe(true);
-    expect(useSimulationStore.getState().resolveCellularRoutine('stair-aerobic')).toBe(true);
+    expect(useSimulationStore.getState().resolveCellularRoutine('stair-aerobic', adaptiveReasoning('stair-climb'))).toBe(true);
     const resolved = useSimulationStore.getState();
     expect(resolved.cellular.routine).toBeNull();
     expect(resolved.isRunning).toBe(true);
     expect(resolved.lastDecision).toBeNull();
-    expect(resolved.scenarioResponse?.outcome).toBe('adaptive');
+    expect(resolved.scenarioResponse?.reasoning.hypothesisId).toBe('demand-mismatch');
     expect(resolved.activeScenarioId).toBe('stair-climb');
     expect(resolved.hypothalamus.respiratoryDrive).toBeGreaterThan(0);
     expect(resolved.physiology.energy.energyDeficit).toBe(deficitDuringEvent);
@@ -172,7 +213,7 @@ describe('controles da simulação', () => {
     const loadDuringEvent = useSimulationStore.getState().physiology.allostaticLoad.currentLoad;
 
     expect(useSimulationStore.getState().releaseHormone('release-adrenaline').ok).toBe(true);
-    expect(useSimulationStore.getState().resolveCellularRoutine('stair-glycolytic')).toBe(true);
+    expect(useSimulationStore.getState().resolveCellularRoutine('stair-glycolytic', adaptiveReasoning('stair-climb'))).toBe(true);
     const startedResponse = useSimulationStore.getState();
     expect(startedResponse.lastDecision).toBeNull();
     expect(startedResponse.physiology.allostaticLoad.currentLoad).toBe(loadDuringEvent);
@@ -182,6 +223,8 @@ describe('controles da simulação', () => {
     expect(resolved.lastDecision?.outcome).toBe('harmful');
     expect(resolved.physiology.allostaticLoad.currentLoad).toBeGreaterThan(loadDuringEvent);
     expect(resolved.recentEvents.some(event => event.severity === 'critical' && event.affectedSystems.includes('decision'))).toBe(true);
+    expect(resolved.iatrogenicEpisodes.some(episode => episode.mechanism === 'decision-error')).toBe(true);
+    expect(resolved.recentEvents.some(event => event.message.startsWith('Erro de decisão:'))).toBe(true);
   });
 
   it('exige e aplica regulação simpática na hipotensão ortostática', () => {
@@ -189,10 +232,10 @@ describe('controles da simulação', () => {
     useSimulationStore.setState({ cellular, isRunning: true, lastTickTime: Date.now() - 1000 });
     useSimulationStore.getState().tick();
     expect(useSimulationStore.getState().cellular.routine?.id).toBe('orthostatic-transition');
-    expect(useSimulationStore.getState().resolveCellularRoutine('orthostasis-sympathetic')).toBe(false);
+    expect(useSimulationStore.getState().resolveCellularRoutine('orthostasis-sympathetic', adaptiveReasoning('orthostatic-transition'))).toBe(false);
 
     expect(useSimulationStore.getState().sendHypothalamicSignal('sympathetic-arousal').ok).toBe(true);
-    expect(useSimulationStore.getState().resolveCellularRoutine('orthostasis-sympathetic')).toBe(true);
+    expect(useSimulationStore.getState().resolveCellularRoutine('orthostasis-sympathetic', adaptiveReasoning('orthostatic-transition'))).toBe(true);
     const response = useSimulationStore.getState();
     expect(response.hypothalamus.autonomicTone).toBeGreaterThan(0);
     expect(response.scenarioResponse?.scenarioId).toBe('orthostatic-transition');
@@ -218,10 +261,10 @@ describe('controles da simulação', () => {
     });
     useSimulationStore.getState().tick();
     expect(useSimulationStore.getState().cellular.routine?.id).toBe('nocturnal-hypoglycemia');
-    expect(useSimulationStore.getState().resolveCellularRoutine('hypoglycemia-counterregulate')).toBe(false);
+    expect(useSimulationStore.getState().resolveCellularRoutine('hypoglycemia-counterregulate', adaptiveReasoning('nocturnal-hypoglycemia'))).toBe(false);
 
     expect(useSimulationStore.getState().releaseHormone('release-glucagon').ok).toBe(true);
-    expect(useSimulationStore.getState().resolveCellularRoutine('hypoglycemia-counterregulate')).toBe(true);
+    expect(useSimulationStore.getState().resolveCellularRoutine('hypoglycemia-counterregulate', adaptiveReasoning('nocturnal-hypoglycemia'))).toBe(true);
     const response = useSimulationStore.getState();
     expect(response.activeHormonalActions.some(action => action.actionId === 'release-glucagon')).toBe(true);
     expect(response.scenarioResponse?.scenarioId).toBe('nocturnal-hypoglycemia');
@@ -247,7 +290,7 @@ describe('controles da simulação', () => {
     });
     useSimulationStore.getState().tick();
     expect(useSimulationStore.getState().releaseHormone('release-insulin').ok).toBe(true);
-    expect(useSimulationStore.getState().resolveCellularRoutine('hypoglycemia-insulin')).toBe(true);
+    expect(useSimulationStore.getState().resolveCellularRoutine('hypoglycemia-insulin', adaptiveReasoning('nocturnal-hypoglycemia'))).toBe(true);
     const exposed = useSimulationStore.getState();
     expect(exposed.iatrogenicEpisodes[0]?.severity).toBe('critical');
     expect(exposed.iatrogenicEpisodes[0]?.remainingSeconds).toBeGreaterThan(80);
@@ -285,7 +328,8 @@ describe('ciclo de gameplay celular', () => {
     expect(hard?.definition.difficulty).toBe('hard');
     SCENARIO_DEFINITIONS.filter(definition => definition.difficulty === 'hard').forEach(definition => {
       expect(definition.choices).toHaveLength(3);
-      expect(definition.choices.filter(choice => choice.outcome === 'adaptive')).toHaveLength(1);
+      expect(definition.choices.every(choice => !('outcome' in choice))).toBe(true);
+      expect(getScenarioLearning(definition.id)?.predictions).toHaveLength(2);
       expect(definition.choices.every(choice => (choice.signalRequirements?.length ?? 0) > 0)).toBe(true);
     });
   });
@@ -387,7 +431,7 @@ describe('ciclo de gameplay celular', () => {
 
     const combined = resolveRoutineDecision(started, 'ketoacidosis-dual-control', 1, true, ['hormone:release-insulin', 'central:chemoreflex-ventilation']);
     expect(combined.ok).toBe(true);
-    expect(combined.decisionOutcome).toBe('adaptive');
+    expect(combined.scenarioId).toBe('mixed-ketoacidotic-fatigue');
   });
 
   it('aplica assinaturas sistêmicas derivadas e não apenas deltas celulares', () => {
@@ -490,7 +534,7 @@ describe('ciclo de gameplay celular', () => {
     expect(upgraded.automaticDamageRepairPerSecond).toBeCloseTo(.056, 6);
   });
 
-  it('cria evento com contexto embutido e distingue decisão adaptativa da prejudicial', () => {
+  it('cria evento com contexto embutido e aplica mecanismos sem antecipar o desfecho', () => {
     const initial = forceScenario(initializeCellularState(), 'stair-climb');
     const started = advanceCellularSimulation(initial, initializePhysiologyState(), controls, 0.25);
     expect(started.state.routine?.id).toBe('stair-climb');
@@ -500,13 +544,13 @@ describe('ciclo de gameplay celular', () => {
     started.state.pools.captured.oxygen = 1;
     const correct = resolveRoutineDecision(started.state, 'stair-aerobic', 1, true, ['central:chemoreflex-ventilation']);
     expect(correct.ok).toBe(true);
-    expect(correct.decisionOutcome).toBe('adaptive');
+    expect(correct.scenarioId).toBe('stair-climb');
     expect(correct.state.routine).toBeNull();
 
     const lactateBefore = started.state.tissue.lactateMmolL;
     const wrong = resolveRoutineDecision(started.state, 'stair-glycolytic', 1, true, ['hormone:release-adrenaline']);
     expect(wrong.ok).toBe(true);
-    expect(wrong.decisionOutcome).toBe('harmful');
+    expect(wrong.scenarioId).toBe('stair-climb');
     expect(wrong.state.tissue.lactateMmolL).toBeGreaterThan(lactateBefore);
     expect(wrong.state.damage.oxidativeStress).toBeGreaterThan(correct.state.damage.oxidativeStress);
   });
@@ -566,30 +610,14 @@ describe('ciclo de gameplay celular', () => {
     expect(state.routine?.remainingSeconds).toBeGreaterThan(0);
   });
 
-  it('oferece adaptação variável somente após estabilidade fisiológica', () => {
-    let rewarded = false;
-    for (let index = 0; index < 20 && !rewarded; index += 1) {
-      const prepared = initializeCellularState();
-      prepared.nextRoutineAt = 9999;
-      prepared.simulationTime = 100 + index * 7;
-      prepared.rewards = {
-        homeostasisSeconds: 60,
-        rosControlSeconds: 60,
-        balancedFuelSeconds: 60,
-        phStableSeconds: 60,
-        hypoxiaStableSeconds: 0,
-        lastOpportunityAt: 0,
-      };
-      prepared.pools.captured.glucose = 1;
-      prepared.pools.captured.fattyAcid = 1;
-      const result = advanceCellularSimulation(prepared, initializePhysiologyState(), controls, .25);
-      const rewardEvent = result.events.find(event => event.affectedSystems.includes('reward'));
-      if (rewardEvent) {
-        rewarded = true;
-        expect(rewardEvent.message).toContain('Adaptação desbloqueada');
-        expect(Object.values(result.state.adaptations).reduce((sum, level) => sum + level, 0)).toBe(1);
-      }
-    }
-    expect(rewarded).toBe(true);
+  it('acumula estabilidade sem conceder adaptação passivamente', () => {
+    const prepared = initializeCellularState();
+    prepared.nextRoutineAt = 9999;
+    prepared.pools.captured.glucose = 1;
+    prepared.pools.captured.fattyAcid = 1;
+    const result = advanceCellularSimulation(prepared, initializePhysiologyState(), controls, 2);
+    expect(result.state.rewards.homeostasisSeconds).toBeGreaterThan(0);
+    expect(result.events.some(event => event.affectedSystems.includes('reward'))).toBe(false);
+    expect(Object.values(result.state.adaptations).reduce((sum, level) => sum + level, 0)).toBe(0);
   });
 });

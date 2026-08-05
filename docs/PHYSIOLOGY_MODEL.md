@@ -427,9 +427,9 @@ A suscetibilidade à infecção cresce com perda de viabilidade, dano de membran
 
 A partir de 15 s o motor pode impor uma situação. Exercício, estresse, disponibilidade nutricional, sono e temperatura são entradas internas do evento: não existem sliders ou setters públicos para o jogador criar o contexto. Definições, contexto, cooldown, perturbação inicial e consequências ficam em [`scenarios.ts`](../src/game/scenarios.ts).
 
-Quando um evento começa, sua perturbação macro e celular é aplicada e o relógio congela. Um modal global, presente sobre qualquer aba, não pode ser fechado; a simulação só continua depois da escolha de um caminho. A decisão adaptativa remove a causa aguda e aproxima os marcadores da faixa homeostática. A decisão prejudicial soma lesão celular e desequilíbrio sistêmico. Não existe expiração que permita ignorar o evento.
+Quando um evento começa, sua perturbação macro e celular é aplicada e o relógio congela. A sidebar de investigação permanece sobre qualquer aba e a simulação só continua depois da escolha de um caminho. Antes de intervir, o jogador precisa selecionar uma hipótese mecanística e registrar a direção prevista de duas métricas. Não existe expiração que permita ignorar o evento.
 
-Enquanto o relógio está congelado, o jogador pode preparar o metabolismo dentro do próprio modal: captar substratos, executar glicólise e oxidar piruvato ou ácido graxo. Essa preparação altera pools, mas não avança o tempo nem cria outro evento. Cada escolha declara requisitos mínimos e custos de ATP, O₂, glicose, ácido graxo, aminoácido, piruvato ou antioxidantes. Se faltar qualquer recurso, o caminho fica visivelmente bloqueado e informa `atual / mínimo`; um caminho prejudicial sem custo permanece disponível para que a decisão obrigatória nunca se transforme em deadlock.
+Enquanto o relógio está congelado, o jogador pode navegar pelas escalas e preparar metabolismo e sinalização: captar substratos, executar glicólise, oxidar piruvato ou ácido graxo e recrutar respostas hormonais/centrais. Essa preparação altera pools e comandos pendentes, mas não avança o tempo nem cria outro evento. Cada escolha declara requisitos mínimos e custos de ATP, O₂, glicose, ácido graxo, aminoácido, piruvato ou antioxidantes. Se faltar qualquer recurso ou sinal, o caminho fica visivelmente bloqueado e informa o que falta; caminhos sem custo permanecem disponíveis para que a decisão obrigatória nunca se transforme em deadlock.
 
 | Evento imposto | Contexto embutido | Caminho adaptativo | Caminho prejudicial |
 |---|---|---|---|
@@ -440,15 +440,33 @@ Enquanto o relógio está congelado, o jogador pode preparar o metabolismo dentr
 | Desafio imune agudo | infecção, estresse 76%, sono ruim | defesa proporcional com antioxidantes | imunossupressão intensa precoce |
 | Onda de calor | ambiente 39 °C e perda hídrica | conservar água e dissipar calor | aumentar atividade e adrenalina |
 
-Cada opção possui efeitos celulares e sistêmicos explícitos. Antes de aplicá-los, [`scenarioResolution.ts`](../src/game/scenarioResolution.ts) soma a pressão do evento a catecolaminas, cortisol, T3, ação efetiva de insulina/glucagon, drive anabólico, eixo hipotalâmico, carga alostática, doença, reservas, viabilidade e compromisso apoptótico. O resultado produz um multiplicador de efeito e classifica a trajetória como reversível, instável ou catastrófica. A escolha ainda define a direção; o estado do organismo define sua intensidade e a possibilidade real de recuperação.
+Cada opção possui efeitos celulares e sistêmicos explícitos, mas não declara antecipadamente um `outcome`. Antes de aplicá-los, [`scenarioResolution.ts`](../src/game/scenarioResolution.ts) soma a pressão do evento a catecolaminas, cortisol, T3, ação efetiva de insulina/glucagon, drive anabólico, eixo hipotalâmico, carga alostática, doença, reservas, viabilidade e compromisso apoptótico. Essa etapa calcula responsividade e risco reversível, instável ou catastrófico sem decidir o desfecho.
 
-O desfecho é registrado na timeline como `adaptive` ou `harmful`, permitindo testar separadamente retorno à homeostase, progressão do dano e cascatas que podem culminar em apoptose, necrose, infecção, falência orgânica ou morte.
+Ao final da trajetória, [`scenarioLearning.ts`](../src/game/scenarioLearning.ts) compara o snapshot inicial ao estado realmente alcançado. Duas metas fisiológicas por caso determinam `adaptive`, `partial` ou `harmful`; risco catastrófico pode rebaixar uma resposta aparentemente favorável. A hipótese e as previsões do jogador são avaliadas separadamente, permitindo prever corretamente uma piora sem transformar essa piora em sucesso fisiológico. O debrief exibe valores inicial/final, previsão, direção observada, meta homeostática e cadeia causal.
 
 O motor sistêmico gera uma avaliação periódica a cada 30 s. Eventos celulares cruzando viabilidade de 70% ou 35% geram avisos adicionais na timeline.
 
 ## 12. Recompensa variável e adaptações
 
-A recompensa celular é semi-determinística: uma oportunidade só existe depois que o estado sustentou uma condição fisiológica concreta. A qualidade do estado (viabilidade, ATP, O₂ e ROS) aumenta a chance, mas não garante que toda janela resulte em recompensa. O evento gerado sempre informa a condição que justificou o ganho.
+A recompensa celular deixou de ser concedida passivamente. Estabilidade sustentada apenas preenche marcadores de elegibilidade; o ganho exige interpretar uma **Janela de Adaptação Fisiológica** enquanto a simulação continua avançando.
+
+Cada janela dura de 18 a 25 s reais e pode representar onda de glicose, pulso de insulina ou ROS, reperfusão breve ou oportunidade mitocondrial. A velocidade `2×`/`4×` continua acelerando a fisiologia, mas não reduz esse prazo humano de decisão. A janela não nasce de cliques: a seleção usa tempo e estado do motor. Qualidade combina ATP, pH, O₂ tecidual, controle redox, reserva antioxidante, perfusão, viabilidade e baixa carga iatrogênica. Estados melhores encurtam, sem fixar, o próximo intervalo dentro de 45–120 s fisiológicos.
+
+O sistema aumenta progressivamente a chance entre 90 e 150 s sem oferta e garante uma oportunidade aos 180 s. Uma janela nunca aparece sobre um cenário clínico, uma intervenção clínica em observação ou outra janela. Diferentemente dos cenários, ela não pausa o relógio; expirar conta como oportunidade perdida e não concede recompensa.
+
+A resposta não é avaliada pela velocidade do clique. O mesmo botão pode ser ótimo, parcial ou prejudicial conforme ATP/ADP, pressão dos pools, disponibilidade de O₂, dano, ROS, hormônios e demanda atual. Por exemplo, captar uma onda de glicose pode ser coerente com ATP baixo e espaço intracelular, mas inadequado quando ATP e pools já estão altos.
+
+As probabilidades básicas após uma resposta válida são:
+
+| Recompensa | Probabilidade | Efeito |
+|---|---:|---|
+| Conhecimento Fisiológico | 55% | adiciona pontos, respeitando multiplicador ativo |
+| Progresso em adaptação | 25% | eleva em um nível a capacidade coerente com a resposta |
+| Multiplicador temporário | 12% | multiplica conhecimento por 75 s fisiológicos |
+| Variante clínica | 6% | desbloqueia uma apresentação alternativa de caso compatível |
+| Efeito visual raro | 2% | ativa por 90 s um halo não interativo sobre as cenas existentes |
+
+Respostas prejudiciais não recebem recompensa. Variantes e efeitos raros exigem janela de alta qualidade e resposta ótima; quando indisponíveis, o ganho é convertido em conhecimento. Conhecimento, variantes, efeitos já descobertos e contadores de histórico sobrevivem ao reinício, enquanto janela ativa e multiplicadores temporários são limpos.
 
 | Adaptação | Condição observada | Efeito por nível |
 |---|---|---|
@@ -458,7 +476,7 @@ A recompensa celular é semi-determinística: uma oportunidade só existe depois
 | Buffer intracelular | pH estável com lactato controlado | reduz o impacto ácido do lactato |
 | Tolerância à hipóxia | ATP preservado com O₂ tecidual reduzido | amplia a faixa funcional do metabolismo oxidativo |
 
-Cada adaptação tem quatro níveis. As janelas perdem progresso quando o parâmetro sai da faixa, impedindo recompensa por mera passagem de tempo.
+Cada adaptação tem quatro níveis. Os marcadores de elegibilidade perdem progresso quando o parâmetro sai da faixa, impedindo recompensa por mera passagem de tempo. Ao resolver uma janela, parte do marcador correspondente é consumida para que o mesmo estado não produza ofertas em sequência imediata.
 
 ## 13. Leitura clínica da interface
 

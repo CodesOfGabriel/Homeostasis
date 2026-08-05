@@ -1,4 +1,5 @@
 import { getActionDefinition } from './actions';
+import { getCellularDamageBurden } from './cellularDamage';
 import type { CellularState, DecisionSignalId } from './cellularTypes';
 import { getHypothalamicSignal } from './hypothalamus';
 import type { PhysiologicalEvent, PhysiologyState } from './types';
@@ -15,11 +16,14 @@ export type IatrogenicMechanism =
     | 'hyperventilation'
     | 'hypoventilation'
     | 'water-retention'
-    | 'water-loss';
+    | 'water-loss'
+    | 'decision-error';
+
+export type IatrogenicSourceId = DecisionSignalId | `decision:${string}:${string}`;
 
 export interface IatrogenicEpisode {
     id: string;
-    signalId: DecisionSignalId;
+    signalId: IatrogenicSourceId;
     label: string;
     mechanism: IatrogenicMechanism;
     severity: IatrogenicSeverity;
@@ -27,6 +31,7 @@ export interface IatrogenicEpisode {
     elapsedSeconds: number;
     remainingSeconds: number;
     totalSeconds: number;
+    recurrenceCount: number;
     reason: string;
     startedAt: number;
 }
@@ -225,6 +230,7 @@ export function assessSignalMisuse(
         elapsedSeconds: 0,
         remainingSeconds: totalSeconds,
         totalSeconds,
+        recurrenceCount: 1,
         reason,
         startedAt: physiology.timeElapsed,
     };
@@ -241,13 +247,51 @@ export function mergeIatrogenicEpisodes(
             merged.push({ ...addition });
             return;
         }
-        existing.intensity = Math.max(existing.intensity, addition.intensity);
+        existing.recurrenceCount = (existing.recurrenceCount ?? 1) + (addition.recurrenceCount ?? 1);
+        const repeatedExposure = addition.intensity * (.3 + Math.min(.25, existing.recurrenceCount * .025));
+        existing.intensity = clamp(
+            1 - (1 - Math.max(existing.intensity, addition.intensity)) * (1 - repeatedExposure),
+            .25,
+            1,
+        );
         existing.severity = severityFromIntensity(existing.intensity);
-        existing.remainingSeconds = Math.min(1200, existing.remainingSeconds + addition.totalSeconds * .65);
+        existing.remainingSeconds = Math.min(
+            1200,
+            existing.remainingSeconds + addition.totalSeconds * Math.min(.9, .62 + existing.recurrenceCount * .04),
+        );
         existing.totalSeconds = existing.elapsedSeconds + existing.remainingSeconds;
         existing.reason = addition.reason;
     });
     return merged;
+}
+
+export function createDecisionErrorEpisode(args: {
+    scenarioId: string;
+    choiceId: string;
+    choiceLabel: string;
+    physiology: PhysiologyState;
+    cellular: CellularState;
+    risk: 'recoverable' | 'unstable' | 'catastrophic';
+}): IatrogenicEpisode {
+    const molecularBurden = getCellularDamageBurden(args.cellular.damage) / 100;
+    const riskPressure = args.risk === 'catastrophic' ? .22 : args.risk === 'unstable' ? .1 : 0;
+    const intensity = clamp(.48 + molecularBurden * .35 + riskPressure, .48, 1);
+    const totalSeconds = Math.round(55 + intensity * 75);
+
+    return {
+        id: `${Math.round(args.physiology.timeElapsed * 1000)}-decision-${args.scenarioId}-${args.choiceId}`,
+        signalId: `decision:${args.scenarioId}:${args.choiceId}`,
+        label: args.choiceLabel,
+        mechanism: 'decision-error',
+        severity: severityFromIntensity(intensity),
+        intensity,
+        elapsedSeconds: 0,
+        remainingSeconds: totalSeconds,
+        totalSeconds,
+        recurrenceCount: 1,
+        reason: 'a decisão inadequada prolonga falha de reparo e torna o dano molecular acumulado mais vulnerável a novas agressões',
+        startedAt: args.physiology.timeElapsed,
+    };
 }
 
 export function advanceIatrogenicConsequences(
@@ -289,28 +333,23 @@ export function advanceIatrogenicConsequences(
         } else if (episode.mechanism === 'hyperglycemia') {
             nextPhysiology.nutrients.bloodGlucose += .42 * exposure;
             nextPhysiology.allostaticLoad.currentLoad += .1 * exposure;
-            nextCellular.damage.oxidativeStress += .055 * exposure;
         } else if (episode.mechanism === 'adrenergic-overload') {
             nextPhysiology.allostaticLoad.currentLoad += .15 * exposure;
             nextPhysiology.energy.energyDeficit += .09 * exposure;
             nextPhysiology.bodyTemperature += .006 * exposure;
-            nextCellular.damage.oxidativeStress += .045 * exposure;
             nextCellular.tissue.lactateMmolL += .022 * exposure;
         } else if (episode.mechanism === 'immunosuppression') {
             nextPhysiology.pathophysiology.infectionSeverity += .06 * exposure;
             nextPhysiology.nutrients.bloodGlucose += .08 * exposure;
             nextPhysiology.allostaticLoad.currentLoad += .09 * exposure;
-            nextCellular.damage.proteins += .028 * exposure;
         } else if (episode.mechanism === 'anabolic-overload') {
             nextPhysiology.energy.atpPool -= .035 * exposure;
             nextPhysiology.energy.energyDeficit += .1 * exposure;
             nextCellular.cell.atpMmolL -= .015 * exposure;
-            nextCellular.damage.oxidativeStress += .028 * exposure;
         } else if (episode.mechanism === 'thermogenic-overload') {
             nextPhysiology.bodyTemperature += .004 * exposure;
             nextPhysiology.energy.energyDeficit += .1 * exposure;
             nextPhysiology.nutrients.hydration -= .006 * exposure;
-            nextCellular.damage.oxidativeStress += .04 * exposure;
         } else if (episode.mechanism === 'hypoperfusion') {
             nextPhysiology.cardiovascular.meanArterialPressure -= .18 * exposure;
             nextPhysiology.cardiovascular.perfusionIndex -= .32 * exposure;
@@ -330,13 +369,14 @@ export function advanceIatrogenicConsequences(
             nextPhysiology.nutrients.hydration += .014 * exposure;
             nextPhysiology.nutrients.sodium -= .025 * exposure;
             nextCellular.cell.volumePercent += .035 * exposure;
-            nextCellular.damage.membrane += .018 * exposure;
         } else if (episode.mechanism === 'water-loss') {
             nextPhysiology.nutrients.hydration -= .014 * exposure;
             nextPhysiology.nutrients.sodium += .025 * exposure;
             nextPhysiology.energy.energyDeficit += .07 * exposure;
             nextCellular.cell.volumePercent -= .035 * exposure;
         }
+
+        applyIatrogenicCellularDamage(nextCellular, episode, exposure);
 
         const remainingSeconds = Math.max(0, episode.remainingSeconds - activeSeconds);
         if (remainingSeconds > .001) {
@@ -362,13 +402,61 @@ export function advanceIatrogenicConsequences(
 
 export function iatrogenicEpisodeEvent(episode: IatrogenicEpisode, timestamp: number): PhysiologicalEvent {
     const severityLabel = episode.severity === 'critical' ? 'crítica' : episode.severity === 'severe' ? 'grave' : 'moderada';
+    const recurrence = episode.recurrenceCount ?? 1;
+    const recurrenceMessage = recurrence > 1
+        ? ` Recorrência ${recurrence}: intensidade agravada para ${(episode.intensity * 100).toFixed(0)}%.`
+        : '';
+    const decisionError = episode.mechanism === 'decision-error';
     return {
         type: 'system',
         severity: episode.severity === 'moderate' ? 'warning' : 'critical',
-        message: `Iatrogenia ${severityLabel}: ${episode.label} — ${episode.reason}. Penalidade persistente por até ${episode.totalSeconds.toFixed(0)} s fisiológicos.`,
+        message: `${decisionError ? 'Erro de decisão' : `Iatrogenia ${severityLabel}`}: ${episode.label} — ${episode.reason}.${recurrenceMessage} Penalidade persistente por até ${episode.totalSeconds.toFixed(0)} s fisiológicos.`,
         timestamp,
-        affectedSystems: ['iatrogenic', episode.mechanism, episode.severity],
+        affectedSystems: [
+            'iatrogenic',
+            episode.mechanism,
+            episode.severity,
+            ...(decisionError ? ['decision', 'cellular-damage'] : []),
+            `recurrence-${recurrence}`,
+        ],
     };
+}
+
+const IATROGENIC_DAMAGE_RATES: Record<IatrogenicMechanism, {
+    oxidativeStress: number;
+    membrane: number;
+    proteins: number;
+    dna: number;
+}> = {
+    hypoglycemia: { oxidativeStress: .018, membrane: .012, proteins: .006, dna: .004 },
+    hyperglycemia: { oxidativeStress: .055, membrane: .008, proteins: .012, dna: .006 },
+    'adrenergic-overload': { oxidativeStress: .045, membrane: .01, proteins: .008, dna: .005 },
+    immunosuppression: { oxidativeStress: .02, membrane: .01, proteins: .028, dna: .006 },
+    'anabolic-overload': { oxidativeStress: .028, membrane: .008, proteins: .018, dna: .006 },
+    'thermogenic-overload': { oxidativeStress: .04, membrane: .018, proteins: .025, dna: .008 },
+    hypoperfusion: { oxidativeStress: .028, membrane: .025, proteins: .015, dna: .012 },
+    hyperventilation: { oxidativeStress: .012, membrane: .008, proteins: .014, dna: .004 },
+    hypoventilation: { oxidativeStress: .022, membrane: .016, proteins: .02, dna: .008 },
+    'water-retention': { oxidativeStress: .008, membrane: .018, proteins: .006, dna: .003 },
+    'water-loss': { oxidativeStress: .018, membrane: .022, proteins: .012, dna: .006 },
+    'decision-error': { oxidativeStress: .035, membrane: .022, proteins: .02, dna: .01 },
+};
+
+function applyIatrogenicCellularDamage(
+    cellular: CellularState,
+    episode: IatrogenicEpisode,
+    exposure: number,
+) {
+    const rates = IATROGENIC_DAMAGE_RATES[episode.mechanism];
+    const accumulatedBurden = getCellularDamageBurden(cellular.damage) / 100;
+    const damageSusceptibility = Math.min(2.2, 1 + accumulatedBurden * .9);
+    const recurrenceScale = Math.min(1.8, 1 + Math.max(0, (episode.recurrenceCount ?? 1) - 1) * .18);
+    const aggravatedExposure = exposure * damageSusceptibility * recurrenceScale;
+
+    cellular.damage.oxidativeStress += rates.oxidativeStress * aggravatedExposure;
+    cellular.damage.membrane += rates.membrane * aggravatedExposure;
+    cellular.damage.proteins += rates.proteins * aggravatedExposure;
+    cellular.damage.dna += rates.dna * aggravatedExposure;
 }
 
 function misuseDuration(signalId: DecisionSignalId, intensity: number): number {
@@ -413,6 +501,7 @@ function clampConsequences(physiology: PhysiologyState, cellular: CellularState)
     cellular.damage.oxidativeStress = clamp(cellular.damage.oxidativeStress, 0, 100);
     cellular.damage.proteins = clamp(cellular.damage.proteins, 0, 100);
     cellular.damage.membrane = clamp(cellular.damage.membrane, 0, 100);
+    cellular.damage.dna = clamp(cellular.damage.dna, 0, 100);
 }
 
 function clamp(value: number, min: number, max: number) {
