@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Activity, AlertTriangle, ArrowRight, Atom, Bot, Crosshair, Flame, RefreshCw, Shield, Target, Wind, Zap } from 'lucide-react';
+import { Activity, AlertTriangle, ArrowRight, Atom, Bot, ChevronDown, Crosshair, Flame, RefreshCw, Shield, Target, Wind, Zap } from 'lucide-react';
 import { AUTOMATION_MAX_LEVEL, CAPTURE_AMOUNTS, CAPTURED_POOL_CAPS, CELLULAR_OPTIMIZATION_BUDGET, getAutomationRecipe, getCellularAutomationPerformance } from '../../game/cellularSimulation';
 import type { AutomationKind, OxidationSubstrate, RepairTarget, SubstrateKind } from '../../game/cellularTypes';
 import { getScenarioDefinition } from '../../game/scenarios';
@@ -101,11 +101,16 @@ function investigationMetric(
   };
 }
 
-export function TissueView() {
+interface DecisionAwareViewProps {
+  decisionPanelExpanded: boolean;
+}
+
+export function TissueView({ decisionPanelExpanded }: DecisionAwareViewProps) {
   const cellular = useSimulationStore(state => state.cellular);
   const physiology = useSimulationStore(state => state.physiology);
   const scenarioResponse = useSimulationStore(state => state.scenarioResponse);
   const scenarioOnset = useSimulationStore(state => state.scenarioOnset);
+  const lastDecision = useSimulationStore(state => state.lastDecision);
   const history = useSimulationStore(state => state.history);
   const warnings = useSimulationStore(state => state.activeWarnings);
   const capture = useSimulationStore(state => state.captureCellularSubstrate);
@@ -114,10 +119,14 @@ export function TissueView() {
   const [feedback, setFeedback] = useState('Observe a entrega capilar ao LEC e selecione a proteína de transporte para captar o substrato.');
   const [selectedKind, setSelectedKind] = useState<SubstrateKind>('oxygen');
   const [investigationScope, setInvestigationScope] = useState<InvestigationMetricScope>('priority');
+  const [objectivePanelExpanded, setObjectivePanelExpanded] = useState(false);
   const scenarioId = cellular.routine?.id ?? scenarioResponse?.scenarioId;
   const scenarioDefinition = scenarioId ? getScenarioDefinition(scenarioId) : undefined;
   const tissue = cellular.tissue;
-  const decisionVisible = Boolean(cellular.routine || scenarioResponse);
+  const freshDecision = lastDecision && physiology.timeElapsed - lastDecision.timestamp <= 18;
+  const decisionActive = Boolean(cellular.routine || scenarioResponse || freshDecision);
+  const decisionVisible = decisionPanelExpanded && decisionActive;
+  const sidebarExpanded = decisionActive ? decisionVisible : objectivePanelExpanded;
   const cell = cellular.cell;
   const selectedMeta = resourceMeta[selectedKind];
   const selectedAvailable = cellular.pools.available[selectedKind];
@@ -127,6 +136,8 @@ export function TissueView() {
   const selectedStatusExplanation = substrateStatusExplanation(selectedKind, selectedStatus);
   const SelectedIcon = selectedMeta.icon;
   const leadingAdaptation = (Object.entries(cellular.adaptations) as Array<[keyof typeof adaptationLabels, number]>).sort((a, b) => b[1] - a[1])[0];
+  const currentFocusTitle = warnings[0]?.parameter ? `Corrigir ${warnings[0].parameter}` : 'Sustentar metabolismo aeróbio';
+  const currentFocusDescription = warnings[0]?.recommendation ?? 'Garanta O₂ e substratos sem saturar os pools celulares.';
   const availableMetricSet = new Set<ScenarioMetricKey>(scenarioDefinition?.metricKeys ?? []);
   const investigationMetricKeys = scenarioDefinition
     ? investigationScope === 'priority'
@@ -141,6 +152,10 @@ export function TissueView() {
   useEffect(() => {
     setInvestigationScope('priority');
   }, [scenarioId]);
+
+  useEffect(() => {
+    if (decisionActive) setObjectivePanelExpanded(false);
+  }, [decisionActive]);
 
   const flowChips = useMemo(() => Object.fromEntries((Object.keys(resourceMeta) as SubstrateKind[]).map(kind => {
     const status = substrateStatus(kind, cellular.pools.available[kind], cellular.pools.captured[kind], tissue);
@@ -166,17 +181,39 @@ export function TissueView() {
   };
 
   return (
-    <div className="relative z-10 grid min-h-0 flex-1 grid-cols-1 gap-3 px-4 pb-20 lg:grid-cols-[230px_minmax(0,1fr)] lg:px-6 xl:grid-cols-[230px_minmax(0,1fr)_270px]">
-      {!decisionVisible && <GlassPanel className="relative z-20 hidden min-h-0 max-h-full self-stretch overflow-visible bg-black/25 p-3 lg:flex lg:flex-col">
-        <div className="flex items-center gap-2"><PanelLabel icon={<Crosshair className="size-3.5"/>}>Objetivo</PanelLabel><HelpTip title="Como vencer este ciclo?">Mantenha ATP, oxigênio, pH e integridade celular. Prepare reservas sem saturá-las; decisões podem exigir esses recursos.</HelpTip></div><div className="gold-line my-3 h-px"/>
+    <div className={cn(
+      'relative z-10 grid min-h-0 flex-1 grid-cols-1 gap-3 px-4 pb-20 lg:px-6',
+      sidebarExpanded
+        ? 'lg:grid-cols-[230px_minmax(0,1fr)] xl:grid-cols-[230px_minmax(0,1fr)_270px]'
+        : 'lg:grid-cols-1 xl:grid-cols-[minmax(0,1fr)_270px]',
+    )}>
+      {!decisionActive && !objectivePanelExpanded && <button
+        type="button"
+        aria-label="Abrir Objetivo e Foco atual"
+        aria-expanded={false}
+        aria-controls="tissue-objective-sidebar"
+        onClick={() => setObjectivePanelExpanded(true)}
+        className="fixed bottom-[82px] left-3 z-[45] hidden min-h-14 max-w-[360px] items-center gap-3 rounded-2xl border border-primary/35 bg-[#111722]/92 px-3 py-2 text-left shadow-[0_18px_55px_rgba(0,0,0,.55)] backdrop-blur-xl transition hover:-translate-y-0.5 hover:border-primary/55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 lg:flex"
+      >
+        <span className="grid size-9 shrink-0 place-items-center rounded-xl border border-primary/35 bg-black/25 text-primary"><Crosshair className="size-4.5"/></span>
+        <span className="min-w-0">
+          <span className="block text-[8px] font-medium uppercase tracking-[0.16em] text-primary">Objetivo e foco atual</span>
+          <strong className="mt-0.5 block max-w-64 truncate text-[11px] text-foreground">Manter a homeostase tecidual</strong>
+          <span className="mt-0.5 block truncate text-[9px] text-muted-foreground">{currentFocusTitle}</span>
+        </span>
+        <ChevronDown className="ml-1 size-4 shrink-0 rotate-180 text-muted-foreground"/>
+      </button>}
+
+      {!decisionActive && objectivePanelExpanded && <GlassPanel id="tissue-objective-sidebar" className="relative z-20 hidden min-h-0 max-h-full self-stretch overflow-visible bg-black/25 p-3 lg:flex lg:flex-col">
+        <div className="flex items-center gap-2"><PanelLabel icon={<Crosshair className="size-3.5"/>}>Objetivo</PanelLabel><HelpTip title="Como vencer este ciclo?">Mantenha ATP, oxigênio, pH e integridade celular. Prepare reservas sem saturá-las; decisões podem exigir esses recursos.</HelpTip><button type="button" onClick={() => setObjectivePanelExpanded(false)} aria-label="Minimizar Objetivo e Foco atual" className="ml-auto grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-white/5 hover:text-foreground"><ChevronDown className="size-4"/></button></div><div className="gold-line my-3 h-px"/>
         <h2 className="text-[13px] font-medium">Manter a homeostase tecidual</h2><p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">Equilibre perfusão, gases, energia e pH sem criar outro desequilíbrio.</p>
         <div className="mt-4 flex items-center gap-2"><PanelLabel icon={<Target className="size-3.5"/>}>Foco atual</PanelLabel><HelpTip title="Prioridade atual">O foco muda com alertas e cenários. Prepare os substratos indicados antes de escolher uma resposta.</HelpTip></div><div className="gold-line my-2 h-px"/>
-        <h3 className="text-xs font-medium">{cellular.routine?.title ?? (warnings[0]?.parameter ? `Corrigir ${warnings[0].parameter}` : 'Sustentar metabolismo aeróbio')}</h3>
-        <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">{cellular.routine?.description ?? warnings[0]?.recommendation ?? 'Garanta O₂ e substratos sem saturar os pools celulares.'}</p>
+        <h3 className="text-xs font-medium">{currentFocusTitle}</h3>
+        <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">{currentFocusDescription}</p>
         <div className="mt-auto rounded-lg border border-white/8 bg-black/15 p-2.5 text-[9px] leading-relaxed text-muted-foreground"><span className="mb-1 block uppercase tracking-wider text-primary">Leitura ativa</span>{feedback}</div>
       </GlassPanel>}
 
-      <section className="min-h-0 overflow-visible rounded-xl p-1 lg:col-start-2 lg:row-start-1" aria-label="Microambiente tecidual">
+      <section className={cn('min-h-0 overflow-visible rounded-xl p-1 lg:row-start-1', sidebarExpanded ? 'lg:col-start-2' : 'lg:col-start-1')} aria-label="Microambiente tecidual">
         <div className="mx-auto flex min-h-full max-w-5xl flex-col justify-end">
           <CellularFlowScene
             available={cellular.pools.available}
@@ -211,7 +248,7 @@ export function TissueView() {
         </div>
       </section>
 
-      <GlassPanel className="scrollbar-thin relative z-20 hidden max-h-full self-start overflow-y-auto bg-black/25 p-3 xl:col-start-3 xl:row-start-1 xl:block">
+      <GlassPanel className={cn('scrollbar-thin relative z-20 hidden max-h-full self-start overflow-y-auto bg-black/25 p-3 xl:row-start-1 xl:block', sidebarExpanded ? 'xl:col-start-3' : 'xl:col-start-2')}>
         <div className="flex items-center justify-between gap-2"><PanelLabel>Status do tecido</PanelLabel><HelpTip title="Faixas de referência" align="right"><p>Faixas funcionais adotadas pelo simulador:</p><ul className="mt-2 space-y-1"><li>pH tecidual: 7,30–7,45</li><li>Tensão de O₂: ≥ 35 mmHg</li><li>ATP celular: ≥ 1,50 mmol/L</li><li>Estresse oxidativo: ≤ 40%</li><li>Potencial de membrana: −80 a −55 mV</li></ul></HelpTip></div><div className="gold-line my-3 h-px"/>
         {scenarioDefinition && <section aria-labelledby="tissue-investigation-title">
           <div className="flex items-center justify-between gap-2"><div id="tissue-investigation-title"><PanelLabel icon={<Activity className="size-3.5"/>}>Métricas para investigar</PanelLabel></div><span className="flex-none text-[8px] uppercase tracking-wider text-primary">Δ detecção</span></div>
@@ -328,7 +365,7 @@ function automationImpactRows(automation: Record<AutomationKind, number>, kind: 
   ];
 }
 
-export function MachineryView() {
+export function MachineryView({ decisionPanelExpanded }: DecisionAwareViewProps) {
   const cellular = useSimulationStore(state => state.cellular);
   const scenarioResponse = useSimulationStore(state => state.scenarioResponse);
   const glycolysis = useSimulationStore(state => state.runCellularGlycolysis);
@@ -340,7 +377,7 @@ export function MachineryView() {
   const performance = getCellularAutomationPerformance(cellular.automation);
   const activeScenarioId = cellular.routine?.id ?? scenarioResponse?.scenarioId;
   const activeScenario = activeScenarioId ? getScenarioDefinition(activeScenarioId) : undefined;
-  const decisionVisible = Boolean(activeScenario);
+  const decisionVisible = decisionPanelExpanded && Boolean(activeScenario);
   const canGlycolysis = cellular.pools.captured.glucose >= 1 && cellular.cell.atpMmolL <= 5.72;
   const canOxidize = (kind: OxidationSubstrate) => kind === 'pyruvate'
     ? cellular.pools.pyruvate >= 1 && cellular.pools.captured.oxygen >= 3 && cellular.cell.adpMmolL >= .45

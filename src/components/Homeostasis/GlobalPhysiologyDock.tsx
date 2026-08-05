@@ -23,6 +23,13 @@ const axisMeta: Record<HypothalamicAxis, { label: string; icon: typeof Activity 
   osmotic: { label: 'Osmótico / ADH', icon: Droplets },
 };
 
+const launcherShortcuts = [
+  { id: 'hormonal', label: 'Hormônios', icon: Zap, mode: 'hormonal' },
+  { id: 'hypothalamus', label: 'Hipotálamo', icon: BrainCircuit, mode: 'hypothalamus', axis: 'osmotic' },
+  { id: 'central', label: 'Regulação central', icon: Activity, mode: 'hypothalamus', axis: 'autonomic' },
+  { id: 'respiratory', label: 'Controle respiratório', icon: Wind, mode: 'hypothalamus', axis: 'respiratory' },
+] as const;
+
 export function GlobalPhysiologyDock() {
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<'hormonal' | 'hypothalamus'>('hormonal');
@@ -90,6 +97,12 @@ export function GlobalPhysiologyDock() {
   const close = () => {
     setOpen(false);
     requestAnimationFrame(() => triggerRef.current?.focus());
+  };
+
+  const openShortcut = (shortcut: typeof launcherShortcuts[number]) => {
+    setMode(shortcut.mode);
+    if ('axis' in shortcut) setAxis(shortcut.axis);
+    setOpen(true);
   };
 
   const dock = (
@@ -188,18 +201,44 @@ export function GlobalPhysiologyDock() {
         </GlassPanel>
       )}
 
-      <button
-        ref={triggerRef}
-        type="button"
-        aria-label={open ? 'Fechar central de sinalização' : 'Abrir sinalização hormonal e regulação central'}
-        aria-expanded={open}
-        aria-controls="global-hormone-panel"
-        onClick={() => setOpen(value => !value)}
-        className={cn('fixed bottom-[calc(86px+env(safe-area-inset-bottom))] right-3 z-[47] grid size-12 place-items-center rounded-full border bg-[#111722]/85 text-primary shadow-[0_0_22px_-6px_rgba(217,180,95,.55)] backdrop-blur-xl transition sm:bottom-[86px] sm:right-6', iatrogenicEpisodes.length > 0 ? 'border-danger/80' : totalWarningCount ? 'border-warning/70' : 'border-primary/60', open && 'pointer-events-none opacity-0')}
-      >
-        {open ? <X className="size-5"/> : iatrogenicEpisodes.length > 0 ? <AlertTriangle className="size-5 text-danger"/> : <Zap className="size-5"/>}
-        <span className={cn('absolute -right-1 -top-1 grid min-h-5 min-w-5 place-items-center rounded-full border px-1 font-mono text-[9px]', iatrogenicEpisodes.length > 0 ? 'border-danger bg-[#271010] text-danger' : totalWarningCount ? 'border-warning bg-[#21170d] text-warning' : 'border-primary/60 bg-[#17140d] text-primary')}>{open ? '×' : iatrogenicEpisodes.length > 0 ? `!${iatrogenicEpisodes.length}` : totalAvailableCount}</span>
-      </button>
+      <div className={cn('group fixed bottom-[calc(86px+env(safe-area-inset-bottom))] right-3 z-[47] flex flex-col items-end gap-2 transition sm:bottom-[86px] sm:right-6', open && 'pointer-events-none opacity-0')}>
+        <button
+          ref={triggerRef}
+          type="button"
+          aria-label="Abrir central de sinalização"
+          aria-expanded={open}
+          aria-controls="global-hormone-panel global-signaling-shortcuts"
+          onClick={() => setOpen(true)}
+          className={cn('relative order-2 grid size-12 place-items-center rounded-full border bg-[#111722]/85 text-primary shadow-[0_0_22px_-6px_rgba(217,180,95,.55)] backdrop-blur-xl transition hover:scale-[1.04] focus-visible:scale-[1.04]', iatrogenicEpisodes.length > 0 ? 'border-danger/80' : totalWarningCount ? 'border-warning/70' : 'border-primary/60')}
+        >
+          {iatrogenicEpisodes.length > 0 ? <AlertTriangle className="size-5 text-danger"/> : <Zap className="size-5"/>}
+          <span className={cn('absolute -right-1 -top-1 grid min-h-5 min-w-5 place-items-center rounded-full border px-1 font-mono text-[9px]', iatrogenicEpisodes.length > 0 ? 'border-danger bg-[#271010] text-danger' : totalWarningCount ? 'border-warning bg-[#21170d] text-warning' : 'border-primary/60 bg-[#17140d] text-primary')}>{iatrogenicEpisodes.length > 0 ? `!${iatrogenicEpisodes.length}` : totalAvailableCount}</span>
+        </button>
+
+        <div
+          id="global-signaling-shortcuts"
+          aria-label="Atalhos da central de sinalização"
+          className="pointer-events-none order-1 hidden translate-y-2 flex-col items-end gap-1.5 opacity-0 transition-[opacity,transform] duration-200 group-hover:pointer-events-auto group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:translate-y-0 group-focus-within:opacity-100 sm:flex"
+        >
+          {launcherShortcuts.map(shortcut => {
+            const Icon = shortcut.icon;
+            const active = shortcut.mode === mode && (shortcut.mode === 'hormonal' || shortcut.axis === axis);
+            return <button
+              key={shortcut.id}
+              type="button"
+              aria-controls="global-hormone-panel"
+              onClick={() => openShortcut(shortcut)}
+              className={cn(
+                'flex min-h-10 items-center gap-2 rounded-full border bg-[#111722]/92 py-1.5 pl-3 pr-2 text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground shadow-[0_8px_24px_-12px_rgba(0,0,0,.9)] backdrop-blur-xl transition hover:border-primary/60 hover:text-primary focus-visible:border-primary/60 focus-visible:text-primary',
+                active ? 'border-primary/45 text-primary' : 'border-white/10',
+              )}
+            >
+              <span>{shortcut.label}</span>
+              <span className="grid size-7 place-items-center rounded-full border border-primary/20 bg-primary/5 text-primary"><Icon className="size-3.5"/></span>
+            </button>;
+          })}
+        </div>
+      </div>
     </>
   );
 

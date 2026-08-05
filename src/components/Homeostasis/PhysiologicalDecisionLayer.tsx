@@ -35,7 +35,11 @@ import { GlassPanel, PanelLabel, ProgressBar, cn } from './ui';
 const PREDICTION_DIRECTIONS: PredictionDirection[] = ['increase', 'stable', 'decrease'];
 const DIRECTION_SYMBOLS: Record<PredictionDirection, string> = { increase: '↑', stable: '→', decrease: '↓' };
 
-export function PhysiologicalDecisionLayer() {
+interface PhysiologicalDecisionLayerProps {
+  onExpandedChange?: (expanded: boolean) => void;
+}
+
+export function PhysiologicalDecisionLayer({ onExpandedChange }: PhysiologicalDecisionLayerProps) {
   const cellular = useSimulationStore(state => state.cellular);
   const physiology = useSimulationStore(state => state.physiology);
   const routine = cellular.routine;
@@ -48,7 +52,7 @@ export function PhysiologicalDecisionLayer() {
   const unlockedCaseVariants = useSimulationStore(state => state.adaptationProgress.unlockedCaseVariants);
   const resolve = useSimulationStore(state => state.resolveCellularRoutine);
   const [error, setError] = useState('');
-  const [collapsed, setCollapsed] = useState(false);
+  const [expandedPanelKey, setExpandedPanelKey] = useState<string | null>(null);
   const [hypothesisId, setHypothesisId] = useState('');
   const [predictionAnswers, setPredictionAnswers] = useState<Record<string, PredictionDirection>>({});
   const simulationTime = physiology.timeElapsed;
@@ -65,6 +69,14 @@ export function PhysiologicalDecisionLayer() {
   const preparedSignalSet = new Set(preparedSignals);
   const observing = Boolean(response && !routine);
   const debriefing = Boolean(freshDecision && !routine && !response);
+  const panelPhase = routine ? 'decision' : observing ? 'observation' : 'debrief';
+  const panelMoment = routine
+    ? scenarioOnset?.time ?? cellular.simulationTime
+    : response
+      ? response.onset.time
+      : freshDecision?.timestamp ?? 0;
+  const panelKey = `${panelPhase}:${scenarioId ?? 'unknown'}:${panelMoment}`;
+  const panelExpanded = expandedPanelKey === panelKey;
   const selectedChoiceId = response?.choiceId ?? freshDecision?.choiceId;
   const selectedChoice = selectedChoiceId ? definition?.choices.find(choice => choice.id === selectedChoiceId) : undefined;
   const progress = response ? (1 - response.remainingSeconds / response.totalSeconds) * 100 : 0;
@@ -82,10 +94,13 @@ export function PhysiologicalDecisionLayer() {
   useEffect(() => {
     if (!routine?.id) return;
     setError('');
-    setCollapsed(false);
     setHypothesisId('');
     setPredictionAnswers({});
   }, [routine?.id]);
+
+  useEffect(() => {
+    onExpandedChange?.(panelExpanded);
+  }, [onExpandedChange, panelExpanded]);
 
   if (!scenarioId || !definition || !learning) return null;
 
@@ -96,14 +111,60 @@ export function PhysiologicalDecisionLayer() {
   const activePhase = observing || debriefing ? 3 : reasoningComplete ? 2 : 1;
   const outcome = freshDecision?.outcome;
   const outcomeTone = outcome === 'adaptive' ? 'good' : outcome === 'partial' ? 'warning' : 'danger';
+  const outcomeLabel = outcome === 'adaptive' ? 'Recuperação observada' : outcome === 'partial' ? 'Resposta parcial' : 'Descompensação observada';
+  const compactLabel = debriefing
+    ? 'Previsão × resultado'
+    : observing
+      ? 'Resposta em observação'
+      : definition.difficulty === 'hard'
+        ? 'Decisão sistêmica · Difícil'
+        : 'Situação fisiológica';
+  const compactDetail = debriefing
+    ? outcomeLabel
+    : observing && response
+      ? `${progress.toFixed(0)}% observado · ${response.remainingSeconds.toFixed(0)} s restantes`
+      : definition.severity === 'critical'
+        ? 'Evento crítico · decisão necessária'
+        : 'Simulação pausada · decisão necessária';
+  const compactTone = debriefing ? outcomeTone : definition.severity === 'critical' ? 'danger' : 'warning';
+
+  if (!panelExpanded) {
+    return (
+      <button
+        type="button"
+        aria-label={`Abrir ${compactLabel}: ${definition.title}`}
+        aria-expanded={false}
+        aria-controls="physiological-decision-card"
+        onClick={() => setExpandedPanelKey(panelKey)}
+        className={cn(
+          'fixed bottom-[calc(82px+env(safe-area-inset-bottom))] left-3 z-[45] flex min-h-14 max-w-[calc(100vw-1.5rem)] items-center gap-3 rounded-2xl border bg-[#111722]/92 px-3 py-2 text-left shadow-[0_18px_55px_rgba(0,0,0,.55)] backdrop-blur-xl transition hover:-translate-y-0.5 hover:border-primary/55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 lg:bottom-[82px]',
+          compactTone === 'good' ? 'border-good/40' : compactTone === 'warning' ? 'border-warning/40' : 'border-danger/45',
+        )}
+      >
+        <span className={cn('grid size-9 shrink-0 place-items-center rounded-xl border bg-black/25', compactTone === 'good' ? 'border-good/35 text-good' : compactTone === 'warning' ? 'border-warning/35 text-warning' : 'border-danger/35 text-danger')}>
+          {debriefing
+            ? compactTone === 'good' ? <CheckCircle2 className="size-4.5"/> : <ShieldAlert className="size-4.5"/>
+            : observing
+              ? <Eye className="size-4.5"/>
+              : definition.severity === 'critical' ? <AlertTriangle className="size-4.5"/> : <HeartPulse className="size-4.5"/>}
+        </span>
+        <span className="min-w-0">
+          <span className="block text-[8px] font-medium uppercase tracking-[0.16em] text-primary">{compactLabel}</span>
+          <strong className="mt-0.5 block max-w-64 truncate text-[11px] text-foreground">{definition.title}</strong>
+          <span className={cn('mt-0.5 block text-[9px]', compactTone === 'good' ? 'text-good' : compactTone === 'warning' ? 'text-warning' : 'text-danger')}>{compactDetail}</span>
+        </span>
+        <ChevronDown className="ml-1 size-4 shrink-0 rotate-180 text-muted-foreground"/>
+      </button>
+    );
+  }
 
   return (
     <aside
+      id="physiological-decision-card"
       aria-label={debriefing ? 'Debrief fisiológico' : observing ? 'Observação da resposta fisiológica' : 'Evento fisiológico aguardando decisão'}
       className={cn(
         'fixed bottom-[calc(82px+env(safe-area-inset-bottom))] left-3 top-auto z-[45] flex max-h-[64dvh] w-[calc(100%-1.5rem)] max-w-[calc(100vw-1.5rem)] flex-col overflow-x-hidden [contain:layout_paint] lg:bottom-[82px] lg:left-3 lg:top-[68px] lg:max-h-none lg:w-[400px]',
         definition.difficulty === 'hard' && 'lg:w-[440px]',
-        collapsed && 'max-lg:max-h-16',
       )}
     >
       <GlassPanel className={cn('flex min-h-0 flex-1 flex-col overflow-hidden border-warning/35 p-0 shadow-[0_18px_70px_rgba(0,0,0,.55)]', definition.severity === 'critical' && 'border-danger/45', debriefing && outcomeTone === 'good' && 'border-good/40')}>
@@ -115,10 +176,17 @@ export function PhysiologicalDecisionLayer() {
             <PanelLabel icon={debriefing ? <Target className="size-3.5"/> : observing ? <Eye className="size-3.5"/> : <GitFork className="size-3.5"/>}>{debriefing ? 'Previsão × resultado' : observing ? 'Resposta em observação' : definition.difficulty === 'hard' ? 'Decisão sistêmica · Difícil' : 'Situação fisiológica'}</PanelLabel>
             <h2 className="mt-1.5 truncate font-display text-lg text-foreground">{definition.title}</h2>
           </div>
-          <button type="button" onClick={() => setCollapsed(value => !value)} aria-label={collapsed ? 'Expandir evento' : 'Recolher evento'} className="grid size-10 place-items-center rounded-lg text-muted-foreground hover:bg-white/5 hover:text-foreground lg:hidden"><ChevronDown className={cn('size-4 transition', collapsed && 'rotate-180')}/></button>
+          <button
+            type="button"
+            onClick={() => setExpandedPanelKey(null)}
+            aria-label={`Minimizar ${compactLabel}`}
+            className="grid size-10 place-items-center rounded-lg text-muted-foreground hover:bg-white/5 hover:text-foreground"
+          >
+            <ChevronDown className="size-4 transition"/>
+          </button>
         </header>
 
-        <div className={cn('scrollbar-thin min-h-0 flex-1 overflow-y-auto p-4', collapsed && 'max-lg:hidden')}>
+        <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto p-4">
           <div className="grid grid-cols-4 gap-1" aria-label="Fases da decisão">
             {['Detectar', 'Investigar', 'Intervir', 'Observar'].map((phase, index) => <div key={phase} className={cn('rounded-md border px-1.5 py-1.5 text-center text-[8px] uppercase tracking-wider', index === activePhase ? 'border-primary/45 bg-primary/10 text-primary' : index < activePhase ? 'border-white/10 text-foreground/65' : 'border-white/6 text-muted-foreground/55')}>{phase}</div>)}
           </div>

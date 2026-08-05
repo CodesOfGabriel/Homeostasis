@@ -28,6 +28,7 @@ export function Simulator() {
   const [activeStep, setActiveStep] = useState<StepKey>('tissue');
   const [started, setStarted] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [decisionPanelExpanded, setDecisionPanelExpanded] = useState(false);
   const physiology = useSimulationStore(state => state.physiology);
   const cellular = useSimulationStore(state => state.cellular);
   const iatrogenicEpisodes = useSimulationStore(state => state.iatrogenicEpisodes);
@@ -81,14 +82,14 @@ export function Simulator() {
         <TopNav day={time.day} clock={time.clock} condition={condition} healthy={condition === 'Estável'} events={events} routine={cellular.routine} onSettings={() => setSettingsOpen(true)} />
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           {started && <Suspense fallback={<div className="grid min-h-0 flex-1 place-items-center text-xs uppercase tracking-widest text-muted-foreground">Preparando escala fisiológica…</div>}>
-            {activeTab === 'tissue' && <TissueView />}
+            {activeTab === 'tissue' && <TissueView decisionPanelExpanded={decisionPanelExpanded} />}
             {activeTab === 'intracellular' && <IntracellularView />}
-            {activeTab === 'machinery' && <MachineryView />}
+            {activeTab === 'machinery' && <MachineryView decisionPanelExpanded={decisionPanelExpanded} />}
             {activeTab === 'system' && <ClinicalSystemView focus="vitals" onNavigate={chooseStep} />}
           </Suspense>}
         </div>
         {started && <GlobalPhysiologyDock />}
-        {started && <PhysiologicalDecisionLayer />}
+        {started && <PhysiologicalDecisionLayer onExpandedChange={setDecisionPanelExpanded} />}
         {started && <AdaptationOpportunityLayer />}
         <footer className="pointer-events-none absolute inset-x-0 bottom-0 z-30 flex items-end justify-center gap-3 bg-gradient-to-t from-background/85 via-background/30 to-transparent px-4 pb-2 pt-10 lg:px-6">
           <Stepper active={activeStep} onChange={chooseStep} />
